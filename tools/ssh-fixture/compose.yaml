@@ -1,0 +1,21 @@
+name: witerm-ssh-test
+services:
+  target:
+    build: .
+    image: witerm-ssh-fixture:local
+    ports: ["127.0.0.1::22"]
+    volumes:
+      - ${WITERM_SSH_FIXTURE_DIRECTORY:?Set private fixture directory}/target:/keys:ro
+    networks: [ssh-test]
+  jump:
+    image: witerm-ssh-fixture:local
+    depends_on:
+      target:
+        condition: service_healthy
+    ports: ["127.0.0.1::22"]
+    volumes:
+      - ${WITERM_SSH_FIXTURE_DIRECTORY:?Set private fixture directory}/jump:/keys:ro
+    networks: [ssh-test]
+networks:
+  ssh-test:
+    driver: bridge

@@ -1,0 +1,43 @@
+{
+  "initial_session": {
+    "id": "44444444-4444-4444-8444-444444444444",
+    "name": "观察端尺寸",
+    "created_at": "2026-10-25T00:00:00Z",
+    "columns": 80,
+    "rows": 24
+  },
+  "events": [
+    {
+      "version": 1,
+      "kind": "geometry",
+      "session": {
+        "id": "44444444-4444-4444-8444-444444444444",
+        "name": "观察端尺寸",
+        "created_at": "2026-10-25T00:00:00Z",
+        "columns": 120,
+        "rows": 40
+      }
+    },
+    {
+      "version": 1,
+      "kind": "output",
+      "data": "G1syShtbSG9ic2VydmVyLXNpemU6NDB4MTIwDQo="
+    },
+    {
+      "version": 1,
+      "kind": "geometry",
+      "session": {
+        "id": "44444444-4444-4444-8444-444444444444",
+        "name": "观察端尺寸",
+        "created_at": "2026-10-25T00:00:00Z",
+        "columns": 90,
+        "rows": 30
+      }
+    },
+    {
+      "version": 1,
+      "kind": "output",
+      "data": "G1syShtbSOinguWvnyDwn5Gp4oCN8J+SuyBlzIEgMzB4OTANCg=="
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+.git
+.env
+.env.*
+**/.build
+**/.swiftpm
+**/DerivedData
+**/xcuserdata
+server/bin
+

@@ -1,0 +1,253 @@
+import Foundation
+import Observation
+import WitermSSH
+
+struct SSHTrustPrompt: Identifiable {
+    let id = UUID()
+    let key: SSHHostKey
+}
+
+enum SSHUIError {
+    static func message(_ error: Error) -> String {
+        switch error as? SSHFailure {
+        case .hostKeyChanged: String(localized: "The host key has changed and the connection was blocked. Check with your server administrator first.", bundle: .main)
+        case .hostKeyRejected: String(localized: "This host was not trusted. Connection cancelled.", bundle: .main)
+        case .missingCredential: String(localized: "Enter credentials for the target host and every jump host.", bundle: .main)
+        case .unsupportedPrivateKey: String(localized: "Unable to use this private key. Check its format and passphrase.", bundle: .main)
+        case .invalidConfiguration: String(localized: "Check the host address, port and username.", bundle: .main)
+        case .invalidForward: String(localized: "Check the listening port and target address.", bundle: .main)
+        case .backpressure: String(localized: "The connection could not keep up and was closed. Reconnect to continue.", bundle: .main)
+        case .storageUnavailable: String(localized: "Unable to access secure storage on this device. Try again later.", bundle: .main)
+        case .transferTooLarge: String(localized: "The file exceeds the transfer limit.", bundle: .main)
+        case .invalidPath: String(localized: "Unable to use this file path.", bundle: .main)
+        case .cancelled: String(localized: "Operation cancelled.", bundle: .main)
+        default: String(localized: "The operation did not finish. Check the connection and permissions, then try again.", bundle: .main)
+        }
+    }
+}
+
+/// One connected SSH host. The session owns its terminal renderer, so output
+/// keeps being consumed while another host or screen is shown.
+@MainActor @Observable
+final class SSHSession: Identifiable {
+    let profile: SSHProfile
+    let connection: SSHConnection
+    let shell: SSHShell
+    @ObservationIgnored let terminal: SSHTerminalHost
+    /// Identifies this connection instance even if its host reconnects later.
+    let token: UUID
+    private var closed = false
+
+    nonisolated var id: UUID { profile.id }
+
+    init(profile: SSHProfile, connection: SSHConnection, shell: SSHShell, token: UUID,
+         onEnded: @escaping @MainActor (Error?) -> Void) {
+        self.token = token
+        self.profile = profile
+        self.connection = connection
+        self.shell = shell
+        terminal = SSHTerminalHost(shell: shell, onEnded: onEnded)
+    }
+
+    func close() {
+        guard !closed else { return }
+        closed = true
+        terminal.stop()
+        Task { [shell, connection] in await shell.close(); await connection.disconnect() }
+    }
+}
+
+@MainActor @Observable
+final class SSHWorkspaceModel {
+    /// Bounds sockets, renderers, and memory held by background sessions.
+    static let sessionLimit = 8
+
+    var profiles: [SSHProfile] = []
+    private(set) var sessions: [SSHSession] = []
+    /// The single connection attempt in flight, including host-key review.
+    private(set) var connectingProfile: SSHProfile?
+    var issue: String?
+    /// The host an issue belongs to, when it belongs to one.
+    private(set) var issueProfileID: UUID?
+    var trustPrompt: SSHTrustPrompt?
+    private var untrustedKey: SSHHostKey?
+    private var pendingAttempt: (profile: SSHProfile, credentials: [UUID: SSHCredential], remember: Set<UUID>)?
+    private var approvedAttempt = false
+    private var connectTask: Task<Void, Never>?
+    private var generation = UUID()
+
+    var connecting: Bool { connectTask != nil }
+
+    func session(for profileID: UUID) -> SSHSession? { sessions.first { $0.id == profileID } }
+
+    func load() async {
+        do { profiles = try await SSHProfileStore().profiles() }
+        catch { report(SSHUIError.message(error), profileID: nil) }
+    }
+
+    func savedCredentials(for profile: SSHProfile) async -> [UUID: SSHCredential] {
+        do {
+            let store = try SSHProfileStore()
+            var result: [UUID: SSHCredential] = [:]
+            for host in profile.jumpHosts + [profile.host] {
+                if let value = try await store.credential(hostID: host.id) { result[host.id] = value }
+            }
+            return result
+        } catch { report(SSHUIError.message(error), profileID: profile.id); return [:] }
+    }
+
+    func removeProfile(_ profile: SSHProfile) async {
+        if let session = session(for: profile.id) { disconnect(session) }
+        if connectingProfile?.id == profile.id { cancelConnecting() }
+        do {
+            let store = try SSHProfileStore()
+            try await store.delete(id: profile.id)
+            IdentityHue.forget(profile.id.uuidString)
+            await load()
+        } catch { report(SSHUIError.message(error), profileID: nil) }
+    }
+
+    /// Starts a new attempt. Live sessions for other hosts are unaffected;
+    /// an earlier attempt that has not finished is cancelled.
+    func connect(_ profile: SSHProfile, credentials: [UUID: SSHCredential], remember: Set<UUID>) {
+        cancelConnecting()
+        guard session(for: profile.id) == nil else { return }
+        guard sessions.count < Self.sessionLimit else {
+            report(String(localized: "Disconnect another SSH session before opening a new one.", bundle: .main), profileID: profile.id)
+            return
+        }
+        let current = UUID()
+        generation = current
+        connectingProfile = profile
+        clearIssue()
+        pendingAttempt = (profile, credentials, remember)
+        connectTask = Task { [weak self] in
+            var connected: SSHConnection?
+            do {
+                try profile.validate()
+                let store = try SSHProfileStore()
+                try await store.save(profile)
+                let savedProfiles = try await store.profiles()
+                if self?.generation == current { self?.profiles = savedProfiles }
+                let client = try await SSHConnection.connect(
+                    profile: profile, credentials: credentials,
+                    verifyHostKey: { [weak self] key in
+                        guard let self else { throw CancellationError() }
+                        try await self.verify(key, generation: current)
+                    })
+                connected = client
+                try Task.checkCancellation()
+                let terminal = try await client.openShell(columns: 80, rows: 24)
+                guard let self, self.generation == current, !Task.isCancelled else {
+                    await terminal.close(); await client.disconnect(); return
+                }
+                for host in profile.jumpHosts + [profile.host] {
+                    try await store.setCredential(
+                        remember.contains(host.id) ? credentials[host.id] : nil, hostID: host.id)
+                }
+                // Keychain writes suspend. A cancel or a newer attempt may own
+                // the workspace by now; this one must not commit over it.
+                guard self.generation == current, !Task.isCancelled else {
+                    await terminal.close(); await client.disconnect(); return
+                }
+                let token = UUID()
+                let session = SSHSession(profile: profile, connection: client, shell: terminal, token: token) { [weak self] error in
+                    self?.ended(error, token: token)
+                }
+                self.sessions.append(session)
+                self.connectingProfile = nil
+                self.connectTask = nil
+                self.pendingAttempt = nil
+                await self.load()
+            } catch {
+                await connected?.disconnect()
+                guard let self, self.generation == current else { return }
+                self.connectingProfile = nil
+                self.connectTask = nil
+                if !Task.isCancelled, let key = self.untrustedKey {
+                    self.untrustedKey = nil
+                    self.trustPrompt = SSHTrustPrompt(key: key)
+                } else if !Task.isCancelled {
+                    self.pendingAttempt = nil
+                    self.report(SSHUIError.message(error), profileID: profile.id)
+                }
+            }
+        }
+    }
+
+    private func verify(_ key: SSHHostKey, generation current: UUID) async throws {
+        try Task.checkCancellation()
+        guard generation == current else { throw CancellationError() }
+        let known = try SSHKnownHosts()
+        let status = try await known.status(for: key)
+        // A cancelled attempt must not leave its key as the next prompt.
+        guard generation == current else { throw CancellationError() }
+        switch status {
+        case .trusted: return
+        case .changed: throw SSHFailure.hostKeyChanged
+        case .unknown:
+            // End this handshake before asking for trust. An explicit approval
+            // starts a fresh attempt instead of holding a live authentication
+            // exchange open while the user compares fingerprints.
+            untrustedKey = key
+            throw SSHFailure.hostKeyRejected
+        }
+    }
+
+    func approveHostKey(_ prompt: SSHTrustPrompt) async {
+        guard trustPrompt?.id == prompt.id else { return }
+        do {
+            try await SSHKnownHosts().trust(prompt.key)
+            guard trustPrompt?.id == prompt.id else { return }
+            approvedAttempt = true
+            trustPrompt = nil
+        } catch {
+            trustPrompt = nil; pendingAttempt = nil
+            report(SSHUIError.message(error), profileID: nil)
+        }
+    }
+
+    func rejectHostKey() {
+        trustPrompt = nil; untrustedKey = nil; pendingAttempt = nil; approvedAttempt = false
+    }
+
+    func resumeTrustedAttempt() {
+        guard approvedAttempt, let attempt = pendingAttempt else { return }
+        approvedAttempt = false; pendingAttempt = nil
+        connect(attempt.profile, credentials: attempt.credentials, remember: attempt.remember)
+    }
+
+    /// Cancels only the attempt in flight; live sessions keep running.
+    func cancelConnecting() {
+        generation = UUID()
+        connectTask?.cancel(); connectTask = nil
+        connectingProfile = nil
+        rejectHostKey()
+    }
+
+    func disconnect(_ session: SSHSession) {
+        sessions.removeAll { $0 === session }
+        session.close()
+    }
+
+    func disconnectAll() {
+        cancelConnecting()
+        let open = sessions
+        sessions = []
+        open.forEach { $0.close() }
+    }
+
+    private func ended(_ error: Error?, token: UUID) {
+        guard let session = sessions.first(where: { $0.token == token }) else { return }
+        disconnect(session)
+        report(error.map(SSHUIError.message) ?? String(localized: "The SSH session has ended.", bundle: .main),
+               profileID: session.id)
+    }
+
+    func clearIssue() { issue = nil; issueProfileID = nil }
+
+    private func report(_ message: String, profileID: UUID?) {
+        issue = message
+        issueProfileID = profileID
+    }
+}
