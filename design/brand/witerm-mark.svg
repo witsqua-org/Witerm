@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
+  <title>Witerm — W terminal mark</title>
+  <defs>
+    <linearGradient id="cursor" x1="69" y1="0" x2="93" y2="0" gradientUnits="userSpaceOnUse">
+    <stop offset="0%" stop-color="#FF6B8B"/>
+    <stop offset="25%" stop-color="#FFC24B"/>
+    <stop offset="50%" stop-color="#4FE3B0"/>
+    <stop offset="75%" stop-color="#5CC8FF"/>
+    <stop offset="100%" stop-color="#B58CFF"/>
+    </linearGradient>
+  </defs>
+  <path d="M12 28 30 75 50 45 70 75 88 28" stroke="#ECEEF2" stroke-width="10.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M72 91H90" stroke="url(#cursor)" stroke-width="6.5" stroke-linecap="round"/>
+</svg>

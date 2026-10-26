@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "host_ready": {"type": "ready"},
+  "host_offer": {
+    "type": "offer",
+    "tunnel_id": "12345678-1234-4234-8234-123456789abc",
+    "grant_id": "abcdefab-cdef-4abc-8def-abcdefabcdef"
+  },
+  "create_request": {"grant_id": "abcdefab-cdef-4abc-8def-abcdefabcdef"},
+  "create_response": {"tunnel_id": "12345678-1234-4234-8234-123456789abc"}
+}

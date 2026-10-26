@@ -1,0 +1,6 @@
+// Full Mac terminal uses the non-sandboxed Developer ID distribution path.
+WITERM_MAC_ENTITLEMENTS = Config/WitermDirect.entitlements
+// Local development identity; each developer supplies their own Team.
+// Registered group is authorized by both embedded provisioning profiles.
+WITERM_APP_GROUP = group.com.witerm.$(DEVELOPMENT_TEAM)
+#include? "Signing.local.xcconfig"

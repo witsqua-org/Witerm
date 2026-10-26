@@ -1,0 +1,494 @@
+#if os(iOS)
+import SwiftUI
+import UIKit
+import SwiftTerm
+import WitermCore
+
+struct RemoteNativeTerminalView: UIViewRepresentable {
+    let attachment: RemoteTerminalAttachment
+    let mode: LocalAttachmentMode
+    let keyboardRequest: Int
+    var isInteractive: Bool = true
+    var fontSize: CGFloat = 14
+    var highContrast: Bool = false
+    var preferredColorScheme: ColorScheme? = nil
+    var announceOutput: Bool = false
+    let onFailure: (Error) -> Void
+    let onEnded: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(attachment: attachment, mode: mode, keyboardRequest: keyboardRequest,
+                    isInteractive: isInteractive, onFailure: onFailure, onEnded: onEnded)
+    }
+
+    func makeUIView(context: Context) -> TerminalSurface {
+        TerminalView.textInputDebugEnabled = false
+        let surface = TerminalSurface(mode: mode, session: attachment.session,
+                                      fontSize: fontSize, isInteractive: isInteractive)
+        surface.updateAppearance(highContrast: highContrast, scheme: preferredColorScheme)
+        surface.announceOutput = announceOutput
+        surface.terminal.terminalDelegate = context.coordinator
+        context.coordinator.start(surface.terminal)
+        return surface
+    }
+
+    func updateUIView(_ view: TerminalSurface, context: Context) {
+        view.setInteractive(isInteractive)
+        context.coordinator.setInteractive(isInteractive)
+        view.updateFontSize(fontSize)
+        view.updateAppearance(highContrast: highContrast, scheme: preferredColorScheme)
+        view.announceOutput = announceOutput
+        context.coordinator.requestKeyboardToggle(keyboardRequest, terminal: view.terminal)
+    }
+
+    static func dismantleUIView(_ view: TerminalSurface, coordinator: Coordinator) {
+        view.terminal.terminalDelegate = nil
+        coordinator.stop()
+    }
+
+    @MainActor final class TerminalSurface: UIView, UIScrollViewDelegate {
+        let terminal: TerminalInputView
+        let readingView = TerminalReadingTextView()
+        private let scroll = UIScrollView()
+        private let mode: LocalAttachmentMode
+        private var session: LocalSessionInfo
+        private var frozenGrid: (columns: Int, rows: Int)?
+        private var highContrast = false
+        private var paletteDark: Bool?
+        var announceOutput = false
+
+        init(mode: LocalAttachmentMode, session: LocalSessionInfo, fontSize: CGFloat, isInteractive: Bool) {
+            self.mode = mode
+            self.session = session
+            terminal = TerminalInputView(mode: mode, session: session,
+                                         fontSize: fontSize, isInteractive: isInteractive)
+            if !isInteractive { frozenGrid = (session.columns, session.rows) }
+            super.init(frame: .zero)
+            backgroundColor = .systemBackground
+            updateColors()
+            registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (surface: TerminalSurface, _: UITraitCollection) in
+                surface.updateColors()
+            }
+            terminal.getTerminal().silentLog = true
+            terminal.notifyUpdateChanges = true
+            terminal.linkReporting = .explicit
+            terminal.keyboardDismissMode = .interactive
+            terminal.isAccessibilityElement = false
+            terminal.accessibilityElementsHidden = true
+            readingView.accessibilityLabel = mode == .view ? String(localized: "Read-Only Terminal Text", bundle: .main) : String(localized: "Terminal Text", bundle: .main)
+            scroll.addSubview(terminal)
+            scroll.alwaysBounceHorizontal = false
+            scroll.alwaysBounceVertical = false
+            scroll.contentInsetAdjustmentBehavior = .never
+            addSubview(scroll)
+            addSubview(readingView)
+            scroll.delegate = self
+            accessibilityElements = [readingView]
+            terminal.geometryChanged = { [weak self] session in self?.applyGeometry(session) }
+            terminal.readingChanged = { [weak self] in self?.refreshReadingDocument(outputChanged: $0) }
+            readingView.rectFromGrid = { [weak self] in self?.readingRectFromGrid($0) ?? .zero }
+            readingView.pointToGrid = { [weak self] point in self?.readingPointToGrid(point) ?? CGPoint(x: -1, y: -1) }
+            readingView.page = { [weak self] in self?.pageReading(forward: $0) ?? false }
+            readingView.panHorizontal = { [weak self] in self?.panReading(forward: $0) ?? false }
+        }
+
+        required init?(coder: NSCoder) { nil }
+
+        func scrollViewDidScroll(_ scrollView: UIScrollView) {
+            guard scrollView === scroll else { return }
+            refreshReadingDocument()
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            scroll.frame = bounds
+            readingView.frame = bounds
+            if let grid = fixedGrid {
+                preserveGrid(grid)
+                terminal.frame = fixedGridFrame()
+                preserveGrid(grid)
+            } else {
+                let grid = terminal.getOptimalFrameSize()
+                let columns = max(1, terminal.getTerminal().cols)
+                let rows = max(1, terminal.getTerminal().rows)
+                let pixel = 1 / max(1, traitCollection.displayScale)
+                // Large accessibility fonts can require horizontal scrolling
+                // to preserve the protocol's minimum 20-column input grid.
+                terminal.frame = CGRect(origin: .zero, size: CGSize(
+                    width: max(bounds.width, grid.width / CGFloat(columns) * 20 + pixel),
+                    height: max(bounds.height, grid.height / CGFloat(rows) * 5 + pixel)
+                ))
+            }
+            scroll.contentSize = terminal.frame.size
+            refreshReadingDocument()
+        }
+
+        func setInteractive(_ enabled: Bool) {
+            guard !enabled else { return }
+            terminal.disableInput()
+            if frozenGrid == nil {
+                frozenGrid = (terminal.getTerminal().cols, terminal.getTerminal().rows)
+                setNeedsLayout()
+            }
+        }
+
+        func updateFontSize(_ size: CGFloat) {
+            guard terminal.font.pointSize != size else { return }
+            // SwiftTerm's font setter resizes from the old frame. A fixed grid
+            // must keep its rows/columns while its physical cell size changes.
+            terminal.frame = .zero
+            terminal.font = .monospacedSystemFont(ofSize: size, weight: .regular)
+            if let grid = fixedGrid {
+                preserveGrid(grid)
+                terminal.frame = fixedGridFrame()
+            }
+            setNeedsLayout()
+        }
+
+        private var fixedGrid: (columns: Int, rows: Int)? {
+            mode == .view ? (session.columns, session.rows) : frozenGrid
+        }
+
+        private func preserveGrid(_ grid: (columns: Int, rows: Int)) {
+            if terminal.getTerminal().cols != grid.columns || terminal.getTerminal().rows != grid.rows {
+                terminal.getTerminal().resize(cols: grid.columns, rows: grid.rows)
+                terminal.sizeChanged(source: terminal.getTerminal())
+            }
+        }
+
+        private func fixedGridFrame() -> CGRect {
+            var frame = terminal.getOptimalFrameSize()
+            // SwiftTerm floors frame/cell when laying out. One physical pixel
+            // prevents an exact N-cell product rounding back down to N-1.
+            let pixel = 1 / max(1, traitCollection.displayScale)
+            frame.size.width += pixel
+            frame.size.height += pixel
+            return frame
+        }
+
+        private func updateColors() {
+            let dark = overrideUserInterfaceStyle == .dark
+                || (overrideUserInterfaceStyle == .unspecified && traitCollection.userInterfaceStyle == .dark)
+            terminal.nativeBackgroundColor = highContrast ? (dark ? .black : .white) : UIColor.systemBackground.resolvedColor(with: traitCollection)
+            terminal.nativeForegroundColor = highContrast ? (dark ? .white : .black) : UIColor.label.resolvedColor(with: traitCollection)
+            terminal.caretColor = dark ? .white : .black
+            backgroundColor = terminal.nativeBackgroundColor
+            if paletteDark == nil || highContrast {
+                terminal.installColors(TerminalPalette.colors(highContrast: highContrast, dark: dark))
+            }
+            paletteDark = dark
+        }
+
+        func updateAppearance(highContrast: Bool, scheme: ColorScheme?) {
+            let style: UIUserInterfaceStyle = scheme == .dark ? .dark : (scheme == .light ? .light : .unspecified)
+            guard overrideUserInterfaceStyle != style || self.highContrast != highContrast || paletteDark == nil else { return }
+            overrideUserInterfaceStyle = style
+            let previous = self.highContrast
+            self.highContrast = highContrast
+            if previous && !highContrast { terminal.installColors(TerminalPalette.colors(highContrast: false, dark: false)) }
+            updateColors()
+        }
+
+        func applyGeometry(_ geometry: LocalSessionInfo) {
+            session = geometry
+            if mode == .view || frozenGrid != nil { frozenGrid = (geometry.columns, geometry.rows) }
+            readingView.clearReadingSelection()
+            setNeedsLayout()
+            layoutIfNeeded()
+            refreshReadingDocument()
+        }
+
+        private var cellSize: CGSize {
+            let grid = terminal.getOptimalFrameSize(), core = terminal.getTerminal()
+            return CGSize(width: grid.width / CGFloat(max(1, core.cols)), height: grid.height / CGFloat(max(1, core.rows)))
+        }
+
+        private func readingRectFromGrid(_ grid: CGRect) -> CGRect {
+            let base = CGFloat(terminal.getTerminal().getTopVisibleRow()) * cellSize.height
+            return terminal.convert(grid.offsetBy(dx: 0, dy: base), to: readingView)
+        }
+
+        private func readingPointToGrid(_ point: CGPoint) -> CGPoint {
+            let local = terminal.convert(point, from: readingView)
+            return CGPoint(x: local.x, y: local.y - CGFloat(terminal.getTerminal().getTopVisibleRow()) * cellSize.height)
+        }
+
+        func refreshReadingDocument(outputChanged: Bool = false) {
+            let core = terminal.getTerminal()
+            guard !core.synchronizedOutputActive, !terminal.bounds.isEmpty else { return }
+            let visible = terminal.convert(bounds, from: self).intersection(terminal.bounds)
+            let origin = CGPoint(x: 0, y: CGFloat(core.getTopVisibleRow()) * cellSize.height)
+            let page = TerminalAXViewport.cells(in: visible, origin: origin, cellSize: cellSize, columns: core.cols, rows: core.rows)
+            let cursor = core.getCursorLocation()
+            let liveCursor = !terminal.canScroll || terminal.scrollPosition >= 0.999 || core.isCurrentBufferAlternate
+                ? (row: cursor.y, column: min(cursor.x, core.cols)) : nil
+            let document = TerminalAXDocument.make(terminal: core, rows: page.rows, columns: page.columns, cursor: liveCursor)
+            readingView.update(document: document, cellSize: cellSize, font: terminal.font,
+                               announceOutput: outputChanged && announceOutput)
+        }
+
+        func pageReading(forward: Bool) -> Bool {
+            let core = terminal.getTerminal(), previous = core.getTopVisibleRow()
+            // SwiftTerm sends application PageUp/PageDown keys in its alternate
+            // buffer. Reading actions must only move the local viewport.
+            if !core.isCurrentBufferAlternate {
+                if forward { terminal.pageDown() } else { terminal.pageUp() }
+            }
+            if previous == core.getTopVisibleRow() {
+                let maximum = max(0, scroll.contentSize.height - scroll.bounds.height)
+                let target = max(0, min(maximum, scroll.contentOffset.y + (forward ? 1 : -1) * scroll.bounds.height))
+                guard target != scroll.contentOffset.y else { return false }
+                scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: target), animated: false)
+            }
+            refreshReadingDocument()
+            return true
+        }
+
+        func panReading(forward: Bool) -> Bool {
+            let maximum = max(0, scroll.contentSize.width - scroll.bounds.width)
+            let target = max(0, min(maximum, scroll.contentOffset.x + (forward ? 1 : -1) * scroll.bounds.width))
+            guard target != scroll.contentOffset.x else { return false }
+            scroll.setContentOffset(CGPoint(x: target, y: scroll.contentOffset.y), animated: false)
+            refreshReadingDocument()
+            return true
+        }
+    }
+
+    @MainActor final class TerminalInputView: TerminalView {
+        private let mode: LocalAttachmentMode
+        private var inputEnabled: Bool
+
+        init(mode: LocalAttachmentMode, session: LocalSessionInfo, fontSize: CGFloat, isInteractive: Bool) {
+            TerminalView.textInputDebugEnabled = false
+            self.mode = mode
+            inputEnabled = isInteractive
+            super.init(frame: .zero, font: .monospacedSystemFont(ofSize: fontSize, weight: .regular),
+                       options: TerminalOptions(cols: session.columns, rows: session.rows))
+        }
+
+        required init?(coder: NSCoder) { nil }
+        override var isAccessibilityElement: Bool {
+            get { false }
+            set { }
+        }
+        override var canBecomeFirstResponder: Bool { mode == .control && inputEnabled }
+
+        func disableInput() { inputEnabled = false }
+
+        override func insertText(_ text: String) {
+            guard mode == .control, inputEnabled else { return }
+            super.insertText(text)
+        }
+
+        override func deleteBackward() {
+            guard mode == .control, inputEnabled else { return }
+            super.deleteBackward()
+        }
+
+        var geometryChanged: ((LocalSessionInfo) -> Void)?
+        var readingChanged: ((Bool) -> Void)?
+
+        func applyGeometry(_ session: LocalSessionInfo) {
+            if getTerminal().cols != session.columns || getTerminal().rows != session.rows {
+                getTerminal().resize(cols: session.columns, rows: session.rows)
+                sizeChanged(source: getTerminal())
+            }
+            geometryChanged?(session)
+        }
+
+        override func selectionChanged(source: Terminal) {
+            super.selectionChanged(source: source)
+            readingChanged?(false)
+        }
+    }
+
+    @MainActor final class Coordinator: NSObject, @preconcurrency TerminalViewDelegate {
+        private var keyboardRequest: Int
+        private var keyboardGeneration: UInt64 = 0
+        private weak var terminal: TerminalInputView?
+        private var isInteractive: Bool
+        private let attachment: RemoteTerminalAttachment
+        private let mode: LocalAttachmentMode
+        private let onFailure: (Error) -> Void
+        private let onEnded: () -> Void
+        private var outputTask: Task<Void, Never>?
+        private var inputTask: Task<Void, Never>?
+        private var resizeTask: Task<Void, Never>?
+        private var inputQueue: [Data] = []
+        private var inputBytes = 0
+        private var pendingSize: (Int, Int)?
+        private var resizing = false
+        private var stopped = false
+        private var serverGrid: (Int, Int)
+
+        init(attachment: RemoteTerminalAttachment, mode: LocalAttachmentMode, keyboardRequest: Int,
+             isInteractive: Bool,
+             onFailure: @escaping (Error) -> Void, onEnded: @escaping () -> Void) {
+            self.attachment = attachment
+            self.mode = mode
+            self.keyboardRequest = keyboardRequest
+            self.isInteractive = isInteractive
+            self.onFailure = onFailure
+            self.onEnded = onEnded
+            serverGrid = (attachment.session.columns, attachment.session.rows)
+        }
+
+        func setInteractive(_ enabled: Bool) {
+            guard !enabled, isInteractive else { return }
+            isInteractive = false
+            terminal?.disableInput()
+            keyboardGeneration &+= 1
+            inputQueue.removeAll()
+            inputBytes = 0
+            pendingSize = nil
+            // Canceling an in-flight Core RPC also closes its channel. Let that
+            // single ACK finish so a model-owned detach can complete normally.
+            if !resizing { resizeTask?.cancel() }
+            dismissKeyboard()
+        }
+
+        func start(_ view: TerminalInputView) {
+            terminal = view
+            outputTask = Task { [weak self, weak view, attachment] in
+                do {
+                    for try await event in attachment.events {
+                        try Task.checkCancellation()
+                        guard let self, !self.stopped, let view else { return }
+                        switch event {
+                        case .geometry(let session):
+                            self.serverGrid = (session.columns, session.rows)
+                            view.applyGeometry(session)
+                        case .output(let data):
+                            view.feed(byteArray: Array(data)[...])
+                            view.readingChanged?(true)
+                        }
+                    }
+                    guard let self, !self.stopped, !Task.isCancelled else { return }
+                    self.stop()
+                    self.onEnded()
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    self?.fail(error)
+                }
+            }
+        }
+
+        func requestKeyboardToggle(_ request: Int, terminal: TerminalInputView) {
+            guard request != keyboardRequest else { return }
+            keyboardRequest = request
+            keyboardGeneration &+= 1
+            let generation = keyboardGeneration
+            guard !stopped, isInteractive, mode == .control, self.terminal === terminal else { return }
+            // Focus changes reenter SwiftUI's focus graph. Run after this
+            // representable update, and invalidate requests from old views.
+            DispatchQueue.main.async { [weak self, weak terminal] in
+                guard let self, let terminal, !self.stopped, self.isInteractive, self.mode == .control,
+                      self.keyboardGeneration == generation, self.keyboardRequest == request,
+                      self.terminal === terminal, terminal.window != nil else { return }
+                if terminal.isFirstResponder { _ = terminal.resignFirstResponder() }
+                else { _ = terminal.becomeFirstResponder() }
+            }
+        }
+
+        func stop() {
+            guard !stopped else { return }
+            stopped = true
+            keyboardGeneration &+= 1
+            terminal?.disableInput()
+            dismissKeyboard()
+            terminal = nil
+            outputTask?.cancel()
+            inputTask?.cancel()
+            resizeTask?.cancel()
+            inputQueue.removeAll()
+            inputBytes = 0
+            Task { [attachment] in await attachment.disconnect() }
+        }
+
+        private func dismissKeyboard() {
+            let previousTerminal = terminal
+            DispatchQueue.main.async { [weak previousTerminal] in
+                guard let previousTerminal, previousTerminal.isFirstResponder else { return }
+                _ = previousTerminal.resignFirstResponder()
+            }
+        }
+
+        func send(source: TerminalView, data: ArraySlice<UInt8>) {
+            guard !stopped, isInteractive, mode == .control, terminal === source, !data.isEmpty else { return }
+            let pieces = (data.count + 16 * 1024 - 1) / (16 * 1024)
+            guard inputBytes + data.count <= 64 * 1024, inputQueue.count + pieces <= 256 else {
+                fail(RelayError.backpressure)
+                return
+            }
+            let bytes = Data(data)
+            for offset in stride(from: 0, to: bytes.count, by: 16 * 1024) {
+                let piece = bytes.subdata(in: offset..<min(offset + 16 * 1024, bytes.count))
+                inputQueue.append(piece)
+                inputBytes += piece.count
+            }
+            guard inputTask == nil else { return }
+            inputTask = Task { [weak self, attachment] in
+                defer { self?.inputTask = nil }
+                do {
+                    while let self, !self.stopped, self.isInteractive, !self.inputQueue.isEmpty {
+                        let piece = self.inputQueue.removeFirst()
+                        try await attachment.send(piece)
+                        try Task.checkCancellation()
+                        guard !self.stopped, self.isInteractive else { break }
+                        self.inputBytes -= piece.count
+                    }
+                } catch {
+                    guard !Task.isCancelled, self?.isInteractive == true else { return }
+                    self?.fail(error)
+                }
+            }
+        }
+
+        func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {
+            guard !stopped, isInteractive, mode == .control, terminal === source else { return }
+            if newCols == serverGrid.0 && newRows == serverGrid.1 { return }
+            pendingSize = (min(500, max(20, newCols)), min(200, max(5, newRows)))
+            guard resizeTask == nil else { return }
+            resizeTask = Task { [weak self, attachment] in
+                defer { self?.resizeTask = nil; self?.resizing = false }
+                do {
+                    while let self, !self.stopped, self.isInteractive, self.pendingSize != nil {
+                        try await Task.sleep(for: .milliseconds(100))
+                        guard self.isInteractive, !self.stopped, let size = self.pendingSize else { break }
+                        self.pendingSize = nil
+                        self.resizing = true
+                        try await attachment.resize(columns: size.0, rows: size.1)
+                        self.resizing = false
+                    }
+                } catch {
+                    guard !Task.isCancelled, self?.isInteractive == true else { return }
+                    self?.fail(error)
+                }
+            }
+        }
+
+        func clipboardCopy(source: TerminalView, content: Data) {}
+        func clipboardRead(source: TerminalView) -> Data? { nil }
+        func setTerminalTitle(source: TerminalView, title: String) {}
+        func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
+        func scrolled(source: TerminalView, position: Double) { (source as? TerminalInputView)?.readingChanged?(false) }
+        func rangeChanged(source: TerminalView, startY: Int, endY: Int) { (source as? TerminalInputView)?.readingChanged?(false) }
+        func bell(source: TerminalView) {}
+        func iTermContent(source: TerminalView, content: ArraySlice<UInt8>) {}
+
+        func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {
+            guard !link.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
+                  let url = URL(string: link), let scheme = url.scheme?.lowercased(),
+                  ["http", "https"].contains(scheme), let host = url.host, !host.isEmpty,
+                  url.user == nil, url.password == nil else { return }
+            UIApplication.shared.open(url)
+        }
+
+        private func fail(_ error: Error) {
+            guard !stopped else { return }
+            stop()
+            onFailure(error)
+        }
+    }
+}
+#endif
