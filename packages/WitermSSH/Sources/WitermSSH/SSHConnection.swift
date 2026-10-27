@@ -58,7 +58,7 @@ public actor SSHConnection {
             } catch {
                 cancellation.finish()
                 for connection in connected.reversed() { try? await connection.client.close() }
-                throw error
+                throw SSHFailure.classify(error)
             }
         } onCancel: {
             cancellation.cancel()

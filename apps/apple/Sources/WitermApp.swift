@@ -1,4 +1,8 @@
 import SwiftUI
+#if os(macOS)
+import AppKit
+import SwiftTerm
+#endif
 
 @main
 struct WitermApp: App {
@@ -32,8 +36,8 @@ struct WitermApp: App {
         #if os(macOS)
             .defaultSize(width: 1180, height: 760)
             .windowResizability(.contentMinSize)
-            .commands { WitermCommands() }
         #endif
+            .commands { WitermCommands() }
     }
 
     private var workspace: some View {
@@ -50,11 +54,55 @@ struct WitermApp: App {
 }
 
 #if os(macOS)
-/// Actions the focused workspace window offers to the menu bar.
+/// Sends a standard text-finder action up the responder chain, as AppKit's
+/// own Find menu items do; SwiftTerm reads the action from the item's tag.
+@MainActor enum TerminalFind {
+    static func send(_ action: NSTextFinder.Action) {
+        let item = NSMenuItem()
+        item.tag = action.rawValue
+        NSApp.sendAction(#selector(NSResponder.performTextFinderAction(_:)), to: nil, from: item)
+    }
+}
+#endif
+
+#if os(macOS)
+/// Sends a snippet up the responder chain to the focused terminal, or beeps
+/// when no terminal has focus.
+@MainActor enum TerminalSnippet {
+    static func insert(_ snippet: CommandSnippet) {
+        let item = NSMenuItem()
+        item.representedObject = SnippetBox(snippet)
+        if !NSApp.sendAction(#selector(TerminalView.witermInsertSnippet(_:)), to: nil, from: item) { NSSound.beep() }
+    }
+}
+
+final class SnippetBox: NSObject {
+    let snippet: CommandSnippet
+    init(_ snippet: CommandSnippet) { self.snippet = snippet }
+}
+
+extension TerminalView {
+    /// Input goes through the terminal's delegate like typing, so a view-only
+    /// session drops it.
+    @objc func witermInsertSnippet(_ sender: Any?) {
+        guard let snippet = ((sender as? NSMenuItem)?.representedObject as? SnippetBox)?.snippet else { return }
+        send(snippet.input(bracketedPaste: getTerminal().bracketedPasteMode))
+    }
+}
+#endif
+
+/// Actions the focused workspace window offers to the menu bar, and to the
+/// iPad's hardware-keyboard shortcut list.
 struct WorkspaceActions {
     var newSession: (() -> Void)?
     var newSSHConnection: () -> Void
+    var importSSHHosts: (() -> Void)?
     var refresh: () -> Void
+    /// Open terminals in sidebar order; the first nine get ⌘1–⌘9.
+    var terminalNames: [String] = []
+    var showTerminal: (Int) -> Void = { _ in }
+    /// Moves by one open terminal (+1 or −1), wrapping around.
+    var showAdjacentTerminal: (Int) -> Void = { _ in }
 }
 
 extension FocusedValues {
@@ -64,15 +112,20 @@ extension FocusedValues {
 struct WitermCommands: Commands {
     @FocusedValue(\.workspaceActions) private var actions
     @AppStorage(TerminalFontSize.key) private var fontSize = TerminalFontSize.standard
+    @AppStorage(CommandSnippets.key) private var snippets = Data()
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
+            #if os(macOS)
             Button(String(localized: "New Terminal Session", bundle: .main)) { actions?.newSession?() }
                 .keyboardShortcut("n", modifiers: .command)
                 .disabled(actions?.newSession == nil)
+            #endif
             Button(String(localized: "New SSH Connection", bundle: .main)) { actions?.newSSHConnection() }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
                 .disabled(actions == nil)
+            Button(String(localized: "Import SSH Hosts…", bundle: .main)) { actions?.importSSHHosts?() }
+                .disabled(actions?.importSSHHosts == nil)
         }
         CommandGroup(before: .toolbar) {
             Button(String(localized: "Refresh", bundle: .main)) { actions?.refresh() }
@@ -89,6 +142,51 @@ struct WitermCommands: Commands {
                 .keyboardShortcut("0", modifiers: .command)
             Divider()
         }
+        #if os(macOS)
+        // Routed to the focused terminal, whose find bar overlays the text and
+        // only scrolls this view; the session's grid is never resized.
+        CommandGroup(replacing: .textEditing) {
+            Button(String(localized: "Find…", bundle: .main)) { TerminalFind.send(.showFindInterface) }
+                .keyboardShortcut("f", modifiers: .command)
+            Button(String(localized: "Find Next", bundle: .main)) { TerminalFind.send(.nextMatch) }
+                .keyboardShortcut("g", modifiers: .command)
+            Button(String(localized: "Find Previous", bundle: .main)) { TerminalFind.send(.previousMatch) }
+                .keyboardShortcut("g", modifiers: [.command, .shift])
+            Button(String(localized: "Use Selection for Find", bundle: .main)) { TerminalFind.send(.setSearchString) }
+                .keyboardShortcut("e", modifiers: .command)
+        }
+        #endif
+        CommandMenu(String(localized: "Terminal", bundle: .main)) {
+            let names = actions?.terminalNames ?? []
+            Button(String(localized: "Show Next Terminal", bundle: .main)) { actions?.showAdjacentTerminal(1) }
+                .keyboardShortcut("]", modifiers: [.command, .shift])
+                .disabled(names.count < 2)
+            Button(String(localized: "Show Previous Terminal", bundle: .main)) { actions?.showAdjacentTerminal(-1) }
+                .keyboardShortcut("[", modifiers: [.command, .shift])
+                .disabled(names.count < 2)
+            if !names.isEmpty { Divider() }
+            ForEach(Array(names.prefix(9).enumerated()), id: \.offset) { index, name in
+                Button(name) { actions?.showTerminal(index) }
+                    .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
+            }
+            #if os(macOS)
+            Divider()
+            // Typed into the focused terminal; a view-only terminal ignores it.
+            Menu(String(localized: "Insert Snippet", bundle: .main)) {
+                let saved = CommandSnippets.decode(snippets)
+                if saved.isEmpty {
+                    Text(String(localized: "Add snippets in Settings → Snippets.", bundle: .main))
+                }
+                ForEach(Array(saved.enumerated()), id: \.element.id) { index, snippet in
+                    if index < 9 {
+                        Button(snippet.name) { TerminalSnippet.insert(snippet) }
+                            .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: [.command, .option])
+                    } else {
+                        Button(snippet.name) { TerminalSnippet.insert(snippet) }
+                    }
+                }
+            }
+            #endif
+        }
     }
 }
-#endif

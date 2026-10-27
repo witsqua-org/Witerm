@@ -10,6 +10,7 @@ struct NativeTerminalView: NSViewRepresentable {
     var fontSize: CGFloat = 14
     var highContrast: Bool = false
     var preferredColorScheme: ColorScheme? = nil
+    var palette: TerminalColorScheme = .system
     var announceOutput: Bool = false
     let onFailure: (Error) -> Void
     let onEnded: () -> Void
@@ -22,7 +23,7 @@ struct NativeTerminalView: NSViewRepresentable {
         let surface = TerminalSurface(
             mode: mode, columns: attachment.session.columns, rows: attachment.session.rows
         )
-        surface.updateAppearance(fontSize: fontSize, highContrast: highContrast, scheme: preferredColorScheme)
+        surface.updateAppearance(fontSize: fontSize, highContrast: highContrast, scheme: preferredColorScheme, palette: palette)
         surface.terminal.announceOutput = announceOutput
         surface.terminal.terminalDelegate = context.coordinator
         context.coordinator.start(surface.terminal)
@@ -30,7 +31,7 @@ struct NativeTerminalView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: TerminalSurface, context: Context) {
-        nsView.updateAppearance(fontSize: fontSize, highContrast: highContrast, scheme: preferredColorScheme)
+        nsView.updateAppearance(fontSize: fontSize, highContrast: highContrast, scheme: preferredColorScheme, palette: palette)
         nsView.terminal.announceOutput = announceOutput
     }
 
@@ -47,6 +48,8 @@ struct NativeTerminalView: NSViewRepresentable {
         private var rows: Int
         private var contrast = false
         private var installedContrast: Bool?
+        private var palette = TerminalColorScheme.system
+        private var installedPalette: TerminalColorScheme?
         private var paletteDark: Bool?
         private var initializedReadingViewport = false
         private var pendingReadingAnchor: CGPoint?
@@ -79,8 +82,10 @@ struct NativeTerminalView: NSViewRepresentable {
 
         required init?(coder: NSCoder) { nil }
 
-        func updateAppearance(fontSize: CGFloat, highContrast: Bool, scheme: ColorScheme?) {
+        func updateAppearance(fontSize: CGFloat, highContrast: Bool, scheme: ColorScheme?,
+                              palette: TerminalColorScheme = .system) {
             contrast = highContrast
+            self.palette = palette
             appearance = scheme.map { NSAppearance(named: $0 == .dark ? .darkAqua : .aqua) } ?? nil
             if fontSize.isFinite, fontSize > 0, terminal.font.pointSize != fontSize {
                 if mode == .view, pendingReadingAnchor == nil {
@@ -100,15 +105,21 @@ struct NativeTerminalView: NSViewRepresentable {
 
         private func updateColors() {
             let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            // Enhanced contrast takes precedence over a color scheme.
+            let values = contrast ? nil : palette.values(dark: dark)
             effectiveAppearance.performAsCurrentDrawingAppearance {
-                terminal.nativeBackgroundColor = contrast ? (dark ? .black : .white) : .textBackgroundColor
-                terminal.nativeForegroundColor = contrast ? (dark ? .white : .black) : .textColor
+                terminal.nativeBackgroundColor = contrast ? (dark ? .black : .white)
+                    : values.map { NSColor(terminalRGB: $0.background) } ?? .textBackgroundColor
+                terminal.nativeForegroundColor = contrast ? (dark ? .white : .black)
+                    : values.map { NSColor(terminalRGB: $0.foreground) } ?? .textColor
                 terminal.caretColor = dark ? .white : .black
                 scroll.backgroundColor = terminal.nativeBackgroundColor
             }
-            if installedContrast != contrast || paletteDark == nil || (contrast && paletteDark != dark) {
-                terminal.installColors(TerminalPalette.colors(highContrast: contrast, dark: dark))
+            if installedContrast != contrast || installedPalette != palette || paletteDark == nil
+                || ((contrast || palette != .system) && paletteDark != dark) {
+                terminal.installColors(TerminalPalette.colors(highContrast: contrast, dark: dark, scheme: palette))
                 installedContrast = contrast
+                installedPalette = palette
             }
             paletteDark = dark
         }
@@ -286,7 +297,7 @@ struct NativeTerminalView: NSViewRepresentable {
         func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
         func scrolled(source: TerminalView, position: Double) { (source as? MacTerminalTextView)?.refreshReadingDocument() }
         func rangeChanged(source: TerminalView, startY: Int, endY: Int) { (source as? MacTerminalTextView)?.refreshReadingDocument() }
-        func bell(source: TerminalView) {}
+        func bell(source: TerminalView) { TerminalBell.ring() }
         func iTermContent(source: TerminalView, content: ArraySlice<UInt8>) {}
 
         func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {

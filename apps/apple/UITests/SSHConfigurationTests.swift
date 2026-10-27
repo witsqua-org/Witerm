@@ -51,7 +51,7 @@ import XCTest
                 guard menu.exists else { return }
                 menu.tap()
                 app.buttons["Delete Connection"].tap()
-                app.alerts.buttons["Delete"].tap()
+                XCTAssertTrue(app.buttons["sshUndoRemove"].waitForExistence(timeout: 5))
             }
         }
         menu.tap()
@@ -78,6 +78,32 @@ import XCTest
         XCTAssertTrue(clear.waitForExistence(timeout: 5))
         clear.tap()
         XCTAssertTrue(row.waitForExistence(timeout: 5))
+    }
+
+    /// Generating a key never saves or sends it; the form only shows the public half.
+    func testGeneratedKeyShowsPublicKeyWithoutSaving() {
+        setOrientation()
+        let app = XCUIApplication()
+        app.launchArguments = ["-witerm.startTask", "ssh", "-AppleLanguages", "(en)"]
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.buttons["newSSHProfile"].waitForExistence(timeout: 10))
+        app.buttons["newSSHProfile"].tap()
+        let picker = app.buttons["sshAuthentication"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 5))
+        picker.tap()
+        app.buttons["Private Key"].firstMatch.tap()
+        let generate = app.buttons["sshGenerateKey"]
+        // Bring the button clear of the bottom edge, where a tap reaches the home indicator.
+        let bottom = app.windows.firstMatch.frame.maxY - 120
+        for _ in 0..<4 where !generate.isHittable || generate.frame.maxY > bottom { app.swipeUp() }
+        generate.tap()
+        let publicKey = app.staticTexts["sshGeneratedPublicKey"]
+        XCTAssertTrue(publicKey.waitForExistence(timeout: 5))
+        XCTAssertTrue(publicKey.label.hasPrefix("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5"))
+        XCTAssertTrue(app.buttons["sshCopyPublicKey"].exists)
+        app.buttons["Cancel"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["newSSHProfile"].waitForExistence(timeout: 5))
     }
 
     func testInvalidConfigurationShowsFieldErrorsBeforeConnecting() {

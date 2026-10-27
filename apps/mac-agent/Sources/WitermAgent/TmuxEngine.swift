@@ -179,6 +179,17 @@ final class TmuxEngine {
         if shared.remove(id) != nil { try state.saveSharing(shared) }
     }
 
+    /// The display name is metadata only; tmux keeps the internal name.
+    func rename(_ id: String, to name: String) throws -> LocalSessionInfo {
+        let old = try session(id)
+        let record = LocalSessionInfo(id: id, name: name, createdAt: old.createdAt, columns: old.columns, rows: old.rows)
+        var next = records
+        next[id] = record
+        try state.saveMetadata(next)
+        records = next
+        return record
+    }
+
     func setShared(_ id: String, _ value: Bool) throws {
         _ = try session(id)
         var next = shared

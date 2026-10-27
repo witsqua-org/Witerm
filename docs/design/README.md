@@ -4,7 +4,7 @@ Witerm is a calm, professional tool built from native iOS 27 and macOS controls.
 
 Follow Apple's guidance on [Liquid Glass](https://developer.apple.com/documentation/TechnologyOverviews/liquid-glass), [materials](https://developer.apple.com/design/human-interface-guidelines/materials), [motion](https://developer.apple.com/design/human-interface-guidelines/motion), and [accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility). Glass belongs to controls; content sits on solid surfaces.
 
-The [HCI improvements](hci-improvements.md) page records the most recent round of interaction changes and where they live in code.
+The [HCI improvements](hci-improvements.md) page records each round of interaction changes and where they live in code.
 
 ## Brand
 
@@ -42,11 +42,11 @@ The interface is neutral graphite. `IdentityHue` gives each SSH host and paired 
 
 One sidebar with three sections; the detail pane shows the selection.
 
-- **This Mac.** Local sessions, including ones started with `witerm`. Selecting one attaches with control. The context menu offers View Only, Share or Stop Sharing, Continue on iPhone, and End Session. Shared sessions show an antenna. Under the terminal header, a bar says whether paired devices can reach the session and who's connected. An empty list points to `witerm new`.
+- **This Mac.** Local sessions, including ones started with `witerm`. Selecting one attaches with control. The context menu offers View Only, Share or Stop Sharing, Continue on iPhone, Rename…, and End Session. Shared sessions show an antenna. Under the terminal header, a bar says whether paired devices can reach the session and who's connected. An empty list points to `witerm new`.
 - **SSH Hosts.** The detail pane shows the route, Connect, Edit, and More (Host Keys, Delete), and becomes the terminal once connected. Connected hosts show a filled icon.
 - **Paired Devices.** Allow Remote Access and pairing, one row per saved server.
 
-A footer opens Settings (⌘,) and summarizes server health ("3 Servers · All Reachable"). Settings has General, Terminal, and Command Line. Menus: File → New Terminal Session (⌘N) and New SSH Connection (⇧⌘N); View → Refresh (⌘R). Sidebar search also matches local session names.
+A footer opens Settings (⌘,) and summarizes server health ("3 Servers · All Reachable"). Settings has General, Terminal, Snippets, and Command Line. Menus: File → New Terminal Session (⌘N), New SSH Connection (⇧⌘N), and Import SSH Hosts…; Edit → Find… (⌘F), Find Next (⌘G), Find Previous (⇧⌘G), Use Selection for Find (⌘E); View → Refresh (⌘R); Terminal → open terminals by name (⌘1–⌘9), Show Next and Previous Terminal (⇧⌘] and ⇧⌘[), Insert Snippet (⌥⌘1–⌥⌘9). Sidebar search also matches local session names.
 
 ### iOS and iPadOS
 
@@ -54,9 +54,9 @@ On first use, people choose **Connect to an SSH Host** or **Continue from My Mac
 
 - **Devices.** Server setup at first. Once a server is verified: paired devices grouped by server, then sessions, then the terminal. A server with a problem says why in its own section. Device rows lead with name and permission; the full fingerprint is in Device Details.
 - **SSH.** Saved hosts with search, favorites, and recent-first ordering. On a regular-width iPad the host list stays beside the terminal and the tab bar stays available; compact layouts use a Hosts back button.
-- **Settings.** One section per server (status, check, edit, Device Pairing, remove), plus Terminal Display.
+- **Settings.** One section per server (status, check, edit, Device Pairing, remove), plus Terminal Display: text size, color scheme, contrast, Keyboard Row, Snippets, bell, and VoiceOver output.
 
-The tab bar hides while a terminal is open on compact layouts.
+The tab bar hides while a terminal is open on compact layouts. With a hardware keyboard, the same menu commands work (except New Terminal Session), and holding ⌘ lists them.
 
 ### Flows
 
@@ -65,6 +65,8 @@ The tab bar hides while a terminal is open on compact layouts.
 - **Saving vs. connecting.** New hosts offer Save and Connect or Save Without Connecting; editing uses Save and never connects. Non-default ports stay visible; other advanced options sit in disclosure groups. Errors appear beside their field, and focus moves to the first one. Changing the endpoint clears its credentials, with an explanation.
 - **Connection lifetime.** iOS explains that SSH closes in the background and keeps the host on screen with Reconnect afterwards. Reconnecting opens a new shell and never replays input. Local Mac sessions keep running after a disconnect; End Session lives under More and keeps its confirmation.
 - **Mobile keys.** A sideways-scrolling row of Esc, Ctrl, Tab, Ctrl+C, Paste, and arrows with 44 pt targets and labels. Ctrl announces its state and resets after one key. Multiline paste is confirmed first and discarded if the connection drops. View-only terminals can't send these. Reading selection stays separate from IME selection.
+- **Deleting a host.** Immediate, with an Undo bar for 10 seconds instead of a confirmation. Undo restores the host's credentials, color, favorite, and order. Ending a Mac session, revoking a device, and deleting remote files keep their confirmations, because those can't be undone.
+- **Offline.** SSH and paired-device views show **No Network Connection** as soon as the device loses its network. When it returns, servers are rechecked; terminals still wait for an explicit Reconnect.
 - **Several servers.** Up to 8, used at once; a second spelling of the same server is rejected. Identities and grants belong to one server. Removing a server hides its devices without revoking them, and on the Mac turns off remote access through it.
 
 ## Interaction principles
@@ -72,7 +74,8 @@ The tab bar hides while a terminal is open on compact layouts.
 - **One clear next action.** Before setup that's "Add Server". Never show actions that can't work yet.
 - **Honest status.** Tell apart not set up, checking, reachable, and failed, and show when a check last succeeded. Servers are rechecked at launch and on return to the foreground, without tearing down an open terminal.
 - **User control.** Anything that waits can be cancelled, and stale results never overwrite newer ones.
-- **Specific recovery.** Validate addresses before saving. Distinguish offline, timeout, DNS, certificate, version, and server errors, each with a next step.
+- **Specific recovery.** Validate addresses before saving. Distinguish offline, timeout, DNS, certificate, version, and server errors, each with a next step. SSH does the same for DNS, refused, timeout, unreachable, jump, sign-in, and algorithm failures; a rejected credential opens the form rather than retrying it.
+- **Undo over confirmation** where everything can be restored; confirm only what can't be.
 - **Native conventions.** Standard sidebars, tabs, sheets, menus, shortcuts, and copy behavior. Return submits, Escape cancels, ⌘Return runs the Mac's primary action.
 
 ## Components
@@ -84,6 +87,7 @@ Shared components are in `apps/apple/Sources/Design/Components.swift`. Use them 
 | `PrimaryButton` | The one prominent action in a view. Glass on iOS/macOS 26+; bordered with Reduce Transparency or on older systems. |
 | `witermCard()` | Solid content surface: 20 pt corners and padding, Surface fill. |
 | `IssueBanner` | A recoverable problem with recovery text and actions. Never color alone. |
+| `OfflineBanner` | No network path, above remote work only. Takes no space when online. |
 | `ActivityRow` | Real, cancellable work in progress. No invented percentages. |
 | `StatusBadge` | Symbol plus text in a neutral, positive, or warning tone. |
 | `TerminalHeader` | Destination, input state, and actions for every terminal. The Mac omits the title (the window shows it). |
@@ -98,7 +102,8 @@ Shared components are in `apps/apple/Sources/Design/Components.swift`. Use them 
 | First appearance | 12 pt offset and fade (spring 0.6 / 0.92) | 150 ms fade |
 | State change | 5 pt offset and fade (spring 0.38 / 0.88) | 150 ms fade |
 | Waiting | Native indeterminate progress tied to the real request | Static icon and text |
-| Success or failure | Text, symbol, and haptics on iOS | Nothing extra |
+| Success or failure | Text, symbol, and haptics on iOS (server checks, pairing, SSH connect) | Nothing extra |
+| Undo bar | Rises from the bottom edge (spring 0.38 / 0.88) | 150 ms fade |
 
 No invented percentages, minimum loading times, or idle glow. With Reduce Transparency, use standard button styles and solid content.
 

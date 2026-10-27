@@ -50,6 +50,7 @@ struct SSHNativeTerminalView: NSViewRepresentable {
     let host: SSHTerminalHost
     let fontSize: CGFloat
     let highContrast: Bool
+    var palette: TerminalColorScheme = .system
     let scheme: ColorScheme?
     let announceOutput: Bool
 
@@ -61,7 +62,7 @@ struct SSHNativeTerminalView: NSViewRepresentable {
 
     func updateNSView(_ container: NSView, context: Context) {
         if host.surface.superview !== container { attach(to: container) }
-        host.surface.updateAppearance(fontSize: fontSize, highContrast: highContrast, scheme: scheme)
+        host.surface.updateAppearance(fontSize: fontSize, highContrast: highContrast, scheme: scheme, palette: palette)
         host.surface.terminal.announceOutput = announceOutput
     }
 
@@ -84,6 +85,7 @@ struct SSHNativeTerminalView: UIViewRepresentable {
     let host: SSHTerminalHost
     let fontSize: CGFloat
     let highContrast: Bool
+    var palette: TerminalColorScheme = .system
     let scheme: ColorScheme?
     let announceOutput: Bool
     let keyboardRequest: Int
@@ -97,7 +99,7 @@ struct SSHNativeTerminalView: UIViewRepresentable {
     func updateUIView(_ container: UIView, context: Context) {
         if host.surface.superview !== container { attach(to: container) }
         host.surface.updateFontSize(fontSize)
-        host.surface.updateAppearance(highContrast: highContrast, scheme: scheme)
+        host.surface.updateAppearance(highContrast: highContrast, scheme: scheme, palette: palette)
         host.surface.announceOutput = announceOutput
         host.coordinator.toggleKeyboard(keyboardRequest)
     }
@@ -263,7 +265,7 @@ struct SSHNativeTerminalView: UIViewRepresentable {
     func clipboardRead(source: TerminalView) -> Data? { nil }
     func setTerminalTitle(source: TerminalView, title: String) {}
     func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
-    func bell(source: TerminalView) {}
+    func bell(source: TerminalView) { TerminalBell.ring() }
     func iTermContent(source: TerminalView, content: ArraySlice<UInt8>) {}
     // OSC links and clipboard requests never trigger system actions implicitly.
     func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {}

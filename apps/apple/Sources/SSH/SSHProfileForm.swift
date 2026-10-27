@@ -16,6 +16,9 @@ private struct SSHHostDraft: Identifiable {
     var showPort = false
     var credentialsReset = false
     var credentialHost: SSHHost
+    /// A key made in this form, shown with its public half until the key text changes.
+    var generated: (privateKey: String, publicKey: String)?
+    var generatedPublicKey: String? { generated.flatMap { $0.privateKey == privateKey ? $0.publicKey : nil } }
     init(_ host: SSHHost, credential: SSHCredential? = nil) {
         id = host.id; hostname = host.hostname; port = String(host.port); username = host.username
         credentialHost = host
@@ -201,12 +204,26 @@ struct SSHProfileForm: View {
             Text(String(localized: "Password", bundle: .main)).tag(false)
             Text(String(localized: "Private Key", bundle: .main)).tag(true)
         }
+        .accessibilityIdentifier("sshAuthentication")
         if draft.wrappedValue.useKey {
             Text(String(localized: "OpenSSH Private Key", bundle: .main)).font(.subheadline)
-            Text(String(localized: "Use an OpenSSH private key in Ed25519 format.", bundle: .main))
+            Text(String(localized: "Use an OpenSSH private key in Ed25519 format, or generate one here. RSA keys aren't supported because they would be signed with SHA-1.", bundle: .main))
                 .font(.footnote).foregroundStyle(.secondary)
             Button(String(localized: "Import Private Key File", bundle: .main), systemImage: "square.and.arrow.down") {
                 importingKeyHost = draft.wrappedValue.id; importingKey = true
+            }
+            Button(String(localized: "Generate New Key", bundle: .main), systemImage: "key.fill") {
+                let day = Date.now.formatted(.iso8601.year().month().day())
+                let key = SSHKeyGenerator.ed25519(comment: "witerm-\(day)")
+                draft.wrappedValue.generated = key
+                draft.wrappedValue.privateKey = key.privateKey
+                draft.wrappedValue.passphrase = ""
+                draft.wrappedValue.showingPrivateKey = false
+                errors[.credential(draft.wrappedValue.id)] = nil
+            }
+            .accessibilityIdentifier("sshGenerateKey")
+            if let publicKey = draft.wrappedValue.generatedPublicKey {
+                generatedKeyDetails(publicKey, remember: draft.wrappedValue.remember)
             }
             if draft.wrappedValue.showingPrivateKey {
                 TextEditor(text: draft.privateKey)
@@ -236,11 +253,40 @@ struct SSHProfileForm: View {
             .tint(WitermTheme.positive)
     }
 
+    /// The public half goes into the host's `~/.ssh/authorized_keys`; the
+    /// private half never leaves this device.
+    @ViewBuilder private func generatedKeyDetails(_ publicKey: String, remember: Bool) -> some View {
+        Text(String(localized: "Add this public key to ~/.ssh/authorized_keys on the host, then connect.", bundle: .main))
+            .font(.footnote).foregroundStyle(.secondary)
+        Text(verbatim: publicKey)
+            .font(.system(.caption, design: .monospaced))
+            .textSelection(.enabled)
+            .accessibilityIdentifier("sshGeneratedPublicKey")
+        HStack {
+            Button(String(localized: "Copy Public Key", bundle: .main), systemImage: "doc.on.doc") {
+                #if os(macOS)
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(publicKey, forType: .string)
+                #else
+                UIPasteboard.general.string = publicKey
+                #endif
+            }
+            .accessibilityIdentifier("sshCopyPublicKey")
+            ShareLink(item: publicKey) { Label(String(localized: "Share", bundle: .main), systemImage: "square.and.arrow.up") }
+        }
+        .buttonStyle(.bordered)
+        if !remember {
+            Text(String(localized: "Turn on Save Credentials on This Device to keep this key. Otherwise it is discarded when Witerm closes.", bundle: .main))
+                .font(.caption).foregroundStyle(WitermTheme.warning)
+        }
+    }
+
     private func resetChangedEndpoint(_ draft: Binding<SSHHostDraft>) {
         guard draft.wrappedValue.host != draft.wrappedValue.credentialHost else { return }
         draft.wrappedValue.credentialsReset = draft.wrappedValue.credentialsReset || draft.wrappedValue.credential != nil
         draft.wrappedValue.password = ""; draft.wrappedValue.privateKey = ""; draft.wrappedValue.passphrase = ""
         draft.wrappedValue.showingPrivateKey = false
+        draft.wrappedValue.generated = nil
         draft.wrappedValue.remember = false
         draft.wrappedValue.credentialHost = draft.wrappedValue.host
     }
@@ -274,7 +320,9 @@ struct SSHProfileForm: View {
                 || host.username.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) {
                 errors[.username(host.id)] = String(localized: "Enter a valid username.", bundle: .main)
             }
-            if (connect || endpoint.remember), endpoint.credential == nil {
+            if endpoint.useKey, SSHKeyGenerator.isRSAPrivateKey(endpoint.privateKey) {
+                errors[.credential(host.id)] = String(localized: "This is an RSA key, which Witerm doesn't use. Generate a new Ed25519 key or load an existing one.", bundle: .main)
+            } else if (connect || endpoint.remember), endpoint.credential == nil {
                 errors[.credential(host.id)] = String(localized: "Enter a password or load a private key.", bundle: .main)
                 if endpoint.useKey {
                     if host.id == target.id { target.showingPrivateKey = true }

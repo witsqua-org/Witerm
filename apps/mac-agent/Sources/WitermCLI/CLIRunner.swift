@@ -33,6 +33,7 @@ struct CLIRunner {
         case .new(let name, let share, let detach): return try await create(name: name, share: share, detach: detach)
         case .share(let reference, let wait): return try await share(reference, wait: wait)
         case .unshare(let reference): return try await unshare(reference)
+        case .rename(let reference, let name): return try await rename(reference, to: name)
         case .attach(let reference, let view): return try await attach(reference, view: view)
         }
     }
@@ -128,6 +129,19 @@ struct CLIRunner {
             emit(SharedJSON(session: SessionJSON(updated), remote: nil))
         } else {
             print("Stopped sharing “\(updated.name)”. Paired devices were disconnected; the session keeps running.")
+        }
+        return .success
+    }
+
+    private func rename(_ reference: String, to requested: String) async throws -> CLIExit {
+        let name = try Self.sessionName(requested, directory: "/")
+        let client = try client()
+        let session = try await resolve(reference, client: client)
+        let updated = try await client.rename(sessionID: session.id, to: name)
+        if invocation.json {
+            emit(SharedJSON(session: SessionJSON(updated), remote: nil))
+        } else {
+            print("Renamed “\(session.name)” to “\(updated.name)” (\(updated.id.prefix(8))).")
         }
         return .success
     }

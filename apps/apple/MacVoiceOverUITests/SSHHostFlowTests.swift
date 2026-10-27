@@ -161,9 +161,17 @@ import XCTest
         app.buttons["Done"].firstMatch.click()
         menu.click()
         app.menuItems["Delete Connection"].click()
-        app.windows.descendants(matching: .button).matching(NSPredicate(format: "label == %@", "Delete")).firstMatch.click()
         let removed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: created)
         wait(for: [removed], timeout: 5)
+        // Deletion is undoable: the host returns with its saved credentials.
+        let undo = app.buttons["sshUndoRemove"]
+        XCTAssertTrue(undo.waitForExistence(timeout: 5))
+        undo.click()
+        XCTAssertTrue(created.waitForExistence(timeout: 5))
+        created.click()
+        menu.click()
+        app.menuItems["Delete Connection"].click()
+        wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: created)], timeout: 5)
     }
 
     private func capture(_ app: XCUIApplication, _ name: String) {

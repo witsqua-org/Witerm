@@ -4,7 +4,7 @@ import SwiftUI
 /// The selected Settings tab. Other views set it before opening Settings to
 /// land on a specific tab.
 enum SettingsTab: String {
-    case general, terminal, commandLine
+    case general, terminal, snippets, commandLine
     static let key = "witerm.settingsTab"
 }
 
@@ -23,6 +23,11 @@ struct MacSettingsView: View {
                 .frame(width: 560, height: 580)
                 .tabItem { Label(String(localized: "Terminal", bundle: .main), systemImage: "terminal") }
                 .tag(SettingsTab.terminal.rawValue)
+            Form { SnippetSections() }
+                .formStyle(.grouped)
+                .frame(width: 560, height: 560)
+                .tabItem { Label(String(localized: "Snippets", bundle: .main), systemImage: "text.badge.plus") }
+                .tag(SettingsTab.snippets.rawValue)
             CommandLineToolSettings()
                 .frame(width: 560, height: 560)
                 .tabItem { Label(String(localized: "Command Line", bundle: .main), systemImage: "apple.terminal") }

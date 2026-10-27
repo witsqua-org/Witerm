@@ -8,10 +8,12 @@ struct LocalTerminalDetail: View {
     @Bindable var service: LocalAgentService
     @Bindable var model: LocalTerminalModel
     let endSession: (LocalSessionInfo) -> Void
+    let renameSession: (LocalSessionInfo) -> Void
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.colorScheme) private var systemColorScheme
     @AppStorage(TerminalFontSize.key) private var terminalFontSize = TerminalFontSize.standard
     @AppStorage("witerm.terminalHighContrast") private var terminalHighContrast = false
+    @AppStorage(TerminalColorScheme.key) private var terminalPalette = TerminalColorScheme.system
     @AppStorage("witerm.terminalAnnounceOutput") private var terminalAnnounceOutput = false
     @State private var showingHandoff = false
 
@@ -72,6 +74,8 @@ struct LocalTerminalDetail: View {
                     .accessibilityIdentifier("detachLocalTerminal")
                     .help(String(localized: "Disconnect; the session keeps running", bundle: .main))
                 Menu(String(localized: "More", bundle: .main), systemImage: "ellipsis") {
+                    Button(String(localized: "Rename…", bundle: .main), systemImage: "pencil") { renameSession(session) }
+                        .accessibilityIdentifier("renameLocalSessionMenu")
                     Button(String(localized: "End Session", bundle: .main), systemImage: "xmark.circle", role: .destructive) { endSession(session) }
                 }
                 .menuStyle(.borderlessButton)
@@ -87,6 +91,7 @@ struct LocalTerminalDetail: View {
                 fontSize: CGFloat(TerminalFontSize.clamped(terminalFontSize)),
                 highContrast: terminalHighContrast || contrast == .increased,
                 preferredColorScheme: systemColorScheme,
+                palette: terminalPalette,
                 announceOutput: terminalAnnounceOutput,
                 onFailure: { model.attachmentFailed($0, id: attachmentID) },
                 onEnded: { model.attachmentEnded(id: attachmentID, client: client) }
@@ -353,17 +358,25 @@ private struct LocalDependencyView: View {
     }
 }
 
+/// Names a new session, or renames one when `renaming` is its current name.
 struct NewLocalSessionSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var name = String(localized: "New Terminal", bundle: .main)
+    @State private var name: String
     @State private var invalid = false
+    private let renaming: Bool
     let onCreate: (String) -> Void
+
+    init(renaming current: String? = nil, onCreate: @escaping (String) -> Void) {
+        _name = State(initialValue: current ?? String(localized: "New Terminal", bundle: .main))
+        renaming = current != nil
+        self.onCreate = onCreate
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 10) {
                 IconTile(systemImage: "terminal")
-                Text(String(localized: "New Terminal Session", bundle: .main)).font(.headline)
+                Text(renaming ? String(localized: "Rename Session", bundle: .main) : String(localized: "New Terminal Session", bundle: .main)).font(.headline)
             }
             TextField(String(localized: "Session Name", bundle: .main), text: $name)
                 .textFieldStyle(.roundedBorder)
@@ -378,9 +391,9 @@ struct NewLocalSessionSheet: View {
                 Spacer()
                 Button(String(localized: "Cancel", bundle: .main), role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                PrimaryButton(String(localized: "Create", bundle: .main), action: create)
+                PrimaryButton(renaming ? String(localized: "Rename", bundle: .main) : String(localized: "Create", bundle: .main), action: create)
                     .keyboardShortcut(.defaultAction)
-                    .accessibilityIdentifier("createLocalSession")
+                    .accessibilityIdentifier(renaming ? "renameLocalSession" : "createLocalSession")
             }
             .witermControl()
         }

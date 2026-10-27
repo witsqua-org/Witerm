@@ -19,6 +19,7 @@ witerm new                 # Start a session in this folder and attach to it
 witerm new --share         # ...and let paired devices reach it
 witerm share [session]     # Share a session (default: the one you're in)
 witerm unshare [session]   # Stop sharing; paired devices disconnect, the session keeps running
+witerm rename <session> <name>   # Change a session's display name
 witerm sessions            # List sessions, sharing, and who is attached
 witerm attach <session>    # Attach with control; --view to watch
 witerm status              # Background service, tmux, and remote access
@@ -61,6 +62,7 @@ Sessions are private until shared. Sharing lets **already paired** devices list 
 |---|---|
 | Detach | You leave; the session keeps running. |
 | `unshare` | Paired devices disconnect; the session keeps running. |
+| `rename` | Changes only the display name, here and on paired devices. Attached viewers and the shell are unaffected. |
 | **End Session** in the app | The shell and its programs end. Only the app can do this. |
 
 ## Scripting

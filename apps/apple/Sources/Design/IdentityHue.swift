@@ -46,6 +46,15 @@ enum IdentityHue {
         UserDefaults.standard.set(assigned, forKey: storageKey)
     }
 
+    /// The hue a machine holds, so an undone removal can give it back.
+    static func assignment(for identity: String) -> Int? { assigned[identity] }
+
+    static func restore(_ identity: String, index: Int?) {
+        guard let index, palette.indices.contains(index) else { return }
+        assigned[identity] = index
+        UserDefaults.standard.set(assigned, forKey: storageKey)
+    }
+
     /// A machine takes the least-used hue the first time it appears, starting
     /// from its hashed slot, and keeps it. Hashing alone would give two of a
     /// handful of hosts the same color too often.

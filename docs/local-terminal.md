@@ -37,6 +37,7 @@ Production Developer ID signing and notarization haven't been done yet.
 
 - Each session is one shell in Witerm's own tmux server. Terminal, iTerm, and your own tmux are untouched.
 - Closing a terminal view only detaches. **End Session** asks for confirmation, then ends the shell and its programs.
+- **Rename…** (sidebar context menu or the terminal's More menu) changes only the display name. The shell, its programs, and every attachment keep running; paired devices see the new name the next time they list sessions. `witerm rename <session> <name>` does the same.
 - Stopping the service disconnects viewers but keeps the shells. Continuity across logout, restart, or shutdown isn't promised. Sleep is covered in [Terminal experience](terminal-experience.md#sleep-and-weak-networks).
 - One controller per session. Other viewers are read-only, and there's no forced takeover.
 - Sessions are private until shared. Unsharing disconnects paired devices and keeps the shell.

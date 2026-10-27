@@ -8,6 +8,7 @@ enum CLICommand: Equatable {
     case new(name: String?, share: Bool, detach: Bool)
     case share(session: String?, wait: Double?)
     case unshare(session: String?)
+    case rename(session: String, name: String)
     case attach(session: String, view: Bool)
 }
 
@@ -53,6 +54,8 @@ enum CLIParser {
                         Let paired devices reach a session (default: the one you're in)
       unshare [<session>]
                         Stop sharing; paired devices disconnect, the session keeps running
+      rename <session> <name>
+                        Rename a session; attached viewers and the shell are unaffected
       sessions          List sessions, their sharing state, and who is attached
       attach <session> [--view]
                         Attach to a session (control by default)
@@ -122,6 +125,9 @@ enum CLIParser {
             command = .share(session: rest.first, wait: wait)
         case "unshare":
             command = .unshare(session: rest.first)
+        case "rename":
+            guard rest.count == 2 else { throw CLIFailure.usage("Name the session and its new name.") }
+            command = .rename(session: rest[0], name: rest[1])
         case "attach":
             allowedFlags.insert("--view")
             allowedValues.insert("--escape")
@@ -130,7 +136,7 @@ enum CLIParser {
         default:
             throw CLIFailure.usage("Unknown command \(name). Run witerm help.")
         }
-        let maxPositionals = ["share", "unshare", "attach"].contains(name) ? 2 : 1
+        let maxPositionals = name == "rename" ? 3 : ["share", "unshare", "attach"].contains(name) ? 2 : 1
         guard positionals.count <= maxPositionals else { throw CLIFailure.usage("Too many arguments.") }
         if let extra = flags.subtracting(allowedFlags).sorted().first {
             throw CLIFailure.usage("\(extra) doesn't apply to \(name).")

@@ -129,6 +129,20 @@ final class LocalTerminalModel {
         }
     }
 
+    /// Renaming changes only the display name; the shell and attachments stay.
+    func rename(_ session: LocalSessionInfo, to name: String, using client: LocalAgentClient) {
+        Task { [weak self] in
+            do {
+                let updated = try await client.rename(sessionID: session.id, to: name)
+                guard let self else { return }
+                self.sessions = self.sessions.map { $0.id == updated.id ? updated : $0 }
+                AccessibilityNotification.Announcement(String(localized: "Session Renamed", bundle: .main)).post()
+            } catch {
+                self?.report(error)
+            }
+        }
+    }
+
     func create(name: String, using client: LocalAgentClient) {
         guard !isWorking else { return }
         begin(String(localized: "Creating session…", bundle: .main)) { [weak self] expected in
