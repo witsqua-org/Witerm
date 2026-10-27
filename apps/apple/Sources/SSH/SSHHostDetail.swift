@@ -15,8 +15,8 @@ struct SSHHostDetail: View {
         Group {
             if let session = model.session(for: profile.id) {
                 VStack(spacing: 0) {
-                    TerminalHeader(nil, status: String(localized: "Connected", bundle: .main),
-                                   statusImage: "lock.shield", live: true, hue: profile.identityHue) {
+                    TerminalHeader(nil, destination: profile.endpointSummary, status: String(localized: "Input Enabled", bundle: .main),
+                                   statusImage: "keyboard", live: true, hue: profile.identityHue) {
                         Button(String(localized: "SFTP Files", bundle: .main), systemImage: "folder") { ui.files = session }
                             .labelStyle(.iconOnly)
                             .touchTarget(square: true)
@@ -73,8 +73,13 @@ struct SSHHostDetail: View {
                 ActivityRow(String(localized: "Connecting to \(String(profile.name))…", bundle: .main), cancel: model.cancelConnecting)
                     .witermCard(padding: 16)
             } else {
+                if let reason = model.disconnected[profile.id] {
+                    Label(String(localized: "Disconnected", bundle: .main), systemImage: "bolt.horizontal.circle")
+                        .font(.headline)
+                    Text(reason).font(.subheadline).foregroundStyle(WitermTheme.secondary)
+                }
                 HStack(spacing: 12) {
-                    PrimaryButton(String(localized: "Connect", bundle: .main), systemImage: "play.fill", tint: profile.identityHue) {
+                    PrimaryButton(model.disconnected[profile.id] == nil ? String(localized: "Connect", bundle: .main) : String(localized: "Reconnect", bundle: .main), systemImage: "play.fill", tint: profile.identityHue) {
                         ui.open(profile, model: model)
                     }
                     .disabled(model.connecting)
@@ -96,6 +101,7 @@ struct SSHHostDetail: View {
 
     private var actionsMenu: some View {
         Menu {
+            Button(model.isFavorite(profile) ? String(localized: "Remove from Favorites", bundle: .main) : String(localized: "Add to Favorites", bundle: .main), systemImage: "star") { model.toggleFavorite(profile) }
             Button(String(localized: "Host Keys", bundle: .main), systemImage: "key") { ui.inspectKeys(profile) }
             Divider()
             Button(String(localized: "Delete Connection", bundle: .main), systemImage: "trash", role: .destructive) { ui.remove(profile) }

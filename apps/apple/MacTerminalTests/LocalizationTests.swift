@@ -17,6 +17,8 @@ import XCTest
             XCTAssertEqual(preview, language == "en" ? "Font preview, 24 pt" : "字号预览，24 磅")
             let privacy = bundle.localizedString(forKey: "NSLocalNetworkUsageDescription", value: nil, table: "InfoPlist")
             XCTAssertEqual(privacy, language == "en" ? "Connect to Witerm servers on your local network." : "连接同一网络中的 Witerm 服务器。")
+            let camera = bundle.localizedString(forKey: "NSCameraUsageDescription", value: nil, table: "InfoPlist")
+            XCTAssertEqual(camera, language == "en" ? "Scan a pairing invitation from your Mac." : "扫描 Mac 上的配对邀请。")
         }
         XCTAssertEqual(Bundle.preferredLocalizations(from: Bundle.main.localizations,
                                                      forPreferences: ["en-GB"]).first, "en")

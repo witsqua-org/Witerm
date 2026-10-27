@@ -39,6 +39,7 @@ struct RemoteDevicesView: View {
     @State private var models = RemoteModels()
     @State private var activeServerID: ConnectionModel.ID?
     @State private var pairingServer: ConnectionModel?
+    @State private var search = ""
 
     private var active: RemoteTerminalModel? {
         guard let server = servers.server(id: activeServerID), server.supportsRelay,
@@ -63,7 +64,7 @@ struct RemoteDevicesView: View {
             VStack(alignment: .leading, spacing: 24) {
                 ForEach(servers.servers) { server in
                     ServerDevicesSection(server: server, model: server.supportsRelay ? models.model(for: server) : nil,
-                                         showsHeader: servers.servers.count > 1,
+                                         showsHeader: servers.servers.count > 1, search: search,
                                          open: { activeServerID = server.id },
                                          pair: { pairingServer = server })
                 }
@@ -76,6 +77,7 @@ struct RemoteDevicesView: View {
         .background(WitermTheme.canvas)
         .navigationTitle(String(localized: "Devices", bundle: .main))
         .navigationBarTitleDisplayMode(.large)
+        .searchable(text: $search, prompt: String(localized: "Search Devices", bundle: .main))
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button(String(localized: "Refresh", bundle: .main), systemImage: "arrow.clockwise", action: refreshAll)
@@ -112,6 +114,8 @@ private struct ServerDevicesSection: View {
     let server: ConnectionModel
     let model: RemoteTerminalModel?
     let showsHeader: Bool
+    let search: String
+    @State private var inspected: DeviceGrant?
     let open: () -> Void
     let pair: () -> Void
 
@@ -125,6 +129,26 @@ private struct ServerDevicesSection: View {
             }
         }
         .accessibilityElement(children: .contain)
+        .sheet(item: $inspected) { grant in
+            NavigationStack {
+                Form {
+                    LabeledContent(String(localized: "Device", bundle: .main), value: grant.host.name)
+                    LabeledContent(String(localized: "Server", bundle: .main), value: server.address)
+                    LabeledContent(String(localized: "Access Level", bundle: .main), value: grant.permission == .view
+                                   ? String(localized: "View Only", bundle: .main) : String(localized: "Control Permission", bundle: .main))
+                    LabeledContent(String(localized: "Device Fingerprint", bundle: .main)) {
+                        Text(PairingFingerprint.display(publicKey: grant.host.publicKey))
+                            .font(.body.monospaced()).textSelection(.enabled)
+                    }
+                }
+                .navigationTitle(String(localized: "Device Details", bundle: .main))
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button(String(localized: "Done", bundle: .main)) { inspected = nil }
+                    }
+                }
+            }
+        }
     }
 
     private var header: some View {
@@ -154,7 +178,8 @@ private struct ServerDevicesSection: View {
             IssueBanner(issue.title, message: issue.recovery, systemImage: "exclamationmark.shield.fill")
                 .accessibilityIdentifier("remoteTerminalError")
         }
-        ForEach(model.grants) { grant in
+        ForEach(model.grants.filter { search.isEmpty || $0.host.name.localizedCaseInsensitiveContains(search) || server.displayName.localizedCaseInsensitiveContains(search) }) { grant in
+            HStack(spacing: 8) {
             Button {
                 model.select(grant)
                 open()
@@ -165,9 +190,6 @@ private struct ServerDevicesSection: View {
                         Text(grant.host.name).font(.headline).foregroundStyle(WitermTheme.ink)
                         StatusBadge(grant.permission == .view ? String(localized: "Read-Only Permission", bundle: .main) : String(localized: "Control Permission", bundle: .main),
                                     systemImage: grant.permission == .view ? "eye" : "keyboard")
-                        Text(PairingFingerprint.display(publicKey: grant.host.publicKey))
-                            .font(.caption.monospaced())
-                            .foregroundStyle(WitermTheme.secondary)
                     }
                     Spacer(minLength: 8)
                     Image(systemName: "chevron.right")
@@ -176,12 +198,20 @@ private struct ServerDevicesSection: View {
                         .accessibilityHidden(true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .witermCard(padding: 16)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .disabled(model.busy != nil)
             .accessibilityIdentifier("remoteMac-\(grant.id)")
+            Button(String(localized: "Device Details", bundle: .main), systemImage: "info.circle") { inspected = grant }
+                .labelStyle(.iconOnly).touchTarget(square: true)
+                .accessibilityLabel(String(localized: "Details for \(grant.host.name)", bundle: .main))
+            }
+            .witermCard(padding: 16)
+        }
+        if !search.isEmpty, model.loaded, !model.grants.isEmpty,
+           !model.grants.contains(where: { $0.host.name.localizedCaseInsensitiveContains(search) || server.displayName.localizedCaseInsensitiveContains(search) }) {
+            Text(String(localized: "No Matching Devices", bundle: .main)).foregroundStyle(WitermTheme.secondary)
         }
         if model.loaded, model.grants.isEmpty, model.busy == nil {
             VStack(alignment: .leading, spacing: 12) {

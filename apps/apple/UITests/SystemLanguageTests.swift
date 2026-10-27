@@ -17,6 +17,7 @@ import XCTest
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(\(language))", "-AppleLocale", locale,
+                               "-witerm.startTask", "mac",
                                "-witerm.serverAddresses", "()"]
         addTeardownBlock { await MainActor.run { app.terminate() } }
         app.launch()

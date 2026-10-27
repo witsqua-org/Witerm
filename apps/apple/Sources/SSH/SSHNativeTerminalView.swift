@@ -29,6 +29,7 @@ import UIKit
         TerminalView.textInputDebugEnabled = false
         let session = LocalSessionInfo(id: UUID().uuidString, name: "SSH", createdAt: Date(), columns: 80, rows: 24)
         surface = RemoteNativeTerminalView.TerminalSurface(mode: .control, session: session, fontSize: 14, isInteractive: true)
+        surface.terminal.inputDestination = String(localized: "SSH Terminal", bundle: .main)
         surface.readingView.accessibilityLabel = String(localized: "SSH Terminal Text", bundle: .main)
         surface.readingView.accessibilityIdentifier = "sshTerminalSurface"
         #endif

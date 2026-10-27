@@ -12,6 +12,7 @@ final class ConnectionFlowTests: XCTestCase {
     private func launchApp(address: String = "") -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = serverList(address.isEmpty ? [] : [address])
+        app.launchArguments += ["-witerm.startTask", "mac"]
         app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         app.launch()
         return app
@@ -145,6 +146,7 @@ final class ConnectionFlowTests: XCTestCase {
     func testAccessibilityLayout() {
         let app = XCUIApplication()
         app.launchArguments = serverList([]) + ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        app.launchArguments += ["-witerm.startTask", "mac"]
         app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         app.launch()
         XCTAssertTrue(app.buttons["primaryAction"].waitForExistence(timeout: 10))
@@ -163,6 +165,7 @@ final class ConnectionFlowTests: XCTestCase {
     func testSeveralServersAreUsedTogether() {
         let app = XCUIApplication()
         app.launchArguments = serverList(["http://localhost:8080", "http://127.0.0.1:8080"])
+        app.launchArguments += ["-witerm.startTask", "mac"]
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
         XCTAssertTrue(app.buttons["refreshRemoteSessions"].waitForExistence(timeout: 15))
@@ -248,6 +251,20 @@ final class ConnectionFlowTests: XCTestCase {
         capture("09-pairing-invalid", app: app)
     }
 
+    func testScannerUnavailablePreservesPasteFlow() {
+        let app = openPairing()
+        let scan = app.buttons["scanPairingInvitation"]
+        XCTAssertTrue(scan.waitForExistence(timeout: 5))
+        scan.tap()
+        // The retained simulator has no camera. The real fallback must still
+        // allow the user to return to invitation review.
+        XCTAssertTrue(app.descendants(matching: .any)["pairingScannerUnavailable"].firstMatch.waitForExistence(timeout: 5))
+        capture("12-scanner-fallback", app: app)
+        app.buttons["取消"].tap()
+        XCTAssertTrue(app.buttons["preparePairing"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["joinPairing"].exists)
+    }
+
     func testInvitationCannotSwitchServer() {
         let app = openPairing()
         var parts = URLComponents()
@@ -266,5 +283,32 @@ final class ConnectionFlowTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["邀请来自其他服务器"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["joinPairing"].exists)
         XCTAssertTrue(field.exists)
+    }
+
+    func testReviewedInvitationSurvivesForegroundRefresh() {
+        let app = openPairing()
+        var parts = URLComponents()
+        parts.scheme = "witerm"
+        parts.host = "pair"
+        parts.queryItems = [
+            URLQueryItem(name: "server", value: "http://localhost:8080"),
+            URLQueryItem(name: "id", value: "00000000-0000-4000-8000-000000000002"),
+            URLQueryItem(name: "secret", value: String(repeating: "A", count: 43)),
+            URLQueryItem(name: "host_key", value: Data(repeating: 1, count: 32).base64EncodedString())
+        ]
+        let field = app.descendants(matching: .any)["pairingInvitationField"].firstMatch
+        field.tap()
+        field.typeText(parts.string!)
+        app.buttons["preparePairing"].tap()
+        let review = app.buttons["joinPairing"]
+        XCTAssertTrue(review.waitForExistence(timeout: 5))
+        // Only review locally generated invitation text. Never submit a
+        // pairing request or grant access to a real device in this test.
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertTrue(review.waitForExistence(timeout: 10))
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: review)
+        wait(for: [ready], timeout: 10)
+        XCTAssertFalse(app.descendants(matching: .any)["pairingInvitationField"].firstMatch.exists)
     }
 }

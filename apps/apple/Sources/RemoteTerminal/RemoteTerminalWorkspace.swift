@@ -131,7 +131,7 @@ struct RemoteTerminalWorkspace: View {
                             IconTile(systemImage: "terminal", tint: grant.host.identityHue)
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(session.name).font(.headline).foregroundStyle(WitermTheme.ink)
-                                Text(String(localized: "\(String(session.columns)) columns · \(String(session.rows)) rows", bundle: .main))
+                                Text(grant.permission == .control ? String(localized: "Enter with Control", bundle: .main) : String(localized: "View Only", bundle: .main))
                                     .font(.caption).foregroundStyle(WitermTheme.secondary)
                             }
                             Spacer(minLength: 8)
@@ -166,7 +166,8 @@ struct RemoteTerminalWorkspace: View {
     private func terminal(_ attachment: RemoteTerminalAttachment) -> some View {
         let id = model.attachmentID
         return VStack(spacing: 0) {
-            TerminalHeader(attachment.session.name, status: terminalStatus, statusImage: terminalStatusImage, live: model.isInteractive,
+            TerminalHeader(attachment.session.name, destination: model.selectedGrant?.host.name,
+                           status: terminalStatus, statusImage: terminalStatusImage, live: model.isInteractive,
                            hue: model.selectedGrant?.host.identityHue) {
                 terminalActions
             }
@@ -178,6 +179,7 @@ struct RemoteTerminalWorkspace: View {
                     highContrast: terminalHighContrast || contrast == .increased,
                     preferredColorScheme: systemColorScheme,
                     announceOutput: terminalAnnounceOutput,
+                    inputDestination: model.selectedGrant.map { $0.host.name + " · " + attachment.session.name },
                     onFailure: { model.attachmentFailed($0, id: id) },
                     onEnded: { model.attachmentEnded(id: id) }
                 )
@@ -189,8 +191,10 @@ struct RemoteTerminalWorkspace: View {
 
     private var terminalStatus: String {
         if model.isInteractive {
-            return model.mode == .view ? String(localized: "View Only", bundle: .main) : String(localized: "Control Terminal", bundle: .main)
+            return model.mode == .view ? String(localized: "View Only", bundle: .main) : String(localized: "Input Enabled", bundle: .main)
         }
+        if let busy = model.busy { return busy }
+        if model.connectionState == .ended { return String(localized: "Session Ended", bundle: .main) }
         return model.busy != nil ? String(localized: "Connecting", bundle: .main) : String(localized: "Disconnected", bundle: .main)
     }
 

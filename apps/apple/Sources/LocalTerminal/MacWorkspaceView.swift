@@ -21,6 +21,8 @@ struct MacWorkspaceView: View {
     @State private var sshUI = SSHWorkspaceUI()
     @State private var creatingSession = false
     @State private var endingSession: LocalSessionInfo?
+    @State private var sharingSession: LocalSessionInfo?
+    @State private var search = ""
 
     var body: some View {
         NavigationSplitView {
@@ -64,6 +66,9 @@ struct MacWorkspaceView: View {
                 guard let client = service.client else { return }
                 terminal.create(name: name, using: client)
             }
+        }
+        .sheet(item: $sharingSession) { session in
+            SessionHandoffView(service: service, terminal: terminal, sessionID: session.id)
         }
         .alert(String(localized: "End Terminal Session?", bundle: .main), isPresented: Binding(get: { endingSession != nil }, set: { if !$0 { endingSession = nil } })) {
             Button(String(localized: "Cancel", bundle: .main), role: .cancel) { endingSession = nil }
@@ -144,15 +149,17 @@ struct MacWorkspaceView: View {
                 localRows
             }
             Section(String(localized: "SSH Hosts", bundle: .main)) {
-                ForEach(ssh.profiles) { profile in
+                ForEach(ssh.orderedProfiles(search: search)) { profile in
                     let session = ssh.session(for: profile.id)
-                    SSHHostRowContent(profile: profile, active: session != nil)
+                    SSHHostRowContent(profile: profile, active: session != nil, favorite: ssh.isFavorite(profile))
                         .tag(MacDestination.ssh(profile.id))
                         .accessibilityIdentifier("sshProfileRow-\(profile.id.uuidString)")
                         .accessibilityLabel(profile.name)
                         .accessibilityValue(profile.accessibilitySummary
-                            + (session == nil ? "" : String(localized: ", connected", bundle: .main)))
+                            + (session == nil ? "" : String(localized: ", connected", bundle: .main))
+                            + (ssh.isFavorite(profile) ? String(localized: ", favorite", bundle: .main) : ""))
                         .contextMenu {
+                            Button(ssh.isFavorite(profile) ? String(localized: "Remove from Favorites", bundle: .main) : String(localized: "Add to Favorites", bundle: .main)) { ssh.toggleFavorite(profile) }
                             if let session {
                                 Button(String(localized: "Disconnect", bundle: .main)) { ssh.disconnect(session) }
                             } else {
@@ -176,7 +183,7 @@ struct MacWorkspaceView: View {
             Section(String(localized: "Devices", bundle: .main)) {
                 if servers.servers.count > 1 {
                     // One row per server: pairing and remote access are per server.
-                    ForEach(Array(servers.servers.enumerated()), id: \.element.id) { index, server in
+                    ForEach(Array(servers.servers.enumerated()).filter { search.isEmpty || $0.element.displayName.localizedCaseInsensitiveContains(search) }, id: \.element.id) { index, server in
                         Label(server.displayName, systemImage: "iphone.and.arrow.forward")
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -192,6 +199,7 @@ struct MacWorkspaceView: View {
             }
         }
         .listStyle(.sidebar)
+        .searchable(text: $search, prompt: String(localized: "Search Sessions and Hosts", bundle: .main))
         // Native selection: the row fills with the tint behind white text, so
         // the sidebar keeps the system accent rather than the app's ink.
         .tint(Color.accentColor)
@@ -202,7 +210,7 @@ struct MacWorkspaceView: View {
     @ViewBuilder
     private var localRows: some View {
         if service.state == .ready, terminal.tmuxAvailable {
-            ForEach(terminal.sessions) { session in
+            ForEach(terminal.sessions.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) }) { session in
                 let attached = terminal.selectedID == session.id && terminal.attachment != nil
                 let shared = session.sharing?.shared == true
                 Label {
@@ -231,8 +239,9 @@ struct MacWorkspaceView: View {
                         Button(String(localized: "Connect", bundle: .main)) { terminal.attach(session, using: client, mode: .control) }
                         Button(String(localized: "View Only", bundle: .main)) { terminal.attach(session, using: client, mode: .view) }
                         Divider()
-                        Button(shared ? String(localized: "Stop Sharing", bundle: .main) : String(localized: "Share with Paired Devices", bundle: .main)) {
-                            terminal.setShared(session, !shared, using: client)
+                        Button(String(localized: "Continue on iPhone…", bundle: .main)) { sharingSession = session }
+                        if shared {
+                            Button(String(localized: "Stop Sharing", bundle: .main)) { terminal.setShared(session, false, using: client) }
                         }
                         Divider()
                         Button(String(localized: "End Session", bundle: .main), role: .destructive) { endingSession = session }

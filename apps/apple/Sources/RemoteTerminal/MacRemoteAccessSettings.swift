@@ -70,6 +70,12 @@ struct MacRemoteAccessCard: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var model = MacRemoteAccessModel()
 
+    init(serverAddress: String, service: LocalAgentService, model: MacRemoteAccessModel = MacRemoteAccessModel()) {
+        self.serverAddress = serverAddress
+        self.service = service
+        _model = State(initialValue: model)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 14) {

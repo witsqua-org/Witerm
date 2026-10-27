@@ -8,9 +8,86 @@ private enum MobileTab: Hashable {
 struct MobileWorkspaceView: View {
     @State private var tab = MobileTab.devices
     @State private var ssh = SSHWorkspaceModel()
+    @State private var loaded = false
+    @State private var choosingTask = false
+    @AppStorage("witerm.startTask") private var startTask = ""
+    @Environment(ServerList.self) private var servers
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
+        Group {
+            if !loaded {
+                ProgressView()
+            } else if choosingTask {
+                taskChoice
+            } else {
+                workspace
+            }
+        }
+        .task {
+            await ssh.load()
+            guard !Task.isCancelled else { return }
+            choosingTask = startTask.isEmpty && servers.servers.isEmpty && ssh.profiles.isEmpty
+            if startTask == "ssh" || (startTask.isEmpty && servers.servers.isEmpty && !ssh.profiles.isEmpty) {
+                tab = .ssh
+            }
+            loaded = true
+        }
+    }
+
+    private var taskChoice: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    Text(String(localized: "What would you like to connect to?", bundle: .main))
+                        .font(.title2.weight(.semibold))
+                    taskButton(String(localized: "Connect to an SSH Host", bundle: .main),
+                               detail: String(localized: "Open a terminal using a host address and your credentials.", bundle: .main),
+                               symbol: "terminal", id: "chooseSSH") {
+                        startTask = "ssh"
+                        tab = .ssh
+                        choosingTask = false
+                    }
+                    taskButton(String(localized: "Continue from My Mac", bundle: .main),
+                               detail: String(localized: "Pair with your Mac to open a terminal session it shares.", bundle: .main),
+                               symbol: "desktopcomputer", id: "chooseMac") {
+                        startTask = "mac"
+                        tab = .devices
+                        choosingTask = false
+                    }
+                }
+                .readableContent()
+            }
+            .background(WitermTheme.canvas)
+            .navigationTitle("Witerm")
+        }
+        .witermTint()
+    }
+
+    private func taskButton(_ title: String, detail: String, symbol: String, id: String,
+                            action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(alignment: .top, spacing: 14) {
+                if !typeSize.isAccessibilitySize { IconTile(systemImage: symbol) }
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(title).font(.headline).foregroundStyle(WitermTheme.ink)
+                    Text(detail).font(.subheadline).foregroundStyle(WitermTheme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                if !typeSize.isAccessibilitySize {
+                    Image(systemName: "chevron.right").accessibilityHidden(true)
+                }
+            }
+            .witermCard()
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(id)
+    }
+
+    private var workspace: some View {
         TabView(selection: $tab) {
             DevicesTab(openSSH: { tab = .ssh })
                 .tabItem { Label(String(localized: "Devices", bundle: .main), systemImage: "desktopcomputer") }
@@ -23,9 +100,13 @@ struct MobileWorkspaceView: View {
                 .tag(MobileTab.settings)
         }
         .witermTint()
+        .onChange(of: tab) { _, tab in
+            if tab == .ssh { startTask = "ssh" }
+            if tab == .devices { startTask = "mac" }
+        }
         // SSH sessions survive tab switches but never the background.
         .onChange(of: scenePhase) { _, phase in
-            if phase == .background { ssh.disconnectAll() }
+            if phase == .background { ssh.disconnectAll(forBackground: true) }
         }
     }
 }

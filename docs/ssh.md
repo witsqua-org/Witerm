@@ -11,20 +11,27 @@ The apps connect straight to SSH servers. Witerm Server, pairing, and Allow Remo
 - **Password**, or
 - **OpenSSH Ed25519 key**, plain or passphrase-protected.
 
+Use **Save and Connect** to connect immediately, or **Save Without Connecting** to keep the configuration without supplying credentials. Editing an existing host uses **Save** and never connects. A blank name defaults to the endpoint; port and jump-host settings are under the advanced disclosures. Search matches names and endpoints; favorites appear first, followed by recently connected hosts. On a regular-width iPad, the host list and terminal use separate columns.
+
 **Not supported:** RSA keys (the engine would sign with SHA-1), hardware keys, agent forwarding, certificates, and keyboard-interactive or MFA logins.
 
 **Sessions.**
 - Up to 8 hosts can stay connected at once. Switching hosts doesn't disconnect them; Disconnect is always explicit.
 - Closing the Mac window disconnects everything. So does sending the iOS app to the background.
+- After a disconnect, the selected iOS host stays visible with its reason and an explicit Reconnect action. A reconnect opens a new shell; it does not recover the old SSH process.
 - SSH sessions don't get the Mac service's persistence. Use tmux on the server for work that must survive a disconnect.
 - Reconnecting never replays earlier input.
 
 ## Credentials
 
 - By default, credentials are kept in memory for one connection only.
-- **Save** writes them to the device's local Keychain: not synced, and readable only while unlocked.
+- **Save Credentials on This Device** explicitly opts into the local Keychain: not synced, and readable only while unlocked. Saving the configuration alone does not opt in.
 - Host profiles never contain passwords, keys, or passphrases.
 - Changing a host's address, port, or username clears its saved credentials.
+
+## Mobile input
+
+The keyboard accessory provides Esc, one-key Ctrl, Tab, Ctrl+C, Paste, and directional arrows. The row scrolls horizontally and follows Dynamic Type. Ctrl exposes its selected state and resets after use. Multiline paste opens a complete preview with the destination; Send Text preserves bracketed paste when the shell supports it and adds no extra Return. Cancellation or disconnection discards the pending paste. These actions cannot send input in view-only mode.
 
 ## Host keys
 

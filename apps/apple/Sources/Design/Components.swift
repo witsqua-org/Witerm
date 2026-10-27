@@ -242,6 +242,7 @@ struct PageHeader: View {
 struct TerminalHeader<Actions: View>: View {
     /// Omitted where the window title already names the terminal (Mac).
     let title: String?
+    let destination: String?
     let status: String
     let statusImage: String
     let live: Bool
@@ -249,9 +250,10 @@ struct TerminalHeader<Actions: View>: View {
     let hue: Color?
     let actions: Actions
 
-    init(_ title: String?, status: String, statusImage: String, live: Bool, hue: Color? = nil,
+    init(_ title: String?, destination: String? = nil, status: String, statusImage: String, live: Bool, hue: Color? = nil,
          @ViewBuilder actions: () -> Actions) {
         self.title = title
+        self.destination = destination
         self.status = status
         self.statusImage = statusImage
         self.live = live
@@ -288,10 +290,19 @@ struct TerminalHeader<Actions: View>: View {
     private var summary: some View {
         HStack(spacing: 10) {
             Circle()
-                .fill(live ? hue ?? WitermTheme.positive : WitermTheme.secondary.opacity(0.45))
+                .fill(live ? WitermTheme.positive : WitermTheme.secondary.opacity(0.45))
                 .frame(width: 8, height: 8)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
+                if let destination {
+                    Text(verbatim: destination)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(WitermTheme.ink)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .help(destination)
+                        .accessibilityIdentifier("terminalDestination")
+                }
                 if let title {
                     Text(title)
                         .font(.subheadline.weight(.semibold))
@@ -302,6 +313,7 @@ struct TerminalHeader<Actions: View>: View {
                     .font(title == nil ? .subheadline : .caption)
                     .foregroundStyle(title == nil ? WitermTheme.ink : WitermTheme.secondary)
                     .lineLimit(1)
+                    .accessibilityIdentifier("terminalInputStatus")
             }
         }
         .padding(.vertical, 6)

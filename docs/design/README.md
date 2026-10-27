@@ -2,6 +2,8 @@
 
 Witerm is a calm, professional tool built from native iOS 27 and macOS controls. The terminal is the work; everything else is a way to reach it. The interface shows only real things: real servers, devices, grants, and sessions, never sample data.
 
+The [HCI improvements 1–7](hci-improvements.md) summary maps the delivered interaction changes to implementation and verification evidence.
+
 Follow Apple's guidance on [Liquid Glass](https://developer.apple.com/documentation/TechnologyOverviews/liquid-glass), [materials](https://developer.apple.com/design/human-interface-guidelines/materials), [motion](https://developer.apple.com/design/human-interface-guidelines/motion), and [accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility). Glass belongs to controls. Content sits on solid surfaces.
 
 ## Brand
@@ -59,11 +61,25 @@ An empty This Mac points to `witerm new`. Settings has General, Terminal, and Co
 
 **iOS and iPadOS**: three tabs.
 
+On first use, people choose **Connect to an SSH Host** or **Continue from My Mac**. The SSH path opens without server setup. Existing servers or saved SSH hosts bypass this choice; subsequent launches remember the last work tab.
+
 - **Devices**: server setup at first. Once a server is verified, it lists paired devices grouped by server, then sessions, then the terminal. A server with a problem says why in its own section.
 - **SSH**: saved hosts and their sessions.
 - **Settings**: one section per server (status, check, edit, Device Pairing, remove), plus Terminal Display.
 
+**Continue on iPhone.** A local session's header and context menu open one preparation sheet: choose a server, check device pairing, allow remote access, and explicitly share this session. Its readiness checks use the selected server's grants and live relay status. The sheet also offers releasing this Mac's control for typing on another device. Pairing on iOS accepts a camera QR scan or a pasted invitation; both go through the same server and fingerprint review before a request is submitted. Unsupported cameras offer the paste path.
+
+**Input destination.** Every live terminal shows its destination in text and its input state. SSH includes `user@host:port`; paired sessions include the Mac name; local sessions say This Mac. Machine hue identifies the destination, while a neutral health indicator, words and symbols describe connection state. During control handoff, the header shows the pending operation and input remains disabled until confirmation. A retained disconnected frame is labeled Disconnected.
+
 The tab bar hides while a terminal is open.
+
+In a regular-width iPad SSH workspace, the host list stays beside the terminal and the tab bar remains available. Compact layouts use the Hosts back action. SSH lists support search, favorites, and ordering by recent successful connection; Mac sidebar search also matches local session names. Device rows prioritize name and permission, with the full fingerprint in Device Details.
+
+**SSH configuration.** Editing uses Save and never initiates a connection. New hosts offer Save and Connect or Save Without Connecting; connection names are optional and default to the endpoint. Non-default ports stay visible, while port and jump-host options otherwise use disclosure groups. Validation stays beside the affected field and focuses the first error. Changes to an endpoint clear its credentials with an explanation.
+
+**Connection lifetime.** iOS explains that SSH closes in the background. The selected host remains visible after disconnection with an explicit Reconnect action; reconnect opens a new shell and never replays prior input. Whether earlier remote programs survive depends on the host. Local Mac sessions instead remain running after disconnect; ending one lives in More and retains its destructive confirmation.
+
+**Mobile terminal input.** The horizontal keyboard accessory offers Esc, Ctrl, Tab, Ctrl+C, Paste and arrows with 44 pt touch targets and accessibility labels. Ctrl announces its one-key state and resets after use. Multiline paste shows the complete text and destination for confirmation, preserves bracketed-paste framing, and is discarded if the connection stops before confirmation. Read-only terminals cannot send these actions. Reading and IME selection remain separate.
 
 **Several servers.** Up to 8 servers are saved and used at once. A second spelling of the same server is rejected.
 
@@ -119,6 +135,6 @@ Remote machines are **devices**, and the machine on the other end of a pairing i
 
 ## Screenshots
 
-[iOS dark start screen](screenshots/01-empty-dark.png) · [iOS pairing](screenshots/02-pairing-ios.png)
+[iOS task choice](screenshots/03-task-choice-ios.png) · [iOS pairing](screenshots/02-pairing-ios.png)
 
 Testing notes are in [Verification status](../verification.md).

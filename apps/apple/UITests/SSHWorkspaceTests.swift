@@ -5,7 +5,7 @@ import XCTest
 @MainActor final class SSHWorkspaceTests: XCTestCase {
     func testDirectSSHTrustTerminalKeyboardAndSFTP() throws {
         continueAfterFailure = false
-        executionTimeAllowance = 120
+        executionTimeAllowance = 240
         guard let port = ProcessInfo.processInfo.environment["WITERM_SSH_UI_PORT"],
               let number = Int(port), (1...65535).contains(number),
               let fingerprint = ProcessInfo.processInfo.environment["WITERM_SSH_UI_FINGERPRINT"],
@@ -27,6 +27,9 @@ import XCTest
         name.tap(); name.typeText(profileName)
         let host = app.textFields.matching(identifier: "sshHostAddress").firstMatch
         host.tap(); host.typeText("127.0.0.1")
+        if !app.textFields.matching(identifier: "sshHostPort").firstMatch.exists {
+            app.buttons["高级选项"].firstMatch.tap()
+        }
         let portField = app.textFields.matching(identifier: "sshHostPort").firstMatch
         portField.tap()
         portField.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 6) + port)
@@ -79,8 +82,22 @@ import XCTest
         XCTAssertFalse(app.staticTexts["sshSFTPIssue"].exists)
         tapVisibleControl(app.buttons["完成"], in: app)
         XCTAssertTrue(terminal.exists, "Opening SFTP must preserve the SSH terminal")
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertTrue(app.buttons["sshReconnect"].waitForExistence(timeout: 10))
+        XCTAssertFalse(terminal.exists)
+        tapVisibleControl(app.buttons["sshReconnect"], in: app)
+        XCTAssertTrue(password.waitForExistence(timeout: 5))
+        password.tap(); password.typeText("witerm-fixture-only")
+        app.buttons["sshConnect"].tap()
+        XCTAssertTrue(terminal.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["sshTrustHost"].exists, "Reconnect must use the existing verified fixture pin")
+        declinePasswordOffer(app, timeout: 3)
+
         tapVisibleControl(app.buttons["sshSessionActions"], in: app)
         app.buttons["断开"].tap()
+        XCTAssertTrue(app.buttons["sshReconnect"].waitForExistence(timeout: 5))
+        tapVisibleControl(app.buttons["sshShowHosts"], in: app)
         XCTAssertTrue(app.buttons["newSSHProfile"].waitForExistence(timeout: 5))
 
         // Reopen an actual persisted fixture row. The form must receive its
@@ -172,6 +189,8 @@ import XCTest
         shown.name = "ios-ssh-terminal"; shown.lifetime = .keepAlways; add(shown)
         tapVisibleControl(app.buttons["sshSessionActions"], in: app)
         app.buttons["断开"].tap()
+        XCTAssertTrue(app.buttons["sshReconnect"].waitForExistence(timeout: 5))
+        tapVisibleControl(app.buttons["sshShowHosts"], in: app)
         XCTAssertTrue(app.buttons["newSSHProfile"].waitForExistence(timeout: 5))
         XCTAssertFalse(connectedRow(app, name: firstName).exists)
         XCTAssertTrue(connectedRow(app, name: secondName).exists, "Disconnecting one host must leave the other connected")
@@ -180,6 +199,8 @@ import XCTest
         XCTAssertTrue(terminal.waitForExistence(timeout: 5))
         tapVisibleControl(app.buttons["sshSessionActions"], in: app)
         app.buttons["断开"].tap()
+        XCTAssertTrue(app.buttons["sshReconnect"].waitForExistence(timeout: 5))
+        tapVisibleControl(app.buttons["sshShowHosts"], in: app)
         XCTAssertTrue(app.buttons["newSSHProfile"].waitForExistence(timeout: 5))
 
         let firstCleanup = cleanupFixtures(app, name: firstName, expectedFingerprint: firstPin)
@@ -204,6 +225,9 @@ import XCTest
         name.tap(); name.typeText(profileName)
         let host = app.textFields.matching(identifier: "sshHostAddress").firstMatch
         host.tap(); host.typeText("127.0.0.1")
+        if !app.textFields.matching(identifier: "sshHostPort").firstMatch.exists {
+            app.buttons["高级选项"].firstMatch.tap()
+        }
         let portField = app.textFields.matching(identifier: "sshHostPort").firstMatch
         portField.tap()
         portField.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 6) + port)
