@@ -81,6 +81,19 @@
       return session
     }
 
+    /// Changes a session's display name. Attached clients and the shell are
+    /// unaffected. Returns the session with its sharing state.
+    public func rename(sessionID: String, to name: String) async throws -> LocalSessionInfo {
+      try LocalWire.validateID(sessionID)
+      let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard LocalWire.validName(trimmed) else { throw LocalAgentClientError.rejected(.invalidRequest) }
+      let frame = try await rpc(LocalAgentRequest(operation: .rename, sessionID: sessionID, name: trimmed))
+      guard let session = frame.session, session.id == sessionID, session.name == trimmed
+      else { throw LocalAgentClientError.invalidResponse }
+      try LocalWire.validateSession(session)
+      return session
+    }
+
     public func close(sessionID: String) async throws {
       try LocalWire.validateID(sessionID)
       _ = try await rpc(LocalAgentRequest(operation: .close, sessionID: sessionID))

@@ -50,6 +50,7 @@ One UTF-8 JSON object per line, `version` 1. Byte fields are standard Base64, da
 | `create` | `name` (1–64 scalars, no controls), `columns` 20–500, `rows` 5–200; optional `cwd`, `shared` | `session` with `sharing` |
 | `close` | `session_id` | ok; ends only sessions this service created |
 | `share` | `session_id`, `shared` | `session` with `sharing` |
+| `rename` | `session_id`, `name` (1–64 scalars, no controls) | `session` with `sharing`; the shell, attachments, and tmux's internal name are unchanged |
 | `attach` | `session_id`, `columns`, `rows`, `mode` (`control` or `view`); optional `peer` | `session` and `mode`, then events |
 | `input` | `data` (on an attached connection, controller only) | ok |
 | `resize` | `columns`, `rows` (controller only) | ok, once the shell sees the new size |
@@ -60,7 +61,7 @@ One UTF-8 JSON object per line, `version` 1. Byte fields are standard Base64, da
 **Frames** have `version`, `kind` (`response`, `geometry`, `output`, or `closed`), and optionally `id`, `ok`, `error`, `status`, `sessions`, `session`, `mode`, and `data`.
 
 - `status` is `{version, tmux_available, relays}`. `relays` has one `{server, state}` per server with remote access on, where `state` is `connecting` or `ready` (the server accepted this Mac); it is empty when remote access is off. Without tmux, `status` still answers and everything else returns `dependency_missing`.
-- `session` is `{id, name, created_at, columns, rows}`. Local `list`, `create`, and `share` replies add `sharing`: `{shared, attachments: [{mode, device}]}`, where `device` is `{device_id, name}` for a paired device and absent for this Mac.
+- `session` is `{id, name, created_at, columns, rows}`. Local `list`, `create`, `share`, and `rename` replies add `sharing`: `{shared, attachments: [{mode, device}]}`, where `device` is `{device_id, name}` for a paired device and absent for this Mac.
 - The `attach` response always comes before the first output event.
 - A session ending sends `closed`. A lost connection surfaces as a client error.
 
@@ -81,7 +82,7 @@ A session is private until shared. Sharing is stored with the session (`sharing.
   - `cwd` is the shell's absolute start folder. It must exist and be readable: a missing folder is `not_found`; a relative path, a non-directory, or `.`/`..` segments are `invalid_request`.
   - The service launches tmux *in* that folder instead of passing `-c`, because tmux expands formats there (`#{…}`, and `#(…)` runs a command). If tmux then reports a different start folder, the request fails.
   - The shell gets `WITERM_SESSION_ID` in its environment. No other environment is copied from the caller.
-- **Never remote.** `create`, `close`, `share`, `cwd`, and `peer` can't arrive through the relay.
+- **Never remote.** `create`, `close`, `share`, `rename`, `cwd`, and `peer` can't arrive through the relay. Paired devices see a new name the next time they list sessions.
 
 ## Geometry
 

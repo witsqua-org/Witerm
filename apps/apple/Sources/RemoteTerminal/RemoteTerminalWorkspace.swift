@@ -15,10 +15,13 @@ struct RemoteTerminalWorkspace: View {
     @AppStorage(TerminalFontSize.key) private var terminalFontSize = TerminalFontSize.standard
     @Environment(\.colorScheme) private var systemColorScheme
     @AppStorage("witerm.terminalHighContrast") private var terminalHighContrast = false
+    @AppStorage(TerminalColorScheme.key) private var terminalPalette = TerminalColorScheme.system
     @AppStorage("witerm.terminalAnnounceOutput") private var terminalAnnounceOutput = false
     @ScaledMetric(relativeTo: .body) private var scaledTerminalFont = 14.0
     @State private var showingAppearance = false
     @State private var keyboardRequest = 0
+    @State private var finder = TerminalFinder()
+    @State private var finding = false
     /// Mirrors whether a terminal is shown, changed without animation; see
     /// `SSHWorkspaceView.show(_:)` for why the tab bar must not animate.
     @State private var terminalShown = false
@@ -80,6 +83,7 @@ struct RemoteTerminalWorkspace: View {
     private var browser: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                OfflineBanner()
                 if let busy = model.busy {
                     ActivityRow(busy) { model.cancelWork() }
                         .accessibilityIdentifier("remoteTerminalActivity")
@@ -171,6 +175,11 @@ struct RemoteTerminalWorkspace: View {
                            hue: model.selectedGrant?.host.identityHue) {
                 terminalActions
             }
+            OfflineBanner(insets: EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+            if finding {
+                TerminalFindBar(finder: finder) { finding = false }
+                Divider()
+            }
             ZStack(alignment: .top) {
                 RemoteNativeTerminalView(
                     attachment: attachment, mode: model.mode, keyboardRequest: keyboardRequest,
@@ -178,7 +187,9 @@ struct RemoteTerminalWorkspace: View {
                     fontSize: CGFloat(scaledTerminalFont * TerminalFontSize.clamped(terminalFontSize) / TerminalFontSize.standard),
                     highContrast: terminalHighContrast || contrast == .increased,
                     preferredColorScheme: systemColorScheme,
+                    palette: terminalPalette,
                     announceOutput: terminalAnnounceOutput,
+                    finder: finder,
                     inputDestination: model.selectedGrant.map { $0.host.name + " · " + attachment.session.name },
                     onFailure: { model.attachmentFailed($0, id: id) },
                     onEnded: { model.attachmentEnded(id: id) }
@@ -231,6 +242,10 @@ struct RemoteTerminalWorkspace: View {
 
     @ViewBuilder private var terminalSecondaryActions: some View {
         Group {
+            Button(String(localized: "Find in Terminal", bundle: .main), systemImage: "magnifyingglass") { finding = true }
+                .keyboardShortcut("f", modifiers: .command)
+                .touchTarget(square: true)
+                .accessibilityIdentifier("terminalFind")
             Button(String(localized: "Display", bundle: .main), systemImage: "textformat.size") { showingAppearance = true }
                 .touchTarget(square: true)
                 .accessibilityIdentifier("terminalAppearance")

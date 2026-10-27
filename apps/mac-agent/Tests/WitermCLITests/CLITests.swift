@@ -11,6 +11,8 @@ final class CLIUnitTests: XCTestCase {
         XCTAssertEqual(try CLIParser.parse(["new", "--share", "--name", "api"]).command, .new(name: "api", share: true, detach: false))
         XCTAssertEqual(try CLIParser.parse(["share", "--wait", "5", "abcd"]).command, .share(session: "abcd", wait: 5))
         XCTAssertEqual(try CLIParser.parse(["attach", "abcd", "--view"]).command, .attach(session: "abcd", view: true))
+        XCTAssertEqual(try CLIParser.parse(["rename", "abcd", "Build logs"]).command, .rename(session: "abcd", name: "Build logs"))
+        XCTAssertThrowsError(try CLIParser.parse(["rename", "abcd"]))
         XCTAssertEqual(try CLIParser.parse(["ls", "--json"]), CLIInvocation(command: .sessions, json: true))
         XCTAssertEqual(try CLIParser.parse(["attach", "x", "--escape", "none"]).escape, nil)
         XCTAssertEqual(try CLIParser.parse(["attach", "x", "--escape", "^"]).escape, UInt8(ascii: "^"))
@@ -172,6 +174,12 @@ final class CLIIntegrationTests: XCTestCase {
         let unshared = try witerm(["unshare", String(id.prefix(6)), "--json"], socket: socket)
         XCTAssertEqual(unshared.status, 0, unshared.error)
         XCTAssertEqual((try json(unshared.output)["session"] as? [String: Any])?["shared"] as? Bool, false)
+
+        let renamed = try witerm(["rename", String(id.prefix(6)), "  API server ", "--json"], socket: socket)
+        XCTAssertEqual(renamed.status, 0, renamed.error)
+        XCTAssertEqual((try json(renamed.output)["session"] as? [String: Any])?["name"] as? String, "API server")
+        let badName = try witerm(["rename", String(id.prefix(6)), "\u{7}"], socket: socket)
+        XCTAssertEqual(badName.status, 2)
 
         // Inside a session, share needs no argument.
         let inside = try witerm(["share"], socket: socket, environment: ["WITERM_SESSION_ID": id])

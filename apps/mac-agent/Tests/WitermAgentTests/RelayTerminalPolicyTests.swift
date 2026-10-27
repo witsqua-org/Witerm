@@ -20,7 +20,7 @@ final class RelayTerminalPolicyTests: XCTestCase {
 
     func testRemoteSurfaceExcludesCreateCloseAndUnexpectedFields() throws {
         let encoder = JSONEncoder()
-        for operation in [LocalAgentOperation.create, .close] {
+        for operation in [LocalAgentOperation.create, .close, .share, .rename] {
             XCTAssertThrowsError(try RelayTerminalPolicy.request(encoder.encode(LocalAgentRequest(operation: operation)), attached: false, permission: .control))
         }
         var raw = try XCTUnwrap(JSONSerialization.jsonObject(with: encoder.encode(LocalAgentRequest(operation: .list))) as? [String: Any])

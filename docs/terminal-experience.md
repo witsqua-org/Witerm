@@ -19,9 +19,20 @@ Your own font or window size changes only your view, never the shared grid. A gr
 
 ## Display
 
-Mac and iOS share **Terminal Display** settings: text size from 11 to 32 pt (iOS also follows Dynamic Type), enhanced contrast, and optional VoiceOver announcements of new output. On the Mac, ⌘+, ⌘− and ⌘0 change text size.
+Mac and iOS share **Terminal Display** settings: text size from 11 to 32 pt (iOS also follows Dynamic Type), enhanced contrast, the bell, and optional VoiceOver announcements of new output. ⌘+, ⌘− and ⌘0 change text size on the Mac and on iPad with a hardware keyboard.
 
-Colors follow the system's light/dark appearance; there's no in-app theme. Increase Contrast and Reduce Transparency apply to the surrounding interface.
+**Bell.** A program's BEL plays the system alert sound on the Mac, and bounces the Dock icon once when Witerm is in the background. iOS plays a short haptic. Bells closer than 300 ms apart are dropped. **Ring the terminal bell** turns it off.
+
+**Switching terminals.** The Terminal menu lists open terminals: ⌘1–⌘9 show one, ⇧⌘] and ⇧⌘[ step through them. On the Mac, these are sessions on this Mac followed by connected SSH hosts; on iPad, connected SSH hosts.
+
+**Color schemes.** System (the platform's text colors), Graphite, Paper, and Ocean. Each scheme has a light and a dark variant and follows the system appearance; there's no in-app light/dark switch. Enhanced contrast, from the setting or the system's Increase Contrast, overrides the scheme. In every scheme, body text reaches at least 13:1 and every ANSI color programs use for text reaches 4.5:1 against the background; `WitermMacTerminalTests` checks both. Changing the scheme repaints colors only: it never changes the grid or its contents. Reduce Transparency applies to the surrounding interface.
+
+**Find.** On the Mac, Edit → Find… (⌘F), Find Next (⌘G), Find Previous (⇧⌘G), and Use Selection for Find (⌘E) open SwiftTerm's find bar over the focused terminal. On iPhone and iPad, **Find in Terminal** (also ⌘F with a hardware keyboard) shows a find bar under the terminal header with a match count. Search covers the scrollback held by this view; it selects and scrolls only your view and never sends input or resizes the session. A full-screen program's alternate screen isn't scrolled.
+
+**Snippets.** Saved commands, managed in Settings → Snippets on the Mac and Settings → Snippets on iOS (up to 50, 4 KB each, no control characters except tabs and line breaks). They're stored in this device's preferences only and never sent to a server.
+- Mac: Terminal → Insert Snippet types into the focused terminal (⌥⌘1–⌥⌘9 for the first nine). With no terminal focused, the Mac beeps.
+- iOS: the **Snippets** key in the keyboard row lists them.
+- A snippet is typed like a paste: bracketed when the program asked for that. **Press Return After Inserting** applies to single-line snippets only. On iOS, a multiline snippet goes through the same review as a multiline paste. View-only terminals ignore snippets, like any input.
 
 `make test-contrast` checks the authored palettes: at least 4.5:1 for standard and 7:1 for enhanced, which also checks the 16 ANSI colors against the background. Colors chosen by remote programs (24-bit color, ANSI backgrounds) are outside these guarantees.
 

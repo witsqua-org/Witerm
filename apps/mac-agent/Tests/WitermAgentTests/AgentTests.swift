@@ -450,6 +450,25 @@ final class AgentTests: XCTestCase {
         let restarted = try await client.sessions()
         XCTAssertEqual(restarted.first { $0.id == hidden.id }?.sharing?.shared, true)
         XCTAssertEqual(restarted.first { $0.id == shared.id }?.sharing?.shared, false)
+        // Renaming changes only the display name, locally and for paired devices, and persists.
+        let renamed = try await client.rename(sessionID: hidden.id, to: "  Build logs  ")
+        XCTAssertEqual(renamed.name, "Build logs")
+        XCTAssertEqual(renamed.sharing?.shared, true)
+        let remoteNames = try await client.sessions(peer: phone)
+        XCTAssertEqual(remoteNames.first { $0.id == hidden.id }?.name, "Build logs")
+        do { _ = try await client.rename(sessionID: hidden.id, to: "bad\u{7}name"); XCTFail("Control characters accepted") }
+        catch LocalAgentClientError.rejected(.invalidRequest) { }
+        do { _ = try await client.rename(sessionID: UUID().uuidString.lowercased(), to: "Missing"); XCTFail("Unknown session renamed") }
+        catch LocalAgentClientError.rejected(.notFound) { }
+        broker?.stop()
+        broker = nil
+        for _ in 0..<100 where broker == nil {
+            broker = try? AgentBroker(configuration: configuration)
+            if broker == nil { try await Task.sleep(for: .milliseconds(20)) }
+        }
+        try XCTUnwrap(broker).start()
+        let persisted = try await client.sessions()
+        XCTAssertEqual(persisted.first { $0.id == hidden.id }?.name, "Build logs")
         let noRelays = try await client.status()
         XCTAssertEqual(noRelays.relays, [])
         try await client.close(sessionID: shared.id)

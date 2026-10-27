@@ -86,6 +86,23 @@
         }
       }
     },
+    "%lld of %lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld of %lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "第 %1$lld 个，共 %2$lld 个"
+          }
+        }
+      }
+    },
     "%lld pt" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -150,6 +167,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "，经 %@ 台跳板机"
+          }
+        }
+      }
+    },
+    "A short vibration plays when a program rings the bell." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A short vibration plays when a program rings the bell."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "程序响铃时会有短暂振动。"
           }
         }
       }
@@ -290,6 +324,23 @@
         }
       }
     },
+    "Add %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加%@"
+          }
+        }
+      }
+    },
     "Add Host" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -375,6 +426,23 @@
         }
       }
     },
+    "Add Snippet" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add Snippet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加片段"
+          }
+        }
+      }
+    },
     "Add a host to use the terminal, file transfers and port forwarding." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -409,6 +477,23 @@
         }
       }
     },
+    "Add snippets in Settings → Snippets." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add snippets in Settings → Snippets."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请在“设置”→“片段”中添加片段。"
+          }
+        }
+      }
+    },
     "Add the same Witerm server on this Mac and your iPhone or iPad." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -426,6 +511,23 @@
         }
       }
     },
+    "Add them in Settings → Snippets." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add them in Settings → Snippets."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请在“设置”→“片段”中添加。"
+          }
+        }
+      }
+    },
     "Add this line to your shell profile, such as ~/.zshrc." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -439,6 +541,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "将这一行添加到 shell 配置文件，例如 ~/.zshrc。"
+          }
+        }
+      }
+    },
+    "Add this public key to ~/.ssh/authorized_keys on the host, then connect." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add this public key to ~/.ssh/authorized_keys on the host, then connect."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请将此公钥添加到主机上的 ~/.ssh/authorized_keys，然后连接。"
           }
         }
       }
@@ -613,6 +732,23 @@
         }
       }
     },
+    "Already saved" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Already saved"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已保存"
+          }
+        }
+      }
+    },
     "Announce output updates" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -783,6 +919,23 @@
         }
       }
     },
+    "Bell" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bell"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "响铃"
+          }
+        }
+      }
+    },
     "Camera Access Needed" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -830,6 +983,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "可以查看终端输出。"
+          }
+        }
+      }
+    },
+    "Can't be imported" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can't be imported"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法导入"
           }
         }
       }
@@ -983,6 +1153,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "检查连接"
+          }
+        }
+      }
+    },
+    "Check Connection…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check Connection…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "检查连接…"
           }
         }
       }
@@ -1514,6 +1701,23 @@
         }
       }
     },
+    "Choose File…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose File…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选取文件…"
+          }
+        }
+      }
+    },
     "Choose a Session" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1527,6 +1731,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "选择一个会话"
+          }
+        }
+      }
+    },
+    "Choose an OpenSSH config file. Host names, addresses, ports, users, and jump hosts are imported. Keys and passwords are not; you enter them when you first connect." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose an OpenSSH config file. Host names, addresses, ports, users, and jump hosts are imported. Keys and passwords are not; you enter them when you first connect."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选取一个 OpenSSH 配置文件。将导入主机名、地址、端口、用户和跳板主机。不会导入密钥和密码，首次连接时再输入。"
           }
         }
       }
@@ -1582,6 +1803,23 @@
         }
       }
     },
+    "Color scheme" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Color scheme"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "配色方案"
+          }
+        }
+      }
+    },
     "Command" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1629,6 +1867,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "命令行工具"
+          }
+        }
+      }
+    },
+    "Commands can't contain control characters other than tabs and line breaks." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Commands can't contain control characters other than tabs and line breaks."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "命令中除制表符和换行外不能包含控制字符。"
           }
         }
       }
@@ -2194,6 +2449,23 @@
         }
       }
     },
+    "Copy Public Key" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy Public Key"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制公钥"
+          }
+        }
+      }
+    },
     "Copy the pairing invitation on your Mac, then paste it on the previous screen." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2432,19 +2704,53 @@
         }
       }
     },
-    "Delete SSH Connection?" : {
+    "Delete Snippet" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Delete SSH Connection?"
+            "value" : "Delete Snippet"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "删除 SSH 连接？"
+            "value" : "删除片段"
+          }
+        }
+      }
+    },
+    "Deleted %@ and its saved credentials." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deleted %@ and its saved credentials."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已删除“%@”及其保存的凭据。"
+          }
+        }
+      }
+    },
+    "Deleted %@. Undo is available." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deleted %@. Undo is available."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已删除“%@”。可以撤销。"
           }
         }
       }
@@ -2874,6 +3180,23 @@
         }
       }
     },
+    "Dismiss" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dismiss"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭"
+          }
+        }
+      }
+    },
     "Dismiss Message" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2955,6 +3278,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "下载"
+          }
+        }
+      }
+    },
+    "Drag to reorder. The row scrolls sideways when it's wider than the screen." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drag to reorder. The row scrolls sideways when it's wider than the screen."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拖移以重新排序。按键行宽于屏幕时可横向滚动。"
           }
         }
       }
@@ -3044,6 +3384,40 @@
         }
       }
     },
+    "Edit Snippet" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit Snippet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑片段"
+          }
+        }
+      }
+    },
+    "Edit snippet" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit snippet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑片段"
+          }
+        }
+      }
+    },
     "Edit…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3112,6 +3486,23 @@
         }
       }
     },
+    "End" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "End"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "End"
+          }
+        }
+      }
+    },
     "End Session" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3176,6 +3567,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重新输入邀请"
+          }
+        }
+      }
+    },
+    "Enter a command of up to 4 KB." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter a command of up to 4 KB."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请输入不超过 4 KB 的命令。"
           }
         }
       }
@@ -3452,6 +3860,74 @@
         }
       }
     },
+    "Find Next" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Find Next"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查找下一个"
+          }
+        }
+      }
+    },
+    "Find Previous" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Find Previous"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查找上一个"
+          }
+        }
+      }
+    },
+    "Find in Terminal" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Find in Terminal"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在终端中查找"
+          }
+        }
+      }
+    },
+    "Find…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Find…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查找…"
+          }
+        }
+      }
+    },
     "First Connection to This Host" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3554,6 +4030,23 @@
         }
       }
     },
+    "Generate New Key" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generate New Key"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "生成新密钥"
+          }
+        }
+      }
+    },
     "Get a new pairing invitation from the other device." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3588,6 +4081,23 @@
         }
       }
     },
+    "Graphite" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Graphite"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "石墨"
+          }
+        }
+      }
+    },
     "Hide Private Key" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3601,6 +4111,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "隐藏私钥"
+          }
+        }
+      }
+    },
+    "Home" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Home"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Home"
           }
         }
       }
@@ -3690,6 +4217,40 @@
         }
       }
     },
+    "Hyphen" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hyphen"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "连字符"
+          }
+        }
+      }
+    },
+    "Identity files, agents, and other options in the file are not used. Each host's key is verified when you first connect." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Identity files, agents, and other options in the file are not used. Each host's key is verified when you first connect."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文件中的身份文件、代理及其他选项不会被使用。首次连接时会验证每台主机的密钥。"
+          }
+        }
+      }
+    },
     "If your shell can't find witerm" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3707,6 +4268,35 @@
         }
       }
     },
+    "Import %lld Hosts" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Import %lld Host"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Import %lld Hosts"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导入 %lld 个主机"
+          }
+        }
+      }
+    },
     "Import Private Key File" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3720,6 +4310,57 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "导入私钥文件"
+          }
+        }
+      }
+    },
+    "Import SSH Hosts" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Import SSH Hosts"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导入 SSH 主机"
+          }
+        }
+      }
+    },
+    "Import SSH Hosts…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Import SSH Hosts…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导入 SSH 主机…"
+          }
+        }
+      }
+    },
+    "Import from SSH Config…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Import from SSH Config…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从 SSH 配置导入…"
           }
         }
       }
@@ -3775,6 +4416,23 @@
         }
       }
     },
+    "Input" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Input"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "输入"
+          }
+        }
+      }
+    },
     "Input Enabled" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3788,6 +4446,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "可输入"
+          }
+        }
+      }
+    },
+    "Insert Snippet" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Insert Snippet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "插入片段"
           }
         }
       }
@@ -4132,6 +4807,23 @@
         }
       }
     },
+    "Jump hosts can't be used" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jump hosts can't be used"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法使用跳板主机"
+          }
+        }
+      }
+    },
     "Jump hosts: %@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4179,6 +4871,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "键盘"
+          }
+        }
+      }
+    },
+    "Keyboard Row" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keyboard Row"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "键盘按键行"
           }
         }
       }
@@ -4438,6 +5147,40 @@
         }
       }
     },
+    "More Keys" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "More Keys"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更多按键"
+          }
+        }
+      }
+    },
+    "Multiline snippets are inserted like a paste and never press Return. On iPhone and iPad they're shown for review first." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Multiline snippets are inserted like a paste and never press Return. On iPhone and iPad they're shown for review first."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "多行片段会像粘贴一样插入，且不会按回车。在 iPhone 和 iPad 上会先显示以供检查。"
+          }
+        }
+      }
+    },
     "My Device" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4608,6 +5351,23 @@
         }
       }
     },
+    "New Snippet" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Snippet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新建片段"
+          }
+        }
+      }
+    },
     "New Terminal" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4710,6 +5470,23 @@
         }
       }
     },
+    "Next Match" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Next Match"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下一个匹配项"
+          }
+        }
+      }
+    },
     "Next Page" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4761,6 +5538,23 @@
         }
       }
     },
+    "No Matches" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Matches"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无匹配项"
+          }
+        }
+      }
+    },
     "No Matching Devices" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4791,6 +5585,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "没有匹配的主机"
+          }
+        }
+      }
+    },
+    "No Network Connection" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Network Connection"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无网络连接"
           }
         }
       }
@@ -4863,6 +5674,23 @@
         }
       }
     },
+    "No Snippets" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Snippets"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有片段"
+          }
+        }
+      }
+    },
     "No Terminal Sessions Yet" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4893,6 +5721,57 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "还没有已授权的设备。"
+          }
+        }
+      }
+    },
+    "No hosts were found in this file." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hosts were found in this file."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此文件中未找到主机。"
+          }
+        }
+      }
+    },
+    "No snippets yet. Save a command you type often, then insert it from a terminal." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No snippets yet. Save a command you type often, then insert it from a terminal."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "还没有片段。保存常用命令后，即可在终端中插入。"
+          }
+        }
+      }
+    },
+    "No user set" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No user set"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未设置用户"
           }
         }
       }
@@ -4995,6 +5874,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "好"
+          }
+        }
+      }
+    },
+    "Ocean" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ocean"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "海洋"
           }
         }
       }
@@ -5216,6 +6112,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "也可以在任意文件夹的终端中启动："
+          }
+        }
+      }
+    },
+    "Page Down" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Page Down"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "向下翻页"
+          }
+        }
+      }
+    },
+    "Page Up" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Page Up"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "向上翻页"
           }
         }
       }
@@ -5628,6 +6558,23 @@
         }
       }
     },
+    "Paper" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paper"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "纸张"
+          }
+        }
+      }
+    },
     "Parent Folder" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5849,6 +6796,40 @@
         }
       }
     },
+    "Press Return After Inserting" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Press Return After Inserting"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "插入后按回车"
+          }
+        }
+      }
+    },
+    "Previous Match" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Previous Match"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上一个匹配项"
+          }
+        }
+      }
+    },
     "Previous Page" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5981,6 +6962,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "可按行、词或字符浏览。文本选区仅用于本地阅读。"
+          }
+        }
+      }
+    },
+    "Read ~/.ssh/config" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read ~/.ssh/config"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "读取 ~/.ssh/config"
           }
         }
       }
@@ -6580,6 +7578,57 @@
         }
       }
     },
+    "Rename" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rename"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重命名"
+          }
+        }
+      }
+    },
+    "Rename Session" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rename Session"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重命名会话"
+          }
+        }
+      }
+    },
+    "Rename…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rename…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重命名…"
+          }
+        }
+      }
+    },
     "Request Control" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6627,6 +7676,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在请求配对…"
+          }
+        }
+      }
+    },
+    "Restore Default Keys" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore Default Keys"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "恢复默认按键"
           }
         }
       }
@@ -6801,6 +7867,23 @@
         }
       }
     },
+    "Ring the terminal bell" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ring the terminal bell"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "终端响铃"
+          }
+        }
+      }
+    },
     "Route" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6954,6 +8037,40 @@
         }
       }
     },
+    "SSH hosts and paired devices can't be reached. Terminals on this Mac keep running. Reconnect when the network returns; earlier input is never resent." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSH hosts and paired devices can't be reached. Terminals on this Mac keep running. Reconnect when the network returns; earlier input is never resent."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法访问 SSH 主机和已配对设备。这台 Mac 上的终端会继续运行。网络恢复后请重新连接；之前的输入绝不会重新发送。"
+          }
+        }
+      }
+    },
+    "SSH hosts and your Mac can't be reached. Reconnect when the network returns; earlier input is never resent." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSH hosts and your Mac can't be reached. Reconnect when the network returns; earlier input is never resent."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法访问 SSH 主机和你的 Mac。网络恢复后请重新连接；之前的输入绝不会重新发送。"
+          }
+        }
+      }
+    },
     "Save" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7103,6 +8220,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无法使用扫码"
+          }
+        }
+      }
+    },
+    "Schemes follow the system's light or dark appearance. Increased contrast overrides the scheme." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schemes follow the system's light or dark appearance. Increased contrast overrides the scheme."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "配色方案会跟随系统的浅色或深色外观。增强对比度优先于配色方案。"
           }
         }
       }
@@ -7447,6 +8581,23 @@
         }
       }
     },
+    "Session Renamed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Session Renamed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "会话已重命名"
+          }
+        }
+      }
+    },
     "Session Shared" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7770,6 +8921,57 @@
         }
       }
     },
+    "Show Next Terminal" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Next Terminal"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示下一个终端"
+          }
+        }
+      }
+    },
+    "Show Previous Terminal" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Previous Terminal"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示上一个终端"
+          }
+        }
+      }
+    },
+    "Shown" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shown"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已显示"
+          }
+        }
+      }
+    },
     "Shows the connected terminal." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7783,6 +8985,57 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "显示已连接的终端。"
+          }
+        }
+      }
+    },
+    "Slash" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Slash"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "斜杠"
+          }
+        }
+      }
+    },
+    "Snippets" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Snippets"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "片段"
+          }
+        }
+      }
+    },
+    "Snippets stay on this device and are never sent to a Witerm server. Avoid saving passwords or other secrets." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Snippets stay on this device and are never sent to a Witerm server. Avoid saving passwords or other secrets."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "片段仅保存在此设备上，绝不会发送到 Witerm 服务器。请避免保存密码或其他机密信息。"
           }
         }
       }
@@ -7919,6 +9172,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "停止共享；已配对设备会断开，会话继续运行"
+          }
+        }
+      }
+    },
+    "System" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "System"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统"
           }
         }
       }
@@ -8297,6 +9567,40 @@
         }
       }
     },
+    "The host did not respond in time. Check the network, firewall, or VPN, then try again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The host did not respond in time. Check the network, firewall, or VPN, then try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "主机未及时响应。请检查网络、防火墙或 VPN，然后重试。"
+          }
+        }
+      }
+    },
+    "The host does not accept this sign-in method. Use a password or an Ed25519 key it allows." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The host does not accept this sign-in method. Use a password or an Ed25519 key it allows."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此主机不接受该登录方式。请使用它允许的密码或 Ed25519 密钥。"
+          }
+        }
+      }
+    },
     "The host key has changed and the connection was blocked. Check with your server administrator first." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8331,6 +9635,40 @@
         }
       }
     },
+    "The host offers no algorithms Witerm considers secure, so the connection was stopped. Ask its administrator to enable modern algorithms." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The host offers no algorithms Witerm considers secure, so the connection was stopped. Ask its administrator to enable modern algorithms."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此主机未提供 Witerm 认为安全的算法，连接已停止。请联系其管理员启用现代算法。"
+          }
+        }
+      }
+    },
+    "The host refused the connection. Check the port and that its SSH server is running." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The host refused the connection. Check the port and that its SSH server is running."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "主机拒绝了连接。请检查端口，并确认其 SSH 服务器正在运行。"
+          }
+        }
+      }
+    },
     "The installed command belongs to another copy of Witerm at %@." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8361,6 +9699,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "邀请已过期，请使用新邀请。"
+          }
+        }
+      }
+    },
+    "The jump host could not reach the target. Check the target address and port as the jump host sees them." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The jump host could not reach the target. Check the target address and port as the jump host sees them."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跳板主机无法访问目标。请按跳板主机的视角检查目标地址和端口。"
           }
         }
       }
@@ -8433,23 +9788,6 @@
         }
       }
     },
-    "The saved connection and its credentials will be deleted." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The saved connection and its credentials will be deleted."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将删除保存的连接及其认证信息。"
-          }
-        }
-      }
-    },
     "The saved key for %@ will be removed. Verify the host change first; you will need to compare its fingerprint when connecting again." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8497,6 +9835,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "会话会保持连接。"
+          }
+        }
+      }
+    },
+    "The system alert sound plays, and the Dock icon bounces once if Witerm is in the background." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The system alert sound plays, and the Dock icon bounces once if Witerm is in the background."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将播放系统提示音；如果 Witerm 在后台，程序坞图标会跳动一次。"
+          }
+        }
+      }
+    },
+    "The username, password, or key was not accepted. Check the credentials, then try again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The username, password, or key was not accepted. Check the credentials, then try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用户名、密码或密钥未被接受。请检查凭据，然后重试。"
           }
         }
       }
@@ -8637,6 +10009,40 @@
         }
       }
     },
+    "This is an RSA key, which Witerm doesn't use. Generate a new Ed25519 key or load an existing one." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This is an RSA key, which Witerm doesn't use. Generate a new Ed25519 key or load an existing one."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这是 RSA 密钥，Witerm 不使用此类密钥。请生成新的 Ed25519 密钥或载入已有密钥。"
+          }
+        }
+      }
+    },
+    "This network can't reach the host. Check Wi-Fi, VPN, or the address." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This network can't reach the host. Check Wi-Fi, VPN, or the address."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前网络无法访问此主机。请检查 Wi-Fi、VPN 或地址。"
+          }
+        }
+      }
+    },
     "This server does not offer device pairing." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8701,6 +10107,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "断开连接后，此会话会继续运行。重新连接即可继续工作。"
+          }
+        }
+      }
+    },
+    "Tilde" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tilde"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "波浪号"
           }
         }
       }
@@ -8786,6 +10209,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "请先关闭此服务器的远程连接，再修改其地址。"
+          }
+        }
+      }
+    },
+    "Turn on Save Credentials on This Device to keep this key. Otherwise it is discarded when Witerm closes." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn on Save Credentials on This Device to keep this key. Otherwise it is discarded when Witerm closes."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请打开“在此设备上保存凭据”以保留此密钥，否则 Witerm 关闭时会将其丢弃。"
           }
         }
       }
@@ -9028,6 +10468,23 @@
         }
       }
     },
+    "Unable to find this host. Check the address spelling, DNS, or VPN." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unable to find this host. Check the address spelling, DNS, or VPN."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "找不到此主机。请检查地址拼写、DNS 或 VPN。"
+          }
+        }
+      }
+    },
     "Unable to install the command. Check that you can write to ~/.local/bin." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9092,6 +10549,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无法读取私钥，请选择有效的 Ed25519 OpenSSH 私钥文件。"
+          }
+        }
+      }
+    },
+    "Unable to read this file. Choose an OpenSSH config file up to 256 KB." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unable to read this file. Choose an OpenSSH config file up to 256 KB."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法读取此文件。请选取不超过 256 KB 的 OpenSSH 配置文件。"
           }
         }
       }
@@ -9228,6 +10702,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无法使用此私钥。请检查格式和口令。"
+          }
+        }
+      }
+    },
+    "Undo" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Undo"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "撤销"
           }
         }
       }
@@ -9419,6 +10910,23 @@
         }
       }
     },
+    "Use Selection for Find" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use Selection for Find"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用所选内容查找"
+          }
+        }
+      }
+    },
     "Use This Copy" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9487,6 +10995,23 @@
         }
       }
     },
+    "Use a name of up to 60 characters without control characters." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use a name of up to 60 characters without control characters."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请使用不超过 60 个字符且不含控制字符的名称。"
+          }
+        }
+      }
+    },
     "Use a name of up to 80 characters without control characters." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9521,19 +11046,19 @@
         }
       }
     },
-    "Use an OpenSSH private key in Ed25519 format." : {
+    "Use an OpenSSH private key in Ed25519 format, or generate one here. RSA keys aren't supported because they would be signed with SHA-1." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Use an OpenSSH private key in Ed25519 format."
+            "value" : "Use an OpenSSH private key in Ed25519 format, or generate one here. RSA keys aren't supported because they would be signed with SHA-1."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "使用 Ed25519 格式的 OpenSSH 私钥。"
+            "value" : "请使用 Ed25519 格式的 OpenSSH 私钥，或在此生成一个。不支持 RSA 密钥，因为它们会使用 SHA-1 签名。"
           }
         }
       }
@@ -9619,6 +11144,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "版本"
+          }
+        }
+      }
+    },
+    "Vertical Bar" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vertical Bar"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "竖线"
           }
         }
       }
@@ -9793,6 +11335,23 @@
         }
       }
     },
+    "Without Return, the command waits on the line for you to check it." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Without Return, the command waits on the line for you to check it."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不按回车时，命令会停留在命令行上供你检查。"
+          }
+        }
+      }
+    },
     "You can save up to 8 servers. Remove one to add another." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9840,6 +11399,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "需要安装 tmux"
+          }
+        }
+      }
+    },
+    "via %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "via %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "经由 %@"
           }
         }
       }
