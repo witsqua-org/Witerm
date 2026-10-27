@@ -30,8 +30,8 @@ final class TmuxEngine {
     func internalName(_ id: String) -> String { "witerm-" + id }
 
     @discardableResult
-    private func command(_ arguments: [String], timeout: TimeInterval = 3) throws -> Data {
-        let result = try runner().run(baseArguments + arguments, timeout: timeout)
+    private func command(_ arguments: [String], timeout: TimeInterval = 3, directory: String? = nil) throws -> Data {
+        let result = try runner().run(baseArguments + arguments, timeout: timeout, directory: directory)
         guard result.status == 0 else { throw AgentFailure() }
         return result.output
     }
@@ -69,9 +69,12 @@ final class TmuxEngine {
         // More than one shell argument asks tmux to exec argv directly. The
         // display name is metadata only and is never interpreted by tmux.
         // WITERM_SESSION_ID lets `witerm share` know which session it runs in.
-        let directory = cwd.map { ["-c", $0] } ?? []
-        try command(["new-session", "-d", "-s", internalID, "-x", String(columns), "-y", String(rows)]
-            + directory + ["-e", "WITERM_SESSION_ID=\(id)", "--", configuration.shellPath, configuration.loginShell ? "-l" : "-i"])
+        // The start folder is tmux's own working directory, never -c: tmux
+        // expands formats in -c, including #{…} and #(command), and no
+        // escaping covers every folder name.
+        try command(["new-session", "-d", "-s", internalID, "-x", String(columns), "-y", String(rows),
+                     "-e", "WITERM_SESSION_ID=\(id)", "--", configuration.shellPath, configuration.loginShell ? "-l" : "-i"],
+                    directory: cwd)
         do {
             for (key, value) in [
                 ("status", "off"), ("prefix", "None"), ("prefix2", "None"),
@@ -83,6 +86,14 @@ final class TmuxEngine {
             try command(["set-window-option", "-t", internalID, "automatic-rename", "off"])
             try command(["set-window-option", "-t", internalID, "remain-on-exit", "off"])
             try command(["resize-window", "-t", internalID, "-x", String(columns), "-y", String(rows)])
+            if let cwd {
+                // tmux falls back to another folder when it can't use one; never
+                // report a session as started where it wasn't.
+                let started = try command(["display-message", "-p", "-t", internalID, "#{pane_start_path}"])
+                guard String(decoding: started, as: UTF8.self).trimmingCharacters(in: .newlines) == cwd else {
+                    throw AgentFailure(.invalidRequest)
+                }
+            }
             let record = LocalSessionInfo(id: id, name: name, createdAt: Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970)), columns: columns, rows: rows)
             records[id] = record
             try state.saveMetadata(records)

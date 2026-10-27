@@ -47,6 +47,36 @@ func clampedGrid(columns: Int, rows: Int) -> (columns: Int, rows: Int) {
     (min(max(columns, 20), 500), min(max(rows, 5), 200))
 }
 
+/// Resolves once with whichever of input or output finishes the attachment.
+private final class OutcomeLatch: @unchecked Sendable {
+    private let lock = NSLock()
+    private var result: Result<TerminalBridge.Outcome, Error>?
+    private var waiter: CheckedContinuation<Result<TerminalBridge.Outcome, Error>, Never>?
+
+    func resolve(_ value: Result<TerminalBridge.Outcome, Error>) {
+        let waiter = lock.withLock { () -> CheckedContinuation<Result<TerminalBridge.Outcome, Error>, Never>? in
+            guard result == nil else { return nil }
+            result = value
+            defer { self.waiter = nil }
+            return self.waiter
+        }
+        waiter?.resume(returning: value)
+    }
+
+    var value: Result<TerminalBridge.Outcome, Error> {
+        get async {
+            await withCheckedContinuation { continuation in
+                let ready = lock.withLock { () -> Result<TerminalBridge.Outcome, Error>? in
+                    if let result { return result }
+                    waiter = continuation
+                    return nil
+                }
+                if let ready { continuation.resume(returning: ready) }
+            }
+        }
+    }
+}
+
 /// Connects this terminal to an attached session until the user detaches or
 /// the session ends. The terminal is always restored, however it exits.
 final class TerminalBridge: @unchecked Sendable {
@@ -74,25 +104,31 @@ final class TerminalBridge: @unchecked Sendable {
 
     func run(_ attachment: LocalTerminalAttachment, mode: LocalAttachmentMode) async throws -> Outcome {
         guard tcgetattr(STDIN_FILENO, &saved) == 0 else { throw CLIFailure(exit: .failure, code: "terminal", message: "Unable to read terminal settings.") }
-        enterRaw()
         let (actions, sink) = AsyncStream<Action>.makeStream(bufferingPolicy: .unbounded)
+        // Handlers exist before raw mode, so a signal can never leave it behind.
         let signals = installSignals(sink)
+        defer { signals.forEach { $0.cancel() } }
+        enterRaw()
         startReader(sink)
-        defer {
-            lock.withLock { stopped = true }
-            sink.finish()
-            signals.forEach { $0.cancel() }
-            restore()
+        let finished = OutcomeLatch()
+        let writer = CLIStreamWriter { [self] result in
+            // Once detaching, only its ACK/error may finish the command.
+            guard !lock.withLock({ detaching }) else { return }
+            finished.resolve(result.map { .ended })
         }
         let events = attachment.events
-        return try await withThrowingTaskGroup(of: Outcome.self) { group in
-            group.addTask { [self] in
+        let output = Task.detached { [self] in
+            do {
                 for try await event in events {
-                    if case .output(let data) = event { Self.write(data) }
+                    if case .output(let data) = event, !lock.withLock({ detaching }) { try writer.append(data) }
                 }
-                return lock.withLock { detaching } ? .detached : .ended
+                if !lock.withLock({ detaching }) { writer.finish() }
+            } catch {
+                if !lock.withLock({ detaching }) { finished.resolve(.failure(error)) }
             }
-            group.addTask { [self] in
+        }
+        let input = Task { [self] in
+            do {
                 for await action in actions {
                     switch action {
                     case .input(let data):
@@ -106,21 +142,34 @@ final class TerminalBridge: @unchecked Sendable {
                     case .resize(let columns, let rows):
                         if mode == .control { try await attachment.resize(columns: columns, rows: rows) }
                     case .help:
-                        Self.write(Data(Self.helpText(escape).utf8))
+                        CLIOutput.standardOutput.write(Data(Self.helpText(escape).utf8))
                     case .detach:
-                        lock.withLock { detaching = true }
-                        try await attachment.detach()
-                        return .detached
+                        try await detach(attachment, writer: writer)
+                        finished.resolve(.success(.detached))
+                        return
                     }
                 }
-                lock.withLock { detaching = true }
-                try await attachment.detach()
-                return .detached
-            }
-            defer { group.cancelAll() }
-            guard let outcome = try await group.next() else { return .ended }
-            return outcome
+                try await detach(attachment, writer: writer)
+                finished.resolve(.success(.detached))
+            } catch { finished.resolve(.failure(error)) }
         }
+        let result = await finished.value
+        lock.withLock { stopped = true }
+        sink.finish()
+        writer.stop()
+        restore()
+        input.cancel()
+        output.cancel()
+        return try result.get()
+    }
+
+    /// The terminal comes back before waiting on the service, so a signal or
+    /// `~.` restores it at once even if the detach is slow.
+    private func detach(_ attachment: LocalTerminalAttachment, writer: CLIStreamWriter) async throws {
+        lock.withLock { detaching = true }
+        writer.stop()
+        restore()
+        try await attachment.detach()
     }
 
     static func helpText(_ escape: UInt8?) -> String {
@@ -132,31 +181,47 @@ final class TerminalBridge: @unchecked Sendable {
 
     private func enterRaw() {
         lock.withLock {
+            // Never again once leaving: a late SIGCONT must not re-enter raw mode.
+            guard !raw, !detaching, !stopped else { return }
             var settings = saved
             cfmakeraw(&settings)
-            raw = tcsetattr(STDIN_FILENO, TCSAFLUSH, &settings) == 0
+            // TCSAFLUSH waits for output to drain before changing modes. A
+            // terminal already full at attach (or resume) would block here,
+            // before the queued termination action can ever run.
+            // Preserve TCSAFLUSH's input-discard behavior without its output
+            // drain. Flush before entering raw mode, so newly delivered raw
+            // input can never be discarded by a subsequent flush.
+            var result: Int32
+            repeat { result = tcflush(STDIN_FILENO, TCIFLUSH) } while result < 0 && errno == EINTR
+            repeat { result = tcsetattr(STDIN_FILENO, TCSANOW, &settings) } while result < 0 && errno == EINTR
+            raw = result == 0
         }
     }
 
-    /// Leaves raw mode and undoes modes a program in the session may have
-    /// set: alternate screen, mouse reporting, bracketed paste, hidden cursor.
+    /// Leaves raw mode at once, without waiting for output to drain, then
+    /// undoes modes a program in the session may have set: alternate screen,
+    /// mouse reporting, bracketed paste, hidden cursor.
     private func restore() {
-        Self.write(Data("\u{1B}[?1049l\u{1B}[?1000l\u{1B}[?1002l\u{1B}[?1003l\u{1B}[?1006l\u{1B}[?2004l\u{1B}[?1l\u{1B}>\u{1B}[0m\u{1B}[?25h".utf8))
-        lock.withLock {
-            guard raw else { return }
+        let restored = lock.withLock { () -> Bool in
+            guard raw else { return false }
             var settings = saved
-            _ = tcsetattr(STDIN_FILENO, TCSAFLUSH, &settings)
+            _ = tcsetattr(STDIN_FILENO, TCSANOW, &settings)
             raw = false
+            return true
         }
+        guard restored else { return }
+        CLIOutput.standardOutput.write(Data("\u{1B}[?1049l\u{1B}[?1000l\u{1B}[?1002l\u{1B}[?1003l\u{1B}[?1006l\u{1B}[?2004l\u{1B}[?1l\u{1B}>\u{1B}[0m\u{1B}[?25h".utf8))
     }
 
     private func installSignals(_ sink: AsyncStream<Action>.Continuation) -> [DispatchSourceSignal] {
         var sources: [DispatchSourceSignal] = []
         func handle(_ number: Int32, _ action: @escaping @Sendable () -> Void) {
-            signal(number, SIG_IGN)
+            // Listen first, then drop the default action, so no signal falls
+            // between the two.
             let source = DispatchSource.makeSignalSource(signal: number, queue: .global(qos: .userInitiated))
             source.setEventHandler(handler: action)
             source.resume()
+            signal(number, SIG_IGN)
             sources.append(source)
         }
         handle(SIGWINCH) {
@@ -202,19 +267,4 @@ final class TerminalBridge: @unchecked Sendable {
         }
     }
 
-    static func write(_ data: Data) {
-        data.withUnsafeBytes { raw in
-            guard var base = raw.baseAddress else { return }
-            var remaining = raw.count
-            while remaining > 0 {
-                let count = Darwin.write(STDOUT_FILENO, base, remaining)
-                if count < 0 {
-                    if errno == EINTR || errno == EAGAIN { continue }
-                    return
-                }
-                base = base.advanced(by: count)
-                remaining -= count
-            }
-        }
-    }
 }

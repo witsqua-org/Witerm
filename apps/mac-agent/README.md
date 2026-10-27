@@ -32,7 +32,9 @@ The package tests cover:
 - file and socket permissions, locking, and peer checks
 - malformed frames and limits
 - real tmux input, `stty size`, exclusive control, and view-only rejection
-- reconnect redraw and resize confirmation
+- reconnect redraw, resize confirmation, and literal start folders
+- sharing and paired-device visibility
+- the real `witerm` binary on pseudo-terminals (`WitermCLITests`, see [Command line](../../docs/cli.md#testing))
 
 The black-box smoke tool also checks that the shell PID survives an agent restart:
 

@@ -152,10 +152,10 @@ struct CLIRunner {
         }
         let key = invocation.escape.map { String(UnicodeScalar($0)) }
         let hint = key.map { ", Enter then \($0). to detach" } ?? ""
-        FileHandle.standardError.write(Data("[\(mode == .view ? "viewing" : "attached to") “\(session.name)”\(hint)]\r\n".utf8))
+        CLIOutput.standardError.write(Data("[\(mode == .view ? "viewing" : "attached to") “\(session.name)”\(hint)]\r\n".utf8))
         let outcome = try await TerminalBridge(escape: invocation.escape).run(attachment, mode: mode)
         let message = outcome == .detached ? "[detached; “\(session.name)” keeps running]" : "[“\(session.name)” ended]"
-        FileHandle.standardError.write(Data((message + "\n").utf8))
+        CLIOutput.standardError.write(Data((message + "\n").utf8))
         return .success
     }
 

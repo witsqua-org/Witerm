@@ -11,6 +11,8 @@ Contracts: [relay-v1](../protocol/relay-v1.md) for the relay, [local-agent-v1](.
 3. Share a session: **Share** in the terminal header or the session's context menu, or `witerm share` / `witerm new --share` from the [command line](cli.md). Sessions are private until shared.
 4. On iOS, open the Devices tab, pick the Mac, then pick a session.
 
+On the Mac, **Continue on iPhone…** in a session's header or context menu walks through steps 1–3 as a checklist.
+
 **Sharing.** A paired device sees only shared sessions, and only within the access its grant allows. **Stop Sharing** (or `witerm unshare`) disconnects paired devices and keeps the session running; the phone shows "Session Unavailable". The Mac's terminal header shows whether remote access is ready and which devices are connected.
 
 **Control.** Each session has one controller. If someone else has control, you can watch read-only, but you can't take over by force. **Release Control** switches you to read-only. **Take Control** asks for control once the other device has released it.
