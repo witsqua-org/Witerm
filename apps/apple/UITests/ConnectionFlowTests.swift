@@ -30,6 +30,13 @@ final class ConnectionFlowTests: XCTestCase {
         tab.tap()
     }
 
+    /// Settings lists one row per server; its status and actions are a tap away.
+    private func openServer(_ app: XCUIApplication, index: Int = 0) {
+        let row = app.buttons["settingsServerRow-\(index)"]
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        row.tap()
+    }
+
     private func capture(_ name: String, app: XCUIApplication) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name
@@ -60,6 +67,7 @@ final class ConnectionFlowTests: XCTestCase {
         XCTAssertFalse(app.buttons["primaryAction"].exists)
         capture("03-macs", app: app)
         openSettings(app)
+        openServer(app)
         let feedback = app.descendants(matching: .any)["settingsConnectionFeedback"].firstMatch
         let success = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "服务器可以访问"), object: feedback)
         wait(for: [success], timeout: 10)
@@ -80,7 +88,7 @@ final class ConnectionFlowTests: XCTestCase {
         XCTAssertTrue(waitForDarkScreen(app))
         capture("07-dark-ssh", app: app)
         openSettings(app)
-        XCTAssertTrue(app.buttons["settingsEditServer"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["settingsDisplay"].waitForExistence(timeout: 5))
         XCTAssertTrue(waitForDarkScreen(app))
         capture("07-dark-settings", app: app)
     }
@@ -176,12 +184,12 @@ final class ConnectionFlowTests: XCTestCase {
         wait(for: [bothListed], timeout: 20)
         capture("10-several-servers", app: app)
 
-        // Settings is a lazily built form: rows exist only once scrolled to.
+        // Settings lists one row per server, then Add Server.
         app.tabBars.buttons["Settings"].tap()
-        XCTAssertTrue(app.staticTexts["localhost:8080"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["settingsServerRow-0"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["settingsServerRow-1"].exists)
         let add = app.buttons["settingsAddServer"]
-        for _ in 0..<8 where !(add.exists && add.isHittable) { app.swipeUp() }
-        XCTAssertTrue(app.staticTexts["127.0.0.1:8080"].exists || app.buttons["settingsAddServer"].exists)
+        XCTAssertTrue(add.waitForExistence(timeout: 5))
         capture("11-several-servers-settings", app: app)
         add.tap()
         let field = app.textFields["serverAddressField"]
@@ -192,23 +200,22 @@ final class ConnectionFlowTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["This server is already in your list."].waitForExistence(timeout: 5))
         app.buttons["Cancel"].tap()
 
-        // The remove button just above Add belongs to the second server.
-        let removes = app.buttons.matching(identifier: "settingsRemoveServer")
-        XCTAssertTrue(removes.firstMatch.waitForExistence(timeout: 5))
-        removes.element(boundBy: removes.count - 1).tap()
+        // Remove the second server from its own page; Settings returns to the list.
+        openServer(app, index: 1)
+        let remove = app.buttons["settingsRemoveServer"]
+        XCTAssertTrue(remove.waitForExistence(timeout: 5))
+        remove.tap()
         app.alerts.buttons["Remove"].tap()
         let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"),
-                                             object: app.staticTexts["127.0.0.1:8080"])
+                                             object: app.buttons["settingsServerRow-1"])
         wait(for: [gone], timeout: 5)
-        for _ in 0..<8 where !app.staticTexts["localhost:8080"].exists && !app.buttons["settingsCheckConnection"].isHittable { app.swipeDown() }
-        // One server left: its section is no longer titled by host.
-        XCTAssertFalse(app.staticTexts["localhost:8080"].exists)
-        XCTAssertEqual(app.buttons.matching(identifier: "settingsRemoveServer").count, 1)
+        XCTAssertTrue(app.buttons["settingsServerRow-0"].exists)
     }
 
     func testPairingRequiresVerifiedServer() {
         let app = launch(address: "http://localhost:1")
         openSettings(app)
+        openServer(app)
         let entry = app.buttons["settingsDevicePairing"]
         XCTAssertTrue(entry.waitForExistence(timeout: 10))
         let failed = XCTNSPredicateExpectation(
@@ -221,6 +228,7 @@ final class ConnectionFlowTests: XCTestCase {
     private func openPairing() -> XCUIApplication {
         let app = launchApp(address: "http://localhost:8080")
         openSettings(app)
+        openServer(app)
         let entry = app.buttons["settingsDevicePairing"]
         XCTAssertTrue(entry.waitForExistence(timeout: 10))
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: entry)

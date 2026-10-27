@@ -254,7 +254,7 @@ struct RemoteTerminalWorkspace: View {
                 .disabled(model.busy != nil)
                 .accessibilityIdentifier("remoteSessionListInline")
             if model.isInteractive {
-                Button(String(localized: "Disconnect", bundle: .main), systemImage: "eject") { model.disconnect() }
+                Button(String(localized: "Leave", bundle: .main), systemImage: "rectangle.portrait.and.arrow.right") { model.disconnect() }
                     .touchTarget(square: true)
                     .accessibilityIdentifier("detachRemoteTerminal")
             }

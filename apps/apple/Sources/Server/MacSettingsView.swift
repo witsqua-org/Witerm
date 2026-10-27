@@ -151,10 +151,7 @@ private struct MacServerSection: View {
                     .textSelection(.enabled)
                     .multilineTextAlignment(.trailing)
             }
-            LabeledContent(String(localized: "Status", bundle: .main)) {
-                StatusBadge(server.statusTitle, systemImage: server.statusSymbol, tone: server.statusTone)
-                    .accessibilityIdentifier("connectionStatus")
-            }
+            // The feedback row states the status once, with when it was last checked.
             ConnectionFeedback(server: server)
                 .accessibilityIdentifier("connectionFeedback")
             HStack {

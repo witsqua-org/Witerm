@@ -6,11 +6,11 @@ The apps connect straight to SSH servers. Witerm Server, pairing, and Allow Remo
 
 Saved hosts are under **SSH Hosts** in the Mac sidebar and in the iOS **SSH** tab. Search matches names and addresses; favorites come first, then recently connected hosts. On a regular-width iPad, the host list stays beside the terminal.
 
-**Adding a host.** File → New SSH Connection (⇧⌘N) on the Mac, or the add button on iOS. Enter the address, port, and username, then pick **Password** or an **OpenSSH Ed25519 key** (plain or passphrase-protected).
+**Adding a host.** File → New SSH Connection (⇧⌘N) on the Mac, or the add button on iOS. Type the address the way you would in a shell: `user@host`, `user@host:port`, `user@[fe80::1]:2222`, or an `ssh://` URL. The form shows what it understood (user, host, port) under the field. Then pick **Password** or an **OpenSSH Ed25519 key** (plain or passphrase-protected).
 
-- **Save and Connect** connects at once; **Save Without Connecting** stores the host without credentials.
+- **Connect** saves the host and connects; **Save for Later** stores it without connecting. Both sit at the bottom of the form.
 - Editing a host uses **Save** and never connects.
-- The name is optional and defaults to the address. Port and jump hosts are under the advanced sections.
+- **More Options** holds the name (optional; defaults to the address) and jump hosts. It opens on its own when either is already set or has an error.
 - **Generate New Key** makes an Ed25519 key in the form and shows its public key to copy or share into the host's `~/.ssh/authorized_keys`. The private key stays on the device: in memory, or in the Keychain if **Save Credentials on This Device** is on (the form warns when it's off).
 - An RSA key is flagged at its field before connecting, with a pointer to generating an Ed25519 key.
 
