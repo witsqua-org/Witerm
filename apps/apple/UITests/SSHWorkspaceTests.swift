@@ -22,19 +22,15 @@ import XCTest
         XCTAssertTrue(sshTab.waitForExistence(timeout: 10))
         sshTab.tap()
         app.buttons["newSSHProfile"].tap()
+        let host = app.textFields.matching(identifier: "sshHostAddress").firstMatch
+        XCTAssertTrue(host.waitForExistence(timeout: 5))
+        host.tap(); host.typeText("fixture@127.0.0.1:" + port)
+        app.buttons["sshMoreOptions"].tap()
         let name = app.textFields["sshProfileName"]
         XCTAssertTrue(name.waitForExistence(timeout: 5))
+        let middle = app.windows.firstMatch.frame.midY
+        for _ in 0..<4 where !name.isHittable || name.frame.maxY > middle { app.swipeUp() }
         name.tap(); name.typeText(profileName)
-        let host = app.textFields.matching(identifier: "sshHostAddress").firstMatch
-        host.tap(); host.typeText("127.0.0.1")
-        if !app.textFields.matching(identifier: "sshHostPort").firstMatch.exists {
-            app.buttons["高级选项"].firstMatch.tap()
-        }
-        let portField = app.textFields.matching(identifier: "sshHostPort").firstMatch
-        portField.tap()
-        portField.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 6) + port)
-        let username = app.textFields.matching(identifier: "sshHostUsername").firstMatch
-        username.tap(); username.typeText("fixture")
         let password = app.secureTextFields.matching(identifier: "sshHostPassword").firstMatch
         password.tap(); password.typeText("witerm-fixture-only")
         app.buttons["sshConnect"].tap()
@@ -109,9 +105,8 @@ import XCTest
         let populated = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "value == %@", profileName), object: name)
         wait(for: [populated], timeout: 5)
-        XCTAssertEqual(host.value as? String, "127.0.0.1")
-        XCTAssertEqual(portField.value as? String, port)
-        XCTAssertEqual(username.value as? String, "fixture")
+        // A saved custom name opens More Options; the address reads back as typed.
+        XCTAssertEqual(host.value as? String, "fixture@127.0.0.1:" + port)
         tapVisibleControl(app.buttons["取消"], in: app)
         XCTAssertTrue(app.buttons["newSSHProfile"].waitForExistence(timeout: 5))
         XCTAssertFalse(terminal.exists, "Canceling the saved profile must not reconnect")
@@ -220,19 +215,15 @@ import XCTest
     private func connectNewHost(_ app: XCUIApplication, name profileName: String, port: String, fingerprint: String) {
         XCTAssertFalse(anyFixtureRows(app, name: profileName).firstMatch.exists, "Fixture host already exists; refusing to touch it")
         app.buttons["newSSHProfile"].tap()
+        let host = app.textFields.matching(identifier: "sshHostAddress").firstMatch
+        XCTAssertTrue(host.waitForExistence(timeout: 5))
+        host.tap(); host.typeText("fixture@127.0.0.1:" + port)
+        app.buttons["sshMoreOptions"].tap()
         let name = app.textFields["sshProfileName"]
         XCTAssertTrue(name.waitForExistence(timeout: 5))
+        let middle = app.windows.firstMatch.frame.midY
+        for _ in 0..<4 where !name.isHittable || name.frame.maxY > middle { app.swipeUp() }
         name.tap(); name.typeText(profileName)
-        let host = app.textFields.matching(identifier: "sshHostAddress").firstMatch
-        host.tap(); host.typeText("127.0.0.1")
-        if !app.textFields.matching(identifier: "sshHostPort").firstMatch.exists {
-            app.buttons["高级选项"].firstMatch.tap()
-        }
-        let portField = app.textFields.matching(identifier: "sshHostPort").firstMatch
-        portField.tap()
-        portField.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 6) + port)
-        let username = app.textFields.matching(identifier: "sshHostUsername").firstMatch
-        username.tap(); username.typeText("fixture")
         let password = app.secureTextFields.matching(identifier: "sshHostPassword").firstMatch
         password.tap(); password.typeText("witerm-fixture-only")
         app.buttons["sshConnect"].tap()

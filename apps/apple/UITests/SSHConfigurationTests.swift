@@ -20,13 +20,17 @@ import XCTest
         addTeardownBlock { await MainActor.run { app.terminate() } }
         XCTAssertTrue(app.buttons["newSSHProfile"].waitForExistence(timeout: 10))
         app.buttons["newSSHProfile"].tap()
+        let host = app.textFields["sshHostAddress"]
+        XCTAssertTrue(host.waitForExistence(timeout: 5))
+        host.tap(); host.typeText("fixture@example.invalid")
+        XCTAssertTrue(app.staticTexts["sshAddressSummary"].waitForExistence(timeout: 5))
+        app.buttons["sshMoreOptions"].tap()
         let field = app.textFields["sshProfileName"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
+        // The keyboard and the bottom actions cover the lower half; bring the field up.
+        let middle = app.windows.firstMatch.frame.midY
+        for _ in 0..<4 where !field.isHittable || field.frame.maxY > middle { app.swipeUp() }
         field.tap(); field.typeText(name)
-        let host = app.textFields["sshHostAddress"]
-        host.tap(); host.typeText("example.invalid")
-        let user = app.textFields["sshHostUsername"]
-        user.tap(); user.typeText("fixture")
         // Reveal the save-only action without entering any credentials.
         let saveOnly = app.buttons["sshSaveOnly"]
         for _ in 0..<6 where !saveOnly.isHittable { app.swipeUp() }
@@ -66,18 +70,12 @@ import XCTest
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         menu.tap()
         app.buttons["Add to Favorites"].tap()
-        app.switches["sshFavoritesOnly"].tap()
-        XCTAssertTrue(row.exists)
-        let search = app.searchFields.firstMatch
-        if !search.exists { app.swipeDown() }
-        XCTAssertTrue(search.waitForExistence(timeout: 5))
-        search.tap(); search.typeText(name)
-        XCTAssertTrue(row.exists)
-        search.typeText("-no-match")
-        let clear = app.buttons["Show All Hosts"]
-        XCTAssertTrue(clear.waitForExistence(timeout: 5))
-        clear.tap()
-        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        let favorite = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", "favorite"), object: row)
+        wait(for: [favorite], timeout: 5)
+        // With only a few hosts, search and filters stay out of the way.
+        app.swipeDown()
+        XCTAssertFalse(app.switches["sshFavoritesOnly"].exists)
+        XCTAssertFalse(app.searchFields.firstMatch.exists)
     }
 
     /// Generating a key never saves or sends it; the form only shows the public half.
@@ -89,10 +87,9 @@ import XCTest
         defer { app.terminate() }
         XCTAssertTrue(app.buttons["newSSHProfile"].waitForExistence(timeout: 10))
         app.buttons["newSSHProfile"].tap()
-        let picker = app.buttons["sshAuthentication"]
-        XCTAssertTrue(picker.waitForExistence(timeout: 5))
-        picker.tap()
-        app.buttons["Private Key"].firstMatch.tap()
+        let keyChoice = app.buttons["Private Key"].firstMatch
+        XCTAssertTrue(keyChoice.waitForExistence(timeout: 5))
+        keyChoice.tap()
         let generate = app.buttons["sshGenerateKey"]
         // Bring the button clear of the bottom edge, where a tap reaches the home indicator.
         let bottom = app.windows.firstMatch.frame.maxY - 120
@@ -115,7 +112,7 @@ import XCTest
         XCTAssertTrue(app.buttons["newSSHProfile"].waitForExistence(timeout: 10))
         app.buttons["newSSHProfile"].tap()
         app.buttons["sshConnect"].tap()
-        XCTAssertTrue(app.staticTexts["Enter a valid host address without spaces."].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Enter an address, like deploy@server.example.com."].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["sshTrustHost"].exists)
     }
 }

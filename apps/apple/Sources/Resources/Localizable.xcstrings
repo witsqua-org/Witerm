@@ -86,6 +86,35 @@
         }
       }
     },
+    "%lld keys" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld key"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld keys"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 个按键"
+          }
+        }
+      }
+    },
     "%lld of %lld" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -116,6 +145,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld 磅"
+          }
+        }
+      }
+    },
+    "%lld pt · %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld pt · %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld 磅 · %2$@"
+          }
+        }
+      }
+    },
+    "%lld saved" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld saved"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已保存 %lld 个"
           }
         }
       }
@@ -341,6 +404,23 @@
         }
       }
     },
+    "Add :port after the host if it isn't 22." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add :port after the host if it isn't 22."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "如果端口不是 22，请在主机后加上“:端口”。"
+          }
+        }
+      }
+    },
     "Add Host" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -511,6 +591,23 @@
         }
       }
     },
+    "Add the username before @, like deploy@server.example.com." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add the username before @, like deploy@server.example.com."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请在 @ 前加上用户名，例如 deploy@server.example.com。"
+          }
+        }
+      }
+    },
     "Add them in Settings → Snippets." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -613,19 +710,19 @@
         }
       }
     },
-    "Advanced Options" : {
+    "After the colon, use a port from 1 to 65535." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Advanced Options"
+            "value" : "After the colon, use a port from 1 to 65535."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "高级选项"
+            "value" : "冒号后请使用 1 到 65535 之间的端口。"
           }
         }
       }
@@ -851,23 +948,6 @@
         }
       }
     },
-    "Authentication" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Authentication"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "认证方式"
-          }
-        }
-      }
-    },
     "Authorized Devices" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -932,6 +1012,57 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "响铃"
+          }
+        }
+      }
+    },
+    "Bell Off" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bell Off"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "响铃已关闭"
+          }
+        }
+      }
+    },
+    "Bell On" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bell On"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "响铃已打开"
+          }
+        }
+      }
+    },
+    "Bell and VoiceOver" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bell and VoiceOver"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "响铃与旁白"
           }
         }
       }
@@ -1803,6 +1934,23 @@
         }
       }
     },
+    "Collapsed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collapsed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已收起"
+          }
+        }
+      }
+    },
     "Color scheme" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2224,23 +2372,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "连接名称"
-          }
-        }
-      }
-    },
-    "Connection Name (Optional)" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Connection Name (Optional)"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "连接名称（可选）"
           }
         }
       }
@@ -3112,23 +3243,6 @@
         }
       }
     },
-    "Disconnect; the session keeps running" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Disconnect; the session keeps running"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "断开连接；会话会继续运行"
-          }
-        }
-      }
-    },
     "Disconnected" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3159,23 +3273,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "连接已断开。请核对设备授权后重新连接。"
-          }
-        }
-      }
-    },
-    "Disconnecting…" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Disconnecting…"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在断开…"
           }
         }
       }
@@ -3639,23 +3736,6 @@
         }
       }
     },
-    "Enter a port from 1 to 65535." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Enter a port from 1 to 65535."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请输入 1–65535 之间的端口号。"
-          }
-        }
-      }
-    },
     "Enter a single folder name." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3724,19 +3804,19 @@
         }
       }
     },
-    "Enter a valid username." : {
+    "Enter an address, like deploy@server.example.com." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Enter a valid username."
+            "value" : "Enter an address, like deploy@server.example.com."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请输入有效的用户名。"
+            "value" : "请输入地址，例如 deploy@server.example.com。"
           }
         }
       }
@@ -3822,6 +3902,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "示例"
+          }
+        }
+      }
+    },
+    "Expanded" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expanded"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已展开"
           }
         }
       }
@@ -4149,23 +4246,6 @@
         }
       }
     },
-    "Host Address" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Host Address"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "主机地址"
-          }
-        }
-      }
-    },
     "Host Keys" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4412,23 +4492,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "增强终端对比度"
-          }
-        }
-      }
-    },
-    "Input" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Input"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "输入"
           }
         }
       }
@@ -4739,6 +4802,23 @@
         }
       }
     },
+    "It keeps running while you're away. Connect to pick up where you left off." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It keeps running while you're away. Connect to pick up where you left off."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你离开期间它会继续运行。连接后即可从离开的地方继续。"
+          }
+        }
+      }
+    },
     "Jump Host" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4773,6 +4853,23 @@
         }
       }
     },
+    "Jump Host %lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jump Host %lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跳板主机 %lld"
+          }
+        }
+      }
+    },
     "Jump Hosts" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4790,19 +4887,19 @@
         }
       }
     },
-    "Jump hosts are connected in list order, followed by the target host." : {
+    "Jump hosts are connected in list order, followed by the address above." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Jump hosts are connected in list order, followed by the target host."
+            "value" : "Jump hosts are connected in list order, followed by the address above."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "按列表顺序连接跳板机，最后到达目标主机。"
+            "value" : "跳板主机按列表顺序连接，最后连接上方的地址。"
           }
         }
       }
@@ -4892,6 +4989,23 @@
         }
       }
     },
+    "Leave" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leave"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "离开"
+          }
+        }
+      }
+    },
     "Leave This Pairing" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4905,6 +5019,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "退出此次配对"
+          }
+        }
+      }
+    },
+    "Leave this session; it keeps running" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leave this session; it keeps running"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "离开此会话；它会继续运行"
+          }
+        }
+      }
+    },
+    "Leaving…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leaving…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在离开…"
           }
         }
       }
@@ -5164,6 +5312,23 @@
         }
       }
     },
+    "More Options" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "More Options"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更多选项"
+          }
+        }
+      }
+    },
     "Multiline snippets are inserted like a paste and never press Return. On iPhone and iPad they're shown for review first." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5245,6 +5410,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "名称"
+          }
+        }
+      }
+    },
+    "Name and jump hosts" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Name and jump hosts"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "名称与跳板主机"
           }
         }
       }
@@ -6728,23 +6910,6 @@
         }
       }
     },
-    "Port" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Port"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "端口"
-          }
-        }
-      }
-    },
     "Port Forwarding" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7697,19 +7862,19 @@
         }
       }
     },
-    "Restore Defaults" : {
+    "Restore Display Defaults" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Restore Defaults"
+            "value" : "Restore Display Defaults"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "恢复默认设置"
+            "value" : "恢复显示默认设置"
           }
         }
       }
@@ -8003,6 +8168,23 @@
         }
       }
     },
+    "SSH closes when Witerm goes to the background" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSH closes when Witerm goes to the background"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Witerm 进入后台时 SSH 会关闭"
+          }
+        }
+      }
+    },
     "SSH connections close when this app goes to the background. Remote programs follow the host’s session rules." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8105,23 +8287,6 @@
         }
       }
     },
-    "Save Without Connecting" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Save Without Connecting"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "仅保存，不连接"
-          }
-        }
-      }
-    },
     "Save and Check" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8139,19 +8304,19 @@
         }
       }
     },
-    "Save and Connect" : {
+    "Save for Later" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Save and Connect"
+            "value" : "Save for Later"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "保存并连接"
+            "value" : "保存以后使用"
           }
         }
       }
@@ -8513,6 +8678,23 @@
         }
       }
     },
+    "Servers and Pairing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Servers and Pairing"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务器与配对"
+          }
+        }
+      }
+    },
     "Session Ended" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8611,6 +8793,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "会话已共享"
+          }
+        }
+      }
+    },
+    "Session Still Running" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Session Still Running"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "会话仍在运行"
           }
         }
       }
@@ -8985,6 +9184,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "显示已连接的终端。"
+          }
+        }
+      }
+    },
+    "Sign In" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign In"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登录"
+          }
+        }
+      }
+    },
+    "Sign In With" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign In With"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登录方式"
           }
         }
       }
@@ -10094,23 +10327,6 @@
         }
       }
     },
-    "This session keeps running after you disconnect. Connect to resume working." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This session keeps running after you disconnect. Connect to resume working."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "断开连接后，此会话会继续运行。重新连接即可继续工作。"
-          }
-        }
-      }
-    },
     "Tilde" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10226,6 +10442,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "请打开“在此设备上保存凭据”以保留此密钥，否则 Witerm 关闭时会将其丢弃。"
+          }
+        }
+      }
+    },
+    "Typing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Typing"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "输入"
           }
         }
       }
@@ -11080,19 +11313,36 @@
         }
       }
     },
-    "Username" : {
+    "User %@ · Host %@ · Port %@" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Username"
+            "value" : "User %@ · Host %@ · Port %@"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "用户名"
+            "value" : "用户 %1$@ · 主机 %2$@ · 端口 %3$@"
+          }
+        }
+      }
+    },
+    "Uses the address if empty" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uses the address if empty"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "留空则使用地址"
           }
         }
       }
@@ -11382,6 +11632,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "你的第一台服务器"
+          }
+        }
+      }
+    },
+    "iOS suspends the connection. To keep programs running, start them in tmux or screen on the server." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iOS suspends the connection. To keep programs running, start them in tmux or screen on the server."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iOS 会挂起连接。若要让程序继续运行，请在服务器上用 tmux 或 screen 启动它们。"
           }
         }
       }

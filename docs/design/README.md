@@ -53,8 +53,8 @@ A footer opens Settings (⌘,) and summarizes server health ("3 Servers · All R
 On first use, people choose **Connect to an SSH Host** or **Continue from My Mac**. The SSH path needs no server setup. Existing servers or saved hosts skip this choice, and later launches reopen the last tab.
 
 - **Devices.** Server setup at first. Once a server is verified: paired devices grouped by server, then sessions, then the terminal. A server with a problem says why in its own section. Device rows lead with name and permission; the full fingerprint is in Device Details.
-- **SSH.** Saved hosts with search, favorites, and recent-first ordering. On a regular-width iPad the host list stays beside the terminal and the tab bar stays available; compact layouts use a Hosts back button.
-- **Settings.** One section per server (status, check, edit, Device Pairing, remove), plus Terminal Display: text size, color scheme, contrast, Keyboard Row, Snippets, bell, and VoiceOver output.
+- **SSH.** Saved hosts with favorites first, then recent-first ordering. Search and the Favorites Only filter appear once there are eight or more hosts. On a regular-width iPad the host list stays beside the terminal and the tab bar stays available; compact layouts use a Hosts back button.
+- **Settings.** A short index. **Servers and Pairing**: one row per server with its status; the row opens the server's page (check, Device Pairing, edit, and Remove set apart). **Terminal**: Display (text size, color scheme, contrast, with its own reset), Keyboard Row, Snippets, and Bell and VoiceOver, each showing its current value.
 
 The tab bar hides while a terminal is open on compact layouts. With a hardware keyboard, the same menu commands work (except New Terminal Session), and holding ⌘ lists them.
 
@@ -62,8 +62,8 @@ The tab bar hides while a terminal is open on compact layouts. With a hardware k
 
 - **Continue on iPhone.** One checklist sheet from a local session: choose a server, check pairing, allow remote access, and share this session. Readiness comes from the selected server's grants and live relay status. The sheet can also release this Mac's control. On iOS, pairing takes a QR scan or a pasted invitation, both through the same server and fingerprint review; without a usable camera, it offers paste.
 - **Input destination.** Every live terminal names where typing goes: `user@host:port` for SSH, the Mac's name for paired sessions, This Mac for local ones. The header shows the input state: enabled, view only, handoff pending (input disabled until confirmed), or Disconnected for a kept last frame.
-- **Saving vs. connecting.** New hosts offer Save and Connect or Save Without Connecting; editing uses Save and never connects. Non-default ports stay visible; other advanced options sit in disclosure groups. Errors appear beside their field, and focus moves to the first one. Changing the endpoint clears its credentials, with an explanation.
-- **Connection lifetime.** iOS explains that SSH closes in the background and keeps the host on screen with Reconnect afterwards. Reconnecting opens a new shell and never replays input. Local Mac sessions keep running after a disconnect; End Session lives under More and keeps its confirmation.
+- **Saving vs. connecting.** One address field takes `user@host:port` and shows what it understood. New hosts offer Connect or Save for Later at the bottom of the form, within reach of a thumb; editing uses Save and never connects. Name and jump hosts sit under More Options. Errors appear beside their field, and focus moves to the first one. Changing the endpoint clears its credentials, with an explanation.
+- **Connection lifetime.** The first time an SSH terminal is on screen, iOS says once that SSH closes in the background and suggests tmux; afterwards it keeps the host on screen with the reason and Reconnect. Reconnecting opens a new shell and never replays input. Local Mac sessions keep running after a disconnect; End Session lives under More and keeps its confirmation.
 - **Mobile keys.** A sideways-scrolling row of Esc, Ctrl, Tab, Ctrl+C, Paste, and arrows with 44 pt targets and labels. Ctrl announces its state and resets after one key. Multiline paste is confirmed first and discarded if the connection drops. View-only terminals can't send these. Reading selection stays separate from IME selection.
 - **Deleting a host.** Immediate, with an Undo bar for 10 seconds instead of a confirmation. Undo restores the host's credentials, color, favorite, and order. Ending a Mac session, revoking a device, and deleting remote files keep their confirmations, because those can't be undone.
 - **Offline.** SSH and paired-device views show **No Network Connection** as soon as the device loses its network. When it returns, servers are rechecked; terminals still wait for an explicit Reconnect.
@@ -116,6 +116,8 @@ No invented percentages, minimum loading times, or idle glow. With Reduce Transp
 - Connection start, success, failure, and cancellation are announced.
 
 ## Wording
+
+Verbs have fixed meanings. **Leave**: stop watching a Mac session; it keeps running. **End Session**: stop the shell and its programs. **Disconnect**: close an SSH connection (the remote shell ends with it). **Share** and **Stop Sharing**: whether paired devices can reach a session. **Release Control**: hand typing to another device. One icon per idea: Leave uses the door arrow, Disconnect the circled cross, sharing the antenna, pairing the link.
 
 Remote machines are **devices**; the one at the other end of a pairing is **the other device**. Only the machine the app runs on gets a platform name ("This Mac"). Windows and Linux machines are reached through SSH, so copy must not suggest they can be paired.
 

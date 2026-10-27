@@ -148,59 +148,121 @@ private struct DevicesTab: View {
     }
 }
 
+/// A short index: servers first, one row each, then terminal preferences.
+/// Details and actions live one tap away.
 private struct MobileSettingsView: View {
     @Environment(ServerList.self) private var servers
     @State private var editing: ServerEditRequest?
     @State private var pairingServer: ConnectionModel?
     @State private var removing: ConnectionModel?
+    @AppStorage(TerminalFontSize.key) private var fontSize = TerminalFontSize.standard
+    @AppStorage(TerminalColorScheme.key) private var palette = TerminalColorScheme.system
+    @AppStorage(MobileKey.key) private var keys = ""
+    @AppStorage(CommandSnippets.key) private var snippets = Data()
+    @AppStorage(TerminalBell.key) private var bell = true
 
     var body: some View {
         NavigationStack {
             Form {
-                ForEach(servers.servers) { server in
-                    ServerSettingsSection(server: server, titled: servers.servers.count > 1,
-                                          edit: { editing = .edit(server) },
-                                          pair: { pairingServer = server },
-                                          remove: { removing = server })
-                }
-
                 Section {
+                    ForEach(Array(servers.servers.enumerated()), id: \.element.id) { index, server in
+                        NavigationLink {
+                            ServerSettingsPage(server: server, edit: { editing = .edit(server) },
+                                               pair: { pairingServer = server }, remove: { removing = server })
+                        } label: {
+                            LabeledContent {
+                                StatusBadge(server.statusTitle, systemImage: server.statusSymbol, tone: server.statusTone)
+                            } label: {
+                                Text(server.displayName).lineLimit(1).truncationMode(.middle)
+                            }
+                        }
+                        .accessibilityIdentifier("settingsServerRow-\(index)")
+                    }
                     Button(String(localized: "Add Server", bundle: .main), systemImage: "plus") { editing = .add }
                         .disabled(servers.isFull)
                         .accessibilityIdentifier(servers.servers.isEmpty ? "settingsEditServer" : "settingsAddServer")
                 } header: {
-                    if servers.servers.isEmpty { Text(String(localized: "Server", bundle: .main)) }
+                    Text(String(localized: "Servers and Pairing", bundle: .main))
                 } footer: {
                     Text(servers.isFull
                          ? ServerList.Failure.full.message
                          : String(localized: "Pairing and remote terminals use these servers, all at once. Direct SSH does not.", bundle: .main))
                 }
 
-                TerminalAppearanceSections()
+                Section(String(localized: "Terminal", bundle: .main)) {
+                    NavigationLink {
+                        Form { TerminalDisplaySections() }
+                            .formStyle(.grouped)
+                            .navigationTitle(String(localized: "Display", bundle: .main))
+                    } label: {
+                        LabeledContent(String(localized: "Display", bundle: .main),
+                                       value: String(localized: "\(Int(fontSize)) pt · \(palette.title)", bundle: .main))
+                    }
+                    .accessibilityIdentifier("settingsDisplay")
+                    NavigationLink { MobileKeyRowSettings() } label: {
+                        LabeledContent(String(localized: "Keyboard Row", bundle: .main),
+                                       value: String(localized: "\(MobileKey.decode(keys).count) keys", bundle: .main))
+                    }
+                    .accessibilityIdentifier("mobileKeyRowSettings")
+                    NavigationLink { SnippetSettingsView() } label: {
+                        LabeledContent(String(localized: "Snippets", bundle: .main),
+                                       value: String(localized: "\(CommandSnippets.decode(snippets).count) saved", bundle: .main))
+                    }
+                    .accessibilityIdentifier("snippetSettings")
+                    NavigationLink {
+                        Form { TerminalFeedbackSections() }
+                            .formStyle(.grouped)
+                            .navigationTitle(String(localized: "Bell and VoiceOver", bundle: .main))
+                    } label: {
+                        LabeledContent(String(localized: "Bell and VoiceOver", bundle: .main),
+                                       value: bell ? String(localized: "Bell On", bundle: .main) : String(localized: "Bell Off", bundle: .main))
+                    }
+                    .accessibilityIdentifier("settingsFeedback")
+                }
             }
             .formStyle(.grouped)
             .navigationTitle(String(localized: "Settings", bundle: .main))
-            .serverEditor($editing)
-            .sheet(item: $pairingServer) { server in
-                DevicePairingView(serverAddress: server.address).id(server.address)
+        }
+        .serverEditor($editing)
+        .sheet(item: $pairingServer) { server in
+            DevicePairingView(serverAddress: server.address).id(server.address)
+        }
+        .alert(String(localized: "Remove Server?", bundle: .main), isPresented: Binding(
+            get: { removing != nil }, set: { if !$0 { removing = nil } })) {
+            Button(String(localized: "Cancel", bundle: .main), role: .cancel) {}
+            Button(String(localized: "Remove", bundle: .main), role: .destructive) {
+                if let removing { servers.remove(removing) }
             }
-            .alert(String(localized: "Remove Server?", bundle: .main), isPresented: Binding(
-                get: { removing != nil }, set: { if !$0 { removing = nil } })) {
-                Button(String(localized: "Cancel", bundle: .main), role: .cancel) {}
-                Button(String(localized: "Remove", bundle: .main), role: .destructive) {
-                    if let removing { servers.remove(removing) }
-                }
-            } message: {
-                Text(String(localized: "Devices paired through this server stop appearing here. Pairings on the server are not revoked.", bundle: .main))
-            }
+        } message: {
+            Text(String(localized: "Devices paired through this server stop appearing here. Pairings on the server are not revoked.", bundle: .main))
         }
     }
 }
 
+/// One server's status and actions. Leaves itself once the server is removed.
+private struct ServerSettingsPage: View {
+    let server: ConnectionModel
+    let edit: () -> Void
+    let pair: () -> Void
+    let remove: () -> Void
+    @Environment(ServerList.self) private var servers
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        Form { ServerSettingsSection(server: server, edit: edit, pair: pair, remove: remove) }
+            .formStyle(.grouped)
+            .navigationTitle(server.displayName)
+            .navigationBarTitleDisplayMode(.inline)
+            .onChange(of: servers.servers.map(\.id)) { _, ids in
+                if !ids.contains(server.id) { dismiss() }
+            }
+    }
+}
+
 /// One saved server: where it is, whether it answers, and its actions.
+/// The status is stated once, by the feedback row; removal sits apart.
 private struct ServerSettingsSection: View {
     let server: ConnectionModel
-    let titled: Bool
     let edit: () -> Void
     let pair: () -> Void
     let remove: () -> Void
@@ -214,9 +276,6 @@ private struct ServerSettingsSection: View {
                     .textSelection(.enabled)
                     .multilineTextAlignment(.trailing)
             }
-            LabeledContent(String(localized: "Status", bundle: .main)) {
-                StatusBadge(server.statusTitle, systemImage: server.statusSymbol, tone: server.statusTone)
-            }
             ConnectionFeedback(server: server)
                 .accessibilityIdentifier("settingsConnectionFeedback")
             if server.phase.isChecking {
@@ -225,21 +284,23 @@ private struct ServerSettingsSection: View {
                 Button(String(localized: "Check Connection", bundle: .main), action: server.check)
                     .accessibilityIdentifier("settingsCheckConnection")
             }
-            Button(String(localized: "Edit Address", bundle: .main), action: edit)
-                .accessibilityIdentifier("settingsEditServer")
+        }
+        Section {
             Button(action: pair) {
                 Label(String(localized: "Device Pairing", bundle: .main), systemImage: "link")
             }
             .disabled(!server.supportsPairing)
             .accessibilityIdentifier("settingsDevicePairing")
-            Button(String(localized: "Remove Server", bundle: .main), role: .destructive, action: remove)
-                .accessibilityIdentifier("settingsRemoveServer")
-        } header: {
-            Text(titled ? server.displayName : String(localized: "Server", bundle: .main))
+            Button(String(localized: "Edit Address", bundle: .main), action: edit)
+                .accessibilityIdentifier("settingsEditServer")
         } footer: {
             if !server.supportsPairing {
                 Text(String(localized: "Check a server that supports pairing to pair devices.", bundle: .main))
             }
+        }
+        Section {
+            Button(String(localized: "Remove Server", bundle: .main), role: .destructive, action: remove)
+                .accessibilityIdentifier("settingsRemoveServer")
         }
     }
 }

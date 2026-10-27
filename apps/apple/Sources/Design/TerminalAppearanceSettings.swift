@@ -8,12 +8,19 @@ enum TerminalFontSize {
     static func clamped(_ value: Double) -> Double { min(range.upperBound, max(range.lowerBound, value)) }
 }
 
-/// Terminal display sections, embeddable in any grouped Form.
+/// Every terminal preference, embeddable in any grouped Form: display, then
+/// bell and VoiceOver, each with a reset that names what it restores.
 struct TerminalAppearanceSections: View {
+    var body: some View {
+        TerminalDisplaySections()
+        TerminalFeedbackSections()
+    }
+}
+
+/// Text size, color scheme, and contrast.
+struct TerminalDisplaySections: View {
     @AppStorage(TerminalFontSize.key) private var fontSize = TerminalFontSize.standard
     @AppStorage("witerm.terminalHighContrast") private var highContrast = false
-    @AppStorage("witerm.terminalAnnounceOutput") private var announceOutput = false
-    @AppStorage(TerminalBell.key) private var bell = true
     @AppStorage(TerminalColorScheme.key) private var palette = TerminalColorScheme.system
 
     var body: some View {
@@ -34,7 +41,7 @@ struct TerminalAppearanceSections: View {
                 .font(.footnote).foregroundStyle(.secondary)
             #endif
         }
-        Section("Appearance") {
+        Section {
             Picker("Color scheme", selection: $palette) {
                 ForEach(TerminalColorScheme.allCases) { scheme in
                     Text(scheme.title).tag(scheme)
@@ -44,46 +51,63 @@ struct TerminalAppearanceSections: View {
             TerminalSchemePreview(scheme: palette, highContrast: highContrast)
             Toggle("Increase terminal contrast", isOn: $highContrast).tint(WitermTheme.positive)
                 .accessibilityIdentifier("terminalHighContrast")
+            Button(String(localized: "Restore Display Defaults", bundle: .main)) {
+                fontSize = TerminalFontSize.standard
+                highContrast = false
+                palette = .system
+            }
+            .disabled(fontSize == TerminalFontSize.standard && !highContrast && palette == .system)
+            .accessibilityIdentifier("resetTerminalAppearance")
+        } header: {
+            Text("Appearance")
+        } footer: {
             Text("Schemes follow the system's light or dark appearance. Increased contrast overrides the scheme.")
-                .font(.footnote).foregroundStyle(.secondary)
         }
-        #if os(iOS)
-        Section(String(localized: "Input", bundle: .main)) {
+    }
+}
+
+/// The bell and VoiceOver output announcements.
+struct TerminalFeedbackSections: View {
+    @AppStorage("witerm.terminalAnnounceOutput") private var announceOutput = false
+    @AppStorage(TerminalBell.key) private var bell = true
+
+    var body: some View {
+        Section {
+            Toggle("Ring the terminal bell", isOn: $bell).tint(WitermTheme.positive)
+                .accessibilityIdentifier("terminalBell")
+        } header: {
+            Text("Bell")
+        } footer: {
+            #if os(iOS)
+            Text("A short vibration plays when a program rings the bell.")
+            #else
+            Text("The system alert sound plays, and the Dock icon bounces once if Witerm is in the background.")
+            #endif
+        }
+        Section {
+            Toggle("Announce output updates", isOn: $announceOutput).tint(WitermTheme.positive)
+                .accessibilityIdentifier("terminalAnnounceOutput")
+        } header: {
+            Text("VoiceOver")
+        } footer: {
+            Text("VoiceOver announces when the terminal has new output.")
+        }
+    }
+}
+
+#if os(iOS)
+/// Keyboard row and snippets, reachable from a terminal's Display sheet.
+struct TerminalInputLinks: View {
+    var body: some View {
+        Section(String(localized: "Typing", bundle: .main)) {
             NavigationLink(String(localized: "Keyboard Row", bundle: .main)) { MobileKeyRowSettings() }
                 .accessibilityIdentifier("mobileKeyRowSettings")
             NavigationLink(String(localized: "Snippets", bundle: .main)) { SnippetSettingsView() }
                 .accessibilityIdentifier("snippetSettings")
         }
-        #endif
-        Section("Bell") {
-            Toggle("Ring the terminal bell", isOn: $bell).tint(WitermTheme.positive)
-                .accessibilityIdentifier("terminalBell")
-            #if os(iOS)
-            Text("A short vibration plays when a program rings the bell.")
-                .font(.footnote).foregroundStyle(.secondary)
-            #else
-            Text("The system alert sound plays, and the Dock icon bounces once if Witerm is in the background.")
-                .font(.footnote).foregroundStyle(.secondary)
-            #endif
-        }
-        Section("VoiceOver") {
-            Toggle("Announce output updates", isOn: $announceOutput).tint(WitermTheme.positive)
-                .accessibilityIdentifier("terminalAnnounceOutput")
-            Text("VoiceOver announces when the terminal has new output.")
-                .font(.footnote).foregroundStyle(.secondary)
-        }
-        Section {
-            Button("Restore Defaults") {
-                fontSize = TerminalFontSize.standard
-                highContrast = false
-                announceOutput = false
-                bell = true
-                palette = .system
-            }
-            .accessibilityIdentifier("resetTerminalAppearance")
-        }
     }
 }
+#endif
 
 /// A few lines of sample output in the chosen scheme, in the current appearance.
 private struct TerminalSchemePreview: View {
@@ -127,7 +151,13 @@ struct TerminalAppearanceSettings: View {
 
     var body: some View {
         NavigationStack {
-            Form { TerminalAppearanceSections() }
+            Form {
+                TerminalDisplaySections()
+                #if os(iOS)
+                TerminalInputLinks()
+                #endif
+                TerminalFeedbackSections()
+            }
                 .formStyle(.grouped)
                 .navigationTitle("Terminal Display")
                 #if os(iOS)
