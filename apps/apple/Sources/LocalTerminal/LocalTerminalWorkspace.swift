@@ -224,6 +224,8 @@ private struct SessionSharingBar: View {
 /// A light pointer to the `witerm` command for starting sessions from Terminal.
 private struct StartFromTerminalHint: View {
     private let tool = CommandLineToolModel.shared
+    @Environment(\.openSettings) private var openSettings
+    @AppStorage(SettingsTab.key) private var settingsTab = SettingsTab.general.rawValue
 
     var body: some View {
         VStack(spacing: 8) {
@@ -234,8 +236,10 @@ private struct StartFromTerminalHint: View {
                 CopyableCommand("witerm new")
                     .frame(maxWidth: 260)
             } else {
-                SettingsLink {
-                    Text(String(localized: "Install the witerm Command…", bundle: .main))
+                // Always the Command Line tab, whichever tab Settings showed last.
+                Button(String(localized: "Install the witerm Command…", bundle: .main)) {
+                    settingsTab = SettingsTab.commandLine.rawValue
+                    openSettings()
                 }
                 .accessibilityIdentifier("installCommandLineHint")
             }

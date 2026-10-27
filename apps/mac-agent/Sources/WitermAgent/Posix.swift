@@ -54,7 +54,8 @@ enum Posix {
 
     // All allocations and file actions are prepared in the parent. Darwin
     // posix_spawn performs the child transition; no forked Swift/Foundation code.
-    static func spawn(executable: String, arguments: [String], environment: [String: String], input: Int32?, output: Int32?, tty: Bool) throws -> pid_t {
+    static func spawn(executable: String, arguments: [String], environment: [String: String], input: Int32?, output: Int32?, tty: Bool,
+                      directory: String? = nil) throws -> pid_t {
         var actions: posix_spawn_file_actions_t?
         var attributes: posix_spawnattr_t?
         guard posix_spawn_file_actions_init(&actions) == 0, posix_spawnattr_init(&attributes) == 0 else { throw AgentFailure() }
@@ -66,6 +67,7 @@ enum Posix {
         else { try checked(posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, "/dev/null", O_WRONLY, 0)) }
         if tty, let output { try checked(posix_spawn_file_actions_adddup2(&actions, output, STDERR_FILENO)) }
         else { try checked(posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, "/dev/null", O_WRONLY, 0)) }
+        if let directory { try checked(posix_spawn_file_actions_addchdir_np(&actions, directory)) }
         var defaults = sigset_t()
         var mask = sigset_t()
         sigfillset(&defaults)
@@ -98,7 +100,8 @@ struct CommandRunner {
     let executable: String
     let environment: [String: String]
 
-    func run(_ arguments: [String], timeout: TimeInterval = 3) throws -> CommandResult {
+    /// Runs with `directory` as the working directory when given.
+    func run(_ arguments: [String], timeout: TimeInterval = 3, directory: String? = nil) throws -> CommandResult {
         var descriptors: [Int32] = [0, 0]
         guard pipe(&descriptors) == 0 else { throw AgentFailure() }
         let readFD = descriptors[0], writeFD = descriptors[1]
@@ -108,7 +111,8 @@ struct CommandRunner {
             try Posix.nonblocking(readFD)
         } catch { Darwin.close(writeFD); throw error }
         let pid: pid_t
-        do { pid = try Posix.spawn(executable: executable, arguments: arguments, environment: environment, input: nil, output: writeFD, tty: false) }
+        do { pid = try Posix.spawn(executable: executable, arguments: arguments, environment: environment, input: nil, output: writeFD, tty: false,
+                                   directory: directory) }
         catch { Darwin.close(writeFD); throw error }
         Darwin.close(writeFD)
         var output = Data(), status: Int32 = 0

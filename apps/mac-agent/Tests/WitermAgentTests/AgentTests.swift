@@ -500,6 +500,33 @@ final class AgentTests: XCTestCase {
         try await client.close(sessionID: session.id)
     }
 
+    /// Folder names are paths, never tmux formats or commands.
+    func testStartDirectoryIsNeverFormatExpanded() async throws {
+        guard FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/tmux") else { throw XCTSkip("tmux is required") }
+        let url = try directory()
+        let configuration = try AgentConfiguration(stateDirectory: url, shellPath: "/bin/sh")
+        let broker = try AgentBroker(configuration: configuration)
+        try broker.start()
+        defer {
+            broker.stop()
+            _ = try? CommandRunner(executable: "/opt/homebrew/bin/tmux", environment: configuration.environment)
+                .run(["-S", url.appendingPathComponent("tmux.sock").path, "kill-server"])
+        }
+        let client = LocalAgentClient(socketURL: url.appendingPathComponent("agent.sock"))
+        let tmux = CommandRunner(executable: "/opt/homebrew/bin/tmux", environment: configuration.environment)
+        for name in ["hash#{session_name}", "run#(true)x", "pct%d ## #[fg=red]"] {
+            let folder = url.appendingPathComponent(name, isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+            let real = try XCTUnwrap(realpath(folder.path, nil).map { defer { free($0) }; return String(cString: $0) })
+            let session = try await client.create(name: "Folder", cwd: real)
+            let started = try tmux.run(["-S", url.appendingPathComponent("tmux.sock").path, "display-message", "-p",
+                                        "-t", "witerm-" + session.id, "#{pane_current_path}"])
+            XCTAssertEqual(String(decoding: started.output, as: UTF8.self).trimmingCharacters(in: .newlines), real,
+                           "The shell for \(name) started elsewhere")
+            try await client.close(sessionID: session.id)
+        }
+    }
+
     func testDetachAcknowledgementAllowsImmediateControllerHandoff() async throws {
         guard FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/tmux") else { throw XCTSkip("tmux is required") }
         let url = try directory()

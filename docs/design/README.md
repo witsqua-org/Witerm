@@ -1,23 +1,16 @@
 # Design Guidelines
 
-Witerm is a calm, professional tool built from native iOS 27 and macOS controls. The terminal is the work; everything else is a way to reach it. The interface shows only real things: real servers, devices, grants, and sessions, never sample data.
+Witerm is a calm, professional tool built from native iOS 27 and macOS controls. The terminal is the work; everything else is a way to reach it. The interface shows only real things (servers, devices, grants, sessions), never sample data.
 
-The [HCI improvements 1–7](hci-improvements.md) summary maps the delivered interaction changes to implementation and verification evidence.
+Follow Apple's guidance on [Liquid Glass](https://developer.apple.com/documentation/TechnologyOverviews/liquid-glass), [materials](https://developer.apple.com/design/human-interface-guidelines/materials), [motion](https://developer.apple.com/design/human-interface-guidelines/motion), and [accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility). Glass belongs to controls; content sits on solid surfaces.
 
-Follow Apple's guidance on [Liquid Glass](https://developer.apple.com/documentation/TechnologyOverviews/liquid-glass), [materials](https://developer.apple.com/design/human-interface-guidelines/materials), [motion](https://developer.apple.com/design/human-interface-guidelines/motion), and [accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility). Glass belongs to controls. Content sits on solid surfaces.
+The [HCI improvements](hci-improvements.md) page records the most recent round of interaction changes and where they live in code.
 
 ## Brand
 
-The mark is a W stroke with a cursor at its lower right, on a graphite tile. The cursor cycles through the machine hues (rose, amber, mint, sky, violet), because color in Witerm belongs to machines. The tinted iOS icon uses a single-color cursor. Small sizes keep one clear silhouette, with no gradient text or embedded name.
+The mark is a W stroke with a cursor at its lower right, on a graphite tile. The cursor cycles through the machine hues (rose, amber, mint, sky, violet), because in Witerm color belongs to machines. The tinted iOS icon uses a single-color cursor. Small sizes keep one clear silhouette, with no gradient text or embedded name.
 
-`swift scripts/GenerateBrandAssets.swift` regenerates every asset:
-
-- the vector mark (`design/brand/witerm-mark.svg`)
-- the interface PDF (`BrandMark.imageset`)
-- the iOS icons (default, dark, tinted)
-- the macOS icons (16–1024 px)
-
-Color tokens live in the asset catalog, not in the script.
+`swift scripts/GenerateBrandAssets.swift` regenerates the vector mark (`design/brand/witerm-mark.svg`), the interface PDF (`BrandMark.imageset`), the iOS icons (default, dark, tinted), and the macOS icons (16–1024 px). Color tokens live in the asset catalog, not the script.
 
 ## Color
 
@@ -34,65 +27,53 @@ Color tokens live in the asset catalog, not in the script.
 
 Every pairing reaches at least 4.5:1 on Canvas and Surface.
 
-### Host Spectrum
+### Host spectrum
 
-The interface is neutral graphite. `IdentityHue` gives each SSH host and each paired device one of ten hues. That hue marks the machine everywhere it appears:
-
-- its rows and icon tiles
-- its Connect button
-- its route diagram
-- the top edge of its open terminal
-
-So you can always see which machine receives your typing. The local Mac stays uncolored.
+The interface is neutral graphite. `IdentityHue` gives each SSH host and paired device one of ten hues, used everywhere that machine appears: its rows and icon tiles, its Connect button, its route diagram, and the top edge of its open terminal. You can always see which machine receives your typing. The local Mac stays uncolored.
 
 - **Assignment.** A machine gets the least-used hue when it first appears and keeps it. Deleting a host frees its hue.
 - **Contrast.** Each hue has light and dark variants that keep 4.5:1 on Surface, on their own 12% tint, and under ActionLabel.
 - **Mac exception.** The Mac sidebar keeps the system accent for selection, and the Mac target sets no global accent, so AppKit controls stay native.
+- **Color is never the only signal.** Connection state always uses words and symbols too.
 
 ## Navigation
 
-**Mac**: one sidebar with three sections. The detail pane shows the selected item.
+### Mac
 
-- **This Mac**: local sessions, including those started with `witerm`. Selecting one attaches with control; the context menu offers View Only, Share or Stop Sharing, and End Session. Shared sessions show an antenna. The terminal header has Share, and a bar under it says whether paired devices can reach the session and who is connected.
-- **SSH Hosts**: saved hosts. The detail pane shows the route, Connect, Edit, and More (Host Keys, Delete), and becomes the terminal once connected. Connected hosts show a filled icon.
-- **Paired Devices**: Allow Remote Access and pairing, with one row per saved server.
+One sidebar with three sections; the detail pane shows the selection.
 
-An empty This Mac points to `witerm new`. Settings has General, Terminal, and Command Line (install the command, copy examples). A footer opens Settings (⌘,) and summarizes server health (for example "3 Servers · All Reachable"). File → New Terminal Session (⌘N) and New SSH Connection (⇧⌘N), and View → Refresh (⌘R), are in the menus.
+- **This Mac.** Local sessions, including ones started with `witerm`. Selecting one attaches with control. The context menu offers View Only, Share or Stop Sharing, Continue on iPhone, and End Session. Shared sessions show an antenna. Under the terminal header, a bar says whether paired devices can reach the session and who's connected. An empty list points to `witerm new`.
+- **SSH Hosts.** The detail pane shows the route, Connect, Edit, and More (Host Keys, Delete), and becomes the terminal once connected. Connected hosts show a filled icon.
+- **Paired Devices.** Allow Remote Access and pairing, one row per saved server.
 
-**iOS and iPadOS**: three tabs.
+A footer opens Settings (⌘,) and summarizes server health ("3 Servers · All Reachable"). Settings has General, Terminal, and Command Line. Menus: File → New Terminal Session (⌘N) and New SSH Connection (⇧⌘N); View → Refresh (⌘R). Sidebar search also matches local session names.
 
-On first use, people choose **Connect to an SSH Host** or **Continue from My Mac**. The SSH path opens without server setup. Existing servers or saved SSH hosts bypass this choice; subsequent launches remember the last work tab.
+### iOS and iPadOS
 
-- **Devices**: server setup at first. Once a server is verified, it lists paired devices grouped by server, then sessions, then the terminal. A server with a problem says why in its own section.
-- **SSH**: saved hosts and their sessions.
-- **Settings**: one section per server (status, check, edit, Device Pairing, remove), plus Terminal Display.
+On first use, people choose **Connect to an SSH Host** or **Continue from My Mac**. The SSH path needs no server setup. Existing servers or saved hosts skip this choice, and later launches reopen the last tab.
 
-**Continue on iPhone.** A local session's header and context menu open one preparation sheet: choose a server, check device pairing, allow remote access, and explicitly share this session. Its readiness checks use the selected server's grants and live relay status. The sheet also offers releasing this Mac's control for typing on another device. Pairing on iOS accepts a camera QR scan or a pasted invitation; both go through the same server and fingerprint review before a request is submitted. Unsupported cameras offer the paste path.
+- **Devices.** Server setup at first. Once a server is verified: paired devices grouped by server, then sessions, then the terminal. A server with a problem says why in its own section. Device rows lead with name and permission; the full fingerprint is in Device Details.
+- **SSH.** Saved hosts with search, favorites, and recent-first ordering. On a regular-width iPad the host list stays beside the terminal and the tab bar stays available; compact layouts use a Hosts back button.
+- **Settings.** One section per server (status, check, edit, Device Pairing, remove), plus Terminal Display.
 
-**Input destination.** Every live terminal shows its destination in text and its input state. SSH includes `user@host:port`; paired sessions include the Mac name; local sessions say This Mac. Machine hue identifies the destination, while a neutral health indicator, words and symbols describe connection state. During control handoff, the header shows the pending operation and input remains disabled until confirmation. A retained disconnected frame is labeled Disconnected.
+The tab bar hides while a terminal is open on compact layouts.
 
-The tab bar hides while a terminal is open.
+### Flows
 
-In a regular-width iPad SSH workspace, the host list stays beside the terminal and the tab bar remains available. Compact layouts use the Hosts back action. SSH lists support search, favorites, and ordering by recent successful connection; Mac sidebar search also matches local session names. Device rows prioritize name and permission, with the full fingerprint in Device Details.
-
-**SSH configuration.** Editing uses Save and never initiates a connection. New hosts offer Save and Connect or Save Without Connecting; connection names are optional and default to the endpoint. Non-default ports stay visible, while port and jump-host options otherwise use disclosure groups. Validation stays beside the affected field and focuses the first error. Changes to an endpoint clear its credentials with an explanation.
-
-**Connection lifetime.** iOS explains that SSH closes in the background. The selected host remains visible after disconnection with an explicit Reconnect action; reconnect opens a new shell and never replays prior input. Whether earlier remote programs survive depends on the host. Local Mac sessions instead remain running after disconnect; ending one lives in More and retains its destructive confirmation.
-
-**Mobile terminal input.** The horizontal keyboard accessory offers Esc, Ctrl, Tab, Ctrl+C, Paste and arrows with 44 pt touch targets and accessibility labels. Ctrl announces its one-key state and resets after use. Multiline paste shows the complete text and destination for confirmation, preserves bracketed-paste framing, and is discarded if the connection stops before confirmation. Read-only terminals cannot send these actions. Reading and IME selection remain separate.
-
-**Several servers.** Up to 8 servers are saved and used at once. A second spelling of the same server is rejected.
-
-- Identities and grants belong to one server, so pairing through one never authorizes another.
-- Removing a server hides its devices but doesn't revoke them. On the Mac, it also turns off remote access through that server.
+- **Continue on iPhone.** One checklist sheet from a local session: choose a server, check pairing, allow remote access, and share this session. Readiness comes from the selected server's grants and live relay status. The sheet can also release this Mac's control. On iOS, pairing takes a QR scan or a pasted invitation, both through the same server and fingerprint review; without a usable camera, it offers paste.
+- **Input destination.** Every live terminal names where typing goes: `user@host:port` for SSH, the Mac's name for paired sessions, This Mac for local ones. The header shows the input state: enabled, view only, handoff pending (input disabled until confirmed), or Disconnected for a kept last frame.
+- **Saving vs. connecting.** New hosts offer Save and Connect or Save Without Connecting; editing uses Save and never connects. Non-default ports stay visible; other advanced options sit in disclosure groups. Errors appear beside their field, and focus moves to the first one. Changing the endpoint clears its credentials, with an explanation.
+- **Connection lifetime.** iOS explains that SSH closes in the background and keeps the host on screen with Reconnect afterwards. Reconnecting opens a new shell and never replays input. Local Mac sessions keep running after a disconnect; End Session lives under More and keeps its confirmation.
+- **Mobile keys.** A sideways-scrolling row of Esc, Ctrl, Tab, Ctrl+C, Paste, and arrows with 44 pt targets and labels. Ctrl announces its state and resets after one key. Multiline paste is confirmed first and discarded if the connection drops. View-only terminals can't send these. Reading selection stays separate from IME selection.
+- **Several servers.** Up to 8, used at once; a second spelling of the same server is rejected. Identities and grants belong to one server. Removing a server hides its devices without revoking them, and on the Mac turns off remote access through it.
 
 ## Interaction principles
 
-- **One clear next action.** Before setup, that's "Add Server". Never show actions that can't work yet.
-- **Honest status.** Distinguish not set up, checking, reachable, and failed, and show when a check succeeded. Servers are rechecked at launch and on return to the foreground. A recheck never tears down an open terminal.
-- **User control.** Everything that waits can be cancelled, and stale results never overwrite newer ones.
-- **Specific recovery.** Validate addresses before saving. Tell offline, timeout, DNS, certificate, version, and server errors apart, each with a next step.
-- **Native conventions.** Standard sidebars, tabs, sheets, menus, keyboard shortcuts, and copy behavior. Return submits, Escape cancels, and ⌘Return runs the Mac's primary action.
+- **One clear next action.** Before setup that's "Add Server". Never show actions that can't work yet.
+- **Honest status.** Tell apart not set up, checking, reachable, and failed, and show when a check last succeeded. Servers are rechecked at launch and on return to the foreground, without tearing down an open terminal.
+- **User control.** Anything that waits can be cancelled, and stale results never overwrite newer ones.
+- **Specific recovery.** Validate addresses before saving. Distinguish offline, timeout, DNS, certificate, version, and server errors, each with a next step.
+- **Native conventions.** Standard sidebars, tabs, sheets, menus, shortcuts, and copy behavior. Return submits, Escape cancels, ⌘Return runs the Mac's primary action.
 
 ## Components
 
@@ -100,15 +81,15 @@ Shared components are in `apps/apple/Sources/Design/Components.swift`. Use them 
 
 | Component | Use |
 |---|---|
-| `PrimaryButton` | The one prominent action in a view. Glass on iOS/macOS 26+, bordered with Reduce Transparency or on older systems. |
+| `PrimaryButton` | The one prominent action in a view. Glass on iOS/macOS 26+; bordered with Reduce Transparency or on older systems. |
 | `witermCard()` | Solid content surface: 20 pt corners and padding, Surface fill. |
 | `IssueBanner` | A recoverable problem with recovery text and actions. Never color alone. |
 | `ActivityRow` | Real, cancellable work in progress. No invented percentages. |
 | `StatusBadge` | Symbol plus text in a neutral, positive, or warning tone. |
-| `TerminalHeader` | Status and actions for every terminal. The Mac omits the title (the window already shows it). |
+| `TerminalHeader` | Destination, input state, and actions for every terminal. The Mac omits the title (the window shows it). |
 | `PageHeader`, `IconTile` | Pane titles; decorative icons hidden from VoiceOver. |
 
-**Sizing.** `WitermMetrics` defines one scale: 16 pt card padding, 20 pt page padding, 20 pt corner radius, and a 32 pt icon tile. `witermControl()` gives large capsule controls on iOS and regular ones on the Mac. Titles use `title2`, card titles `headline`.
+**Sizing.** `WitermMetrics` defines one scale: 16 pt card padding, 20 pt page padding, 20 pt corner radius, 32 pt icon tile. `witermControl()` gives large capsule controls on iOS and regular ones on the Mac. Titles use `title2`, card titles `headline`.
 
 ## Motion
 
@@ -119,22 +100,20 @@ Shared components are in `apps/apple/Sources/Design/Components.swift`. Use them 
 | Waiting | Native indeterminate progress tied to the real request | Static icon and text |
 | Success or failure | Text, symbol, and haptics on iOS | Nothing extra |
 
-No invented percentages, minimum loading times, or idle glow effects. With Reduce Transparency, use standard button styles and solid content.
+No invented percentages, minimum loading times, or idle glow. With Reduce Transparency, use standard button styles and solid content.
 
 ## Accessibility
 
 - Support Dynamic Type, VoiceOver, light and dark mode, Reduce Motion, and Reduce Transparency.
-- Free-standing iOS controls get 44 pt touch targets (`touchTarget()`). Form and List rows already do. Mac controls keep their native size.
+- Free-standing iOS controls get 44 pt touch targets (`touchTarget()`); Form and List rows already do. Mac controls keep their native size.
 - At accessibility text sizes, setup becomes a single scrolling column and primary actions move into the content.
 - Status always pairs a symbol with text. Decorative icons are hidden from VoiceOver.
 - Connection start, success, failure, and cancellation are announced.
 
 ## Wording
 
-Remote machines are **devices**, and the machine on the other end of a pairing is **the other device**. Only the machine the app runs on gets a platform name ("This Mac"). Windows and Linux machines are reached through SSH, so copy must not suggest they can be paired.
+Remote machines are **devices**; the one at the other end of a pairing is **the other device**. Only the machine the app runs on gets a platform name ("This Mac"). Windows and Linux machines are reached through SSH, so copy must not suggest they can be paired.
 
 ## Screenshots
 
-[iOS task choice](screenshots/03-task-choice-ios.png) · [iOS pairing](screenshots/02-pairing-ios.png)
-
-Testing notes are in [Verification status](../verification.md).
+[Mac, empty, dark](screenshots/01-empty-dark.png) · [iOS pairing](screenshots/02-pairing-ios.png) · [iOS task choice](screenshots/03-task-choice-ios.png)

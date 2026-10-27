@@ -95,7 +95,10 @@ final class CLIIntegrationTests: XCTestCase {
     private struct Result { let status: Int32; let output: String; let error: String }
 
     private var binary: URL {
-        Bundle(for: CLIIntegrationTests.self).bundleURL.deletingLastPathComponent().appendingPathComponent("witerm")
+        if let installed = ProcessInfo.processInfo.environment["WITERM_CLI_TEST_BINARY"] {
+            return URL(fileURLWithPath: installed)
+        }
+        return Bundle(for: CLIIntegrationTests.self).bundleURL.deletingLastPathComponent().appendingPathComponent("witerm")
     }
 
     private func witerm(_ arguments: [String], socket: URL, directory: URL? = nil, environment: [String: String] = [:]) throws -> Result {
@@ -227,6 +230,205 @@ final class CLIIntegrationTests: XCTestCase {
         try await next.detach()
         let after = try await client.sessions().first { $0.id == session.id }
         XCTAssertEqual(after?.sharing?.attachments, [])
+    }
+
+    /// Startup must both restore all termios settings and exit normally; a
+    /// SIGKILL in fixture cleanup can never turn a timeout into a passing test.
+    func testTerminationDuringStartupRestoresTheTerminal() async throws {
+        let (url, _, _) = try startBroker()
+        let client = LocalAgentClient(socketURL: url.appendingPathComponent("agent.sock"))
+        let session = try await client.create(name: "Startup", cwd: url.path)
+        for _ in 0..<20 {
+            let terminal = try attachedTerminal(session.id, directory: url)
+            defer { terminal.stop() }
+            let attached = try await terminal.waitFor("attached to")
+            XCTAssertTrue(attached)
+            let raw = try await terminal.waitForRaw()
+            XCTAssertTrue(raw)
+            guard attached, raw else { return }
+            kill(terminal.process.processIdentifier, SIGTERM)
+            let exited = try await terminal.waitForExit()
+            XCTAssertTrue(exited, "SIGTERM did not exit without reading terminal output")
+            XCTAssertTrue(terminal.terminalRestored, "Startup termination changed termios")
+            guard exited else { return }
+            XCTAssertEqual(terminal.process.terminationReason, .exit)
+            XCTAssertEqual(terminal.process.terminationStatus, CLIExit.success.rawValue)
+            let next = try await client.attach(sessionID: session.id)
+            try await next.detach()
+        }
+    }
+
+    func testBlockedHelpOutputRestoresTerminalAndExitsNormally() async throws {
+        let (url, _, _) = try startBroker()
+        let client = LocalAgentClient(socketURL: url.appendingPathComponent("agent.sock"))
+        let session = try await client.create(name: "Blocked help", cwd: url.path)
+        for (requests, escape) in [(1, false), (500, false), (1, true)] {
+            let terminal = try attachedTerminal(session.id, directory: url)
+            defer { terminal.stop() }
+            let attached = try await terminal.waitFor("attached to")
+            XCTAssertTrue(attached)
+            let raw = try await terminal.waitForRaw()
+            XCTAssertTrue(raw)
+            guard attached, raw else { return }
+            try terminal.fillOutput()
+            try terminal.send(String(repeating: "~?", count: requests))
+            try await Task.sleep(for: .milliseconds(100))
+            if escape { try terminal.send("~.") }
+            else { kill(terminal.process.processIdentifier, SIGTERM) }
+            let exited = try await terminal.waitForExit()
+            XCTAssertTrue(exited, "Help output held detach behind a blocked write")
+            XCTAssertTrue(terminal.terminalRestored,
+                          "help requests=\(requests), escape=\(escape): \(terminal.terminalSettingsSummary)")
+            guard exited else { return }
+            XCTAssertEqual(terminal.process.terminationReason, .exit)
+            XCTAssertEqual(terminal.process.terminationStatus, CLIExit.success.rawValue)
+            let next = try await client.attach(sessionID: session.id)
+            try await next.detach()
+        }
+    }
+
+    func testServiceFailureWithBlockedTerminalRestoresAndExits() async throws {
+        let (url, _, broker) = try startBroker()
+        let client = LocalAgentClient(socketURL: url.appendingPathComponent("agent.sock"))
+        let session = try await client.create(name: "Blocked error", cwd: url.path)
+        let terminal = try attachedTerminal(session.id, directory: url)
+        defer { terminal.stop() }
+        let attached = try await terminal.waitFor("attached to")
+        XCTAssertTrue(attached)
+        let raw = try await terminal.waitForRaw()
+        XCTAssertTrue(raw)
+        guard attached, raw else { return }
+        try terminal.fillOutput()
+        broker.stop()
+        let exited = try await terminal.waitForExit()
+        XCTAssertTrue(exited, "The error message blocked process exit")
+        XCTAssertTrue(terminal.terminalRestored)
+        guard exited else { return }
+        XCTAssertEqual(terminal.process.terminationReason, .exit)
+        XCTAssertEqual(terminal.process.terminationStatus, CLIExit.serviceUnavailable.rawValue)
+    }
+
+    /// Human and JSON errors must also exit when stderr is a full pipe.
+    func testBlockedStderrPipePreservesErrorExitCode() async throws {
+        for json in [false, true] {
+            var descriptors: [Int32] = [-1, -1]
+            XCTAssertEqual(pipe(&descriptors), 0)
+            let readFD = descriptors[0], writeFD = descriptors[1]
+            defer { close(readFD); close(writeFD) }
+            let flags = fcntl(writeFD, F_GETFL)
+            XCTAssertEqual(fcntl(writeFD, F_SETFL, flags | O_NONBLOCK), 0)
+            try CLIPTYProcess.fill(writeFD)
+            XCTAssertEqual(fcntl(writeFD, F_SETFL, flags), 0)
+            let terminal = try CLIPTYProcess(binary: binary, arguments: ["bogus"] + (json ? ["--json"] : []),
+                                             environment: ["PATH": "/usr/bin:/bin"], stderr: writeFD)
+            defer { terminal.stop() }
+            let exited = try await terminal.waitForExit()
+            XCTAssertTrue(exited, "\(json ? "JSON" : "Human") error hung on full stderr")
+            guard exited else { continue }
+            XCTAssertEqual(terminal.process.terminationReason, .exit)
+            XCTAssertEqual(terminal.process.terminationStatus, CLIExit.usage.rawValue)
+            // Foundation's FileHandle enables Darwin's no-SIGPIPE flag when
+            // wrapping stderr; the inherited nonblocking mode must stay intact.
+            XCTAssertEqual(fcntl(writeFD, F_GETFL) & O_NONBLOCK, flags & O_NONBLOCK,
+                           "CLI changed the caller's nonblocking mode")
+            XCTAssertTrue(terminal.terminalRestored)
+        }
+    }
+
+    func testSessionExitFlushesItsLastOutput() async throws {
+        let (url, _, _) = try startBroker()
+        let client = LocalAgentClient(socketURL: url.appendingPathComponent("agent.sock"))
+        let session = try await client.create(name: "Last frame", cwd: url.path)
+        let terminal = try attachedTerminal(session.id, directory: url)
+        defer { terminal.stop() }
+        let attached = try await terminal.waitFor("attached to")
+        XCTAssertTrue(attached)
+        let raw = try await terminal.waitForRaw()
+        XCTAssertTrue(raw)
+        guard attached, raw else { return }
+        try terminal.send("printf 'CLI_''LAST_FRAME\\n'; exit\r")
+        let exited = try await terminal.waitForExit()
+        XCTAssertTrue(exited)
+        XCTAssertTrue(terminal.terminalRestored)
+        guard exited else { return }
+        XCTAssertEqual(terminal.process.terminationReason, .exit)
+        XCTAssertEqual(terminal.process.terminationStatus, CLIExit.success.rawValue)
+        let finalFrame = try await terminal.waitFor("CLI_LAST_FRAME")
+        XCTAssertTrue(finalFrame, "Session closure discarded its last output")
+    }
+
+    func testUnreadOutputIsBoundedAndReleasesControl() async throws {
+        let (url, _, _) = try startBroker()
+        let client = LocalAgentClient(socketURL: url.appendingPathComponent("agent.sock"))
+        let session = try await client.create(name: "Output backpressure", cwd: url.path)
+        let terminal = try attachedTerminal(session.id, directory: url)
+        defer { terminal.stop() }
+        let attached = try await terminal.waitFor("attached to")
+        XCTAssertTrue(attached)
+        let raw = try await terminal.waitForRaw()
+        XCTAssertTrue(raw)
+        guard attached, raw else { return }
+        try terminal.send("yes CLI_OUTPUT | head -c 1048576\r")
+        let exited = try await terminal.waitForExit()
+        XCTAssertTrue(exited, "Unread session output kept growing or blocked forever")
+        XCTAssertTrue(terminal.terminalRestored)
+        guard exited else { return }
+        XCTAssertEqual(terminal.process.terminationReason, .exit)
+        XCTAssertEqual(terminal.process.terminationStatus, CLIExit.failure.rawValue)
+        try await eventually("Output failure retained control") {
+            try await client.sessions().first { $0.id == session.id }?.sharing?.controller == nil
+        }
+    }
+
+    func testOutputBlockedBeforeAttachStillEntersRawAndExits() async throws {
+        let (url, _, _) = try startBroker()
+        let client = LocalAgentClient(socketURL: url.appendingPathComponent("agent.sock"))
+        let session = try await client.create(name: "Blocked before attach", cwd: url.path)
+        let terminal = try attachedTerminal(session.id, directory: url, blockOutputBeforeLaunch: true)
+        defer { terminal.stop() }
+        // Do not read even the attach hint: the PTY was full before spawning.
+        let raw = try await terminal.waitForRaw()
+        XCTAssertTrue(raw, "Entering raw mode waited for terminal output to drain")
+        kill(terminal.process.processIdentifier, SIGTERM)
+        let exited = try await terminal.waitForExit()
+        XCTAssertTrue(exited, "A full terminal at startup prevented SIGTERM exit")
+        XCTAssertTrue(terminal.terminalRestored)
+        guard exited else { return }
+        XCTAssertEqual(terminal.process.terminationReason, .exit)
+        XCTAssertEqual(terminal.process.terminationStatus, CLIExit.success.rawValue)
+        let next = try await client.attach(sessionID: session.id)
+        try await next.detach()
+    }
+
+    func testRawEntryDiscardsOldTypeAheadWithoutDiscardingNewInput() async throws {
+        let (url, _, _) = try startBroker()
+        let client = LocalAgentClient(socketURL: url.appendingPathComponent("agent.sock"))
+        let session = try await client.create(name: "Type-ahead", cwd: url.path)
+        let terminal = try attachedTerminal(session.id, directory: url,
+                                            inputBeforeLaunch: "printf stale > stale-input\r")
+        defer { terminal.stop() }
+        let raw = try await terminal.waitForRaw()
+        XCTAssertTrue(raw)
+        guard raw else { return }
+        try terminal.send("printf 'FRESH_''INPUT\\n'; exit\r")
+        let fresh = try await terminal.waitFor("FRESH_INPUT")
+        XCTAssertTrue(fresh)
+        let exited = try await terminal.waitForExit()
+        XCTAssertTrue(exited)
+        XCTAssertTrue(terminal.terminalRestored)
+        guard exited else { return }
+        XCTAssertEqual(terminal.process.terminationReason, .exit)
+        XCTAssertEqual(terminal.process.terminationStatus, CLIExit.success.rawValue)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.appendingPathComponent("stale-input").path),
+                       "Input queued before attaching was replayed into the session")
+    }
+
+    private func attachedTerminal(_ id: String, directory: URL, blockOutputBeforeLaunch: Bool = false,
+                                  inputBeforeLaunch: String? = nil) throws -> CLIPTYProcess {
+        try CLIPTYProcess(binary: binary, arguments: ["attach", id], environment: [
+            "WITERM_AGENT_SOCKET": directory.appendingPathComponent("agent.sock").path,
+            "TERM": "xterm-256color", "PATH": "/usr/bin:/bin"
+        ], blockOutputBeforeLaunch: blockOutputBeforeLaunch, inputBeforeLaunch: inputBeforeLaunch)
     }
 
     private func eventually(_ message: String, seconds: Double = 8, _ condition: () async throws -> Bool) async throws {

@@ -1,21 +1,32 @@
 #if os(macOS)
 import SwiftUI
 
+/// The selected Settings tab. Other views set it before opening Settings to
+/// land on a specific tab.
+enum SettingsTab: String {
+    case general, terminal, commandLine
+    static let key = "witerm.settingsTab"
+}
+
 struct MacSettingsView: View {
     let service: LocalAgentService
+    @AppStorage(SettingsTab.key) private var tab = SettingsTab.general.rawValue
 
     var body: some View {
-        TabView {
+        TabView(selection: $tab) {
             MacGeneralSettings(service: service)
                 .frame(width: 560, height: 560)
                 .tabItem { Label(String(localized: "General", bundle: .main), systemImage: "gearshape") }
+                .tag(SettingsTab.general.rawValue)
             Form { TerminalAppearanceSections() }
                 .formStyle(.grouped)
                 .frame(width: 560, height: 580)
                 .tabItem { Label(String(localized: "Terminal", bundle: .main), systemImage: "terminal") }
+                .tag(SettingsTab.terminal.rawValue)
             CommandLineToolSettings()
                 .frame(width: 560, height: 560)
                 .tabItem { Label(String(localized: "Command Line", bundle: .main), systemImage: "apple.terminal") }
+                .tag(SettingsTab.commandLine.rawValue)
         }
         .witermTint()
     }

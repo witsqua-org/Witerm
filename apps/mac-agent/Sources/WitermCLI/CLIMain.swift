@@ -18,9 +18,9 @@ enum WitermCLIMain {
                 let encoder = JSONEncoder()
                 encoder.outputFormatting = [.sortedKeys]
                 let body = ErrorJSON(error: .init(code: failure.code, message: failure.message, exit: failure.exit.rawValue))
-                if let data = try? encoder.encode(body) { FileHandle.standardError.write(data + Data("\n".utf8)) }
+                if let data = try? encoder.encode(body) { CLIOutput.standardError.write(data + Data("\n".utf8)) }
             } else {
-                FileHandle.standardError.write(Data("witerm: \(failure.message)\n".utf8))
+                CLIOutput.standardError.write(Data("witerm: \(failure.message)\n".utf8))
             }
             exit(failure.exit.rawValue)
         }

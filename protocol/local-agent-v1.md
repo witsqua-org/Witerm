@@ -66,7 +66,7 @@ One UTF-8 JSON object per line, `version` 1. Byte fields are standard Base64, da
 
 **Errors.** One of `invalid_request`, `unsupported_version`, `not_found`, `session_busy`, `read_only`, `dependency_missing`, `unavailable`, or `backpressure`. Raw process errors never appear.
 
-**Not allowed.** There are no fields for executables, working directories, environment, or shell commands.
+**Not allowed.** There are no fields for executables, environment, or shell commands. The only caller-chosen launch detail is a local `create`'s start folder (`cwd`, under [Sharing](#sharing)).
 
 ## Sharing
 
@@ -78,7 +78,8 @@ A session is private until shared. Sharing is stored with the session (`sharing.
   - `attach` to an unshared session returns `not_found`.
 - **Stopping sharing** closes that session's paired-device attachments with a `closed` frame carrying `not_found`. Local attachments and the shell keep running.
 - **Creating locally.**
-  - `cwd` sets the shell's absolute start directory. It must exist and be a readable directory: a missing one is `not_found`; a relative path, a non-directory, or `.`/`..` segments are `invalid_request`.
+  - `cwd` is the shell's absolute start folder. It must exist and be readable: a missing folder is `not_found`; a relative path, a non-directory, or `.`/`..` segments are `invalid_request`.
+  - The service launches tmux *in* that folder instead of passing `-c`, because tmux expands formats there (`#{…}`, and `#(…)` runs a command). If tmux then reports a different start folder, the request fails.
   - The shell gets `WITERM_SESSION_ID` in its environment. No other environment is copied from the caller.
 - **Never remote.** `create`, `close`, `share`, `cwd`, and `peer` can't arrive through the relay.
 

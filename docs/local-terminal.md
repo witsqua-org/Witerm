@@ -4,7 +4,7 @@ The Mac app runs real shells through a background service. Sessions keep running
 
 ## Setup
 
-Requires macOS 14+, Xcode, and tmux.
+Needs macOS 14+, Xcode, and tmux.
 
 ```sh
 brew install tmux
@@ -13,58 +13,54 @@ xcodebuild -project apps/apple/Witerm.xcodeproj -scheme WitermMac \
   -allowProvisioningUpdates -allowProvisioningDeviceRegistration build
 ```
 
-**First build.** Approve `SwiftTermBuildInfoPlugin` when Xcode asks (it only generates version info) and install Apple's Metal Toolchain. Don't turn off plugin validation globally.
+1. **First build.** Approve `SwiftTermBuildInfoPlugin` when Xcode asks (it only generates version info) and install Apple's Metal Toolchain. Don't turn off plugin validation globally.
+2. **First launch.** Start the local service from the main window or Settings → General. If macOS asks for approval, the app links to Login Items & Extensions.
+3. **Sessions** appear under **This Mac**, including ones started with `witerm new`. The list refreshes on its own.
+4. **Command line.** Settings → Command Line installs `witerm` as a link into the app ([guide](cli.md)).
 
-**First launch.** Open the app and start the local service from the main window or Settings → General. If macOS asks for approval, the app links to Login Items & Extensions. Sessions appear under **This Mac**, including those started with `witerm new`; the list refreshes on its own every couple of seconds.
+## Packaging
 
-**Command line.** Settings → Command Line installs `witerm` as a link into the app ([guide](cli.md)).
+| Piece | Location in `Witerm.app` |
+|---|---|
+| Background service | `Contents/Library/LaunchServices/WitermAgent.app` |
+| LaunchAgent (registered through SMAppService) | `Contents/Library/LaunchAgents/com.witerm.agent.plist` |
+| `witerm` command | `Contents/Helpers/witerm` |
 
-## How it's packaged
+- **No sandbox on the Mac.** A full shell needs it, and a sandboxed app can't register an unsandboxed LaunchAgent ([Apple forum](https://developer.apple.com/forums/thread/802443)). The app and the service keep signing and Hardened Runtime with `Config/WitermDirect.entitlements`. `Config/Witerm.entitlements` is only for sandbox experiments. iOS stays sandboxed.
+- **Shared App Group.** The app and the service share `group.com.witerm.$(DEVELOPMENT_TEAM)`, and both provisioning profiles must authorize it. The service uses the app's Keychain access group, so existing identities keep working. Your team ID lives only in the ignored `apps/apple/Config/Signing.local.xcconfig`.
+- **The `witerm` command** is a signed Hardened Runtime tool with no entitlements. It reads the App Group from the app's `Info.plist` and connects to the service's socket as the same user.
+- **Updating an installed copy.** Turn off the service in the old app, quit it, replace the whole bundle, then turn the service on again. Don't move the app after registering, and don't run several builds at once.
 
-The background service ships inside the app as `Contents/Library/LaunchServices/WitermAgent.app`. It is registered through SMAppService with `Contents/Library/LaunchAgents/com.witerm.agent.plist`. The `witerm` command is a signed, Hardened Runtime tool at `Contents/Helpers/witerm`. It needs no entitlements: it reads the App Group from the app's `Info.plist` and connects to the service's socket as the same user.
-
-- **No sandbox.** A full shell needs it, and Apple doesn't let a sandboxed app register an unsandboxed LaunchAgent ([explanation](https://developer.apple.com/forums/thread/802443)). Both the app and the service keep signing and Hardened Runtime and use `Config/WitermDirect.entitlements`. `Config/Witerm.entitlements` is only for sandbox experiments. iOS stays sandboxed.
-- **Shared App Group.** The app and the service share `group.com.witerm.$(DEVELOPMENT_TEAM)`, and both provisioning profiles must authorize it. The service uses the app's original Keychain access group, so existing identities keep working. Your team lives only in the ignored `apps/apple/Config/Signing.local.xcconfig`.
-- **Updating an installed copy.** Stop the service in the old app, quit it, replace the whole bundle, then start the service again. Don't move the app after registering, and don't run several builds at once.
-
-Production Developer ID signing and notarization have not been done yet.
+Production Developer ID signing and notarization haven't been done yet.
 
 ## Session behavior
 
 - Each session is one shell in Witerm's own tmux server. Terminal, iTerm, and your own tmux are untouched.
-- Closing a terminal view only detaches it. **End Session** asks for confirmation and kills the shell's tasks.
-- Stopping the service disconnects viewers but keeps the shells running. Continuity is not promised across logout, shutdown, or restart. Sleep is covered in [Terminal experience](terminal-experience.md).
+- Closing a terminal view only detaches. **End Session** asks for confirmation, then ends the shell and its programs.
+- Stopping the service disconnects viewers but keeps the shells. Continuity across logout, restart, or shutdown isn't promised. Sleep is covered in [Terminal experience](terminal-experience.md#sleep-and-weak-networks).
 - One controller per session. Other viewers are read-only, and there's no forced takeover.
-- Sessions are private until shared. A shared session is reachable by paired devices; unsharing disconnects them and keeps the shell.
-- Terminal output stays in local memory and sockets. It is never stored or sent to the cloud. tmux keeps its usual scrollback, and your shell may keep history as configured.
-- Clipboard escape sequences are blocked, and only links you click (http/https) open.
+- Sessions are private until shared. Unsharing disconnects paired devices and keeps the shell.
+- Terminal output stays in local memory and sockets; it's never stored or sent to the cloud. tmux keeps its usual scrollback, and your shell may keep history as configured.
+- Clipboard escape sequences are blocked, and only http/https links you click open.
 
-**Security and limits.**
-- The state directory is 0700, sockets are 0600, and both sides check the peer's user ID. A lock prevents two services at once.
-- Limits: 16 sessions, 32 connections, and bounded input and output queues.
+**Security and limits**
+- The state directory is 0700 and sockets are 0600. Both sides check the peer's user ID, and a lock stops a second service from starting.
+- At most 16 sessions and 32 connections, with bounded input and output queues.
 - A viewer that can't keep up is disconnected and redraws when it reattaches. Bytes are never dropped silently.
 
-Details: [local-agent-v1](../protocol/local-agent-v1.md).
+Protocol details: [local-agent-v1](../protocol/local-agent-v1.md).
 
 ## Testing
 
 ```sh
-make test-local   # WitermCore + service tests + real tmux smoke test
+make test-local   # WitermCore, service tests, and a real tmux smoke test
 ```
 
-The smoke tool (`tools/local-agent-smoke`) uses a temporary 0700 directory, its own tmux server, and `/bin/sh`. It checks:
+The smoke tool (`tools/local-agent-smoke`) uses a temporary 0700 directory, its own tmux server, and `/bin/sh`. It checks input and `stty size`, exclusive control and read-only limits, redraw on reconnect, the same shell PID across reconnect and service restart, and explicit close. It cleans up only what it created and never prints terminal content.
 
-- input and `stty size`
-- exclusive control and read-only limits
-- redraw on reconnect
-- the same shell PID after reconnect and service restart
-- explicit close
+### Checking the installed service
 
-It cleans up only what it created and never prints terminal content.
-
-## Checking the installed service
-
-`RegisteredServiceProbe` checks that a real, registered service keeps the same shell across lifecycle events. It creates a test session and verifies process continuity, but it never quits the app or restarts the service itself. Do each lifecycle step by hand, and check process state separately before each `verify`.
+`RegisteredServiceProbe` checks that the real, registered service keeps the same shell across lifecycle events. It creates its own test session and never quits the app or restarts the service itself: you do each step by hand, and confirm process state separately before each `verify`.
 
 ```sh
 swift build --package-path tools/local-agent-smoke --product RegisteredServiceProbe
@@ -76,12 +72,12 @@ evidence="$(mktemp -d /private/tmp/witerm-service.XXXXXX)/evidence.json"
 "$probe" prepare "$socket" "$evidence"
 ```
 
-| Step | Action, then confirm | Then run |
+| Step | Do this, then confirm | Then run |
 |---|---|---|
-| 1 | Quit the app from its menu. Confirm the app process is gone and the service is still running. | `"$probe" verify "$evidence" app-exit` |
-| 2 | `launchctl kill SIGTERM gui/$(id -u)/com.witerm.agent`. Wait for a new service PID. | `... automatic-restart` |
-| 3 | Reopen the same app. Confirm only one copy is running. | `... app-reopen` |
-| 4 | Turn the service off in the app (shell still alive), then on again. | `... service-stop-start` |
+| 1 | Quit the app from its menu. The app process is gone; the service still runs. | `"$probe" verify "$evidence" app-exit` |
+| 2 | `launchctl kill SIGTERM gui/$(id -u)/com.witerm.agent`. A new service PID appears. | `... automatic-restart` |
+| 3 | Reopen the same app. Exactly one copy runs. | `... app-reopen` |
+| 4 | Turn the service off in the app (the shell stays alive), then on again. | `... service-stop-start` |
 | 5 | Reattach in the app and type something. | `"$probe" cleanup "$evidence"` |
 
-The evidence file holds only test IDs and PIDs. Cleanup checks those identities before ending anything, so it never kills other tmux servers or shells.
+The evidence file holds only test IDs and PIDs. Cleanup checks them before ending anything, so it never touches other tmux servers or shells.
