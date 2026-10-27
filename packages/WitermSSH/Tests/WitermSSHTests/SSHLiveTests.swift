@@ -248,6 +248,33 @@ private actor SSHVerifiedAuthorities {
         } catch { XCTAssertEqual(error as? SSHFailure, .hostKeyChanged) }
     }
 
+    func testWrongPasswordReportsAuthenticationFailed() async throws {
+        let fixture = try SSHFixture.load(), profile = fixture.profile()
+        let expected = try fixture.publicKey(fixture.targetPublicKeyFile)
+        do {
+            _ = try await SSHConnection.connect(profile: profile, credentials: [profile.host.id: .password("deliberately-wrong")]) { key in
+                guard key.publicKey == expected else { throw SSHFailure.hostKeyChanged }
+            }
+            XCTFail("Wrong password accepted")
+        } catch { XCTAssertEqual(error as? SSHFailure, .authenticationFailed) }
+    }
+
+    func testUnreachableJumpTargetIsReportedSeparately() async throws {
+        let fixture = try SSHFixture.load()
+        var profile = fixture.profile(jump: true)
+        profile.host.port = 1 // Nothing listens there on the target container.
+        let expectedJump = try fixture.publicKey(fixture.jumpPublicKeyFile)
+        let credentials = Dictionary(uniqueKeysWithValues: (profile.jumpHosts + [profile.host]).map {
+            ($0.id, SSHCredential.password("witerm-fixture-only"))
+        })
+        do {
+            _ = try await SSHConnection.connect(profile: profile, credentials: credentials) { key in
+                guard key.publicKey == expectedJump else { throw SSHFailure.hostKeyChanged }
+            }
+            XCTFail("A missing jump target connected")
+        } catch { XCTAssertEqual(error as? SSHFailure, .jumpTargetUnreachable) }
+    }
+
     func testJumpRejectsChangedFinalIdentityAfterVerifiedJump() async throws {
         let fixture = try SSHFixture.load(), profile = fixture.profile(jump: true)
         let jump = profile.jumpHosts[0]

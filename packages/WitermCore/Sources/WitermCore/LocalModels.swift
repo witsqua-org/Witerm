@@ -1,7 +1,7 @@
 import Foundation
 
 public enum LocalAgentOperation: String, Codable, Sendable {
-  case status, list, create, close, attach, input, resize, detach, share
+  case status, list, create, close, attach, input, resize, detach, share, rename
 }
 
 public enum LocalAttachmentMode: String, Codable, Sendable { case control, view }

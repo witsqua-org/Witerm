@@ -62,11 +62,8 @@ struct SSHHostDetail: View {
                 actionsMenu
             }
 
-            if model.issueProfileID == profile.id || model.issueProfileID == nil, let issue = model.issue {
-                IssueBanner(issue) {
-                    Button(String(localized: "Dismiss Message", bundle: .main)) { model.clearIssue() }
-                }
-                .accessibilityIdentifier("sshIssue")
+            if model.issueProfileID == profile.id || model.issueProfileID == nil {
+                SSHIssueBanner(model: model, ui: ui, profile: profile)
             }
 
             if isConnecting {

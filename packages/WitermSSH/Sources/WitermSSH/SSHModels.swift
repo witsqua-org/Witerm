@@ -62,6 +62,9 @@ public enum SSHFailure: Error, Equatable, Sendable {
     case invalidConfiguration, missingCredential, unsupportedPrivateKey
     case hostKeyRejected, hostKeyChanged, disconnected, backpressure, transferTooLarge
     case invalidPath, invalidForward, storageUnavailable, cancelled
+    // Connection failures, distinguished so the app can name a next step.
+    case hostNotFound, connectionRefused, timedOut, networkUnreachable, jumpTargetUnreachable
+    case authenticationFailed, authenticationMethodUnavailable, noCommonAlgorithms
 }
 
 public struct SSHFileEntry: Identifiable, Hashable, Sendable {

@@ -122,6 +122,11 @@ final class AgentBroker: @unchecked Sendable {
         }
     }
 
+    private func validDisplayName(_ name: String) -> Bool {
+        name == name.trimmingCharacters(in: .whitespacesAndNewlines) && (1...64).contains(name.unicodeScalars.count)
+            && name.rangeOfCharacter(from: .controlCharacters) == nil
+    }
+
     private func validFields(_ raw: [String: Any], operation: LocalAgentOperation) -> Bool {
         var allowed: Set<String> = ["version", "id", "operation"]
         switch operation {
@@ -130,6 +135,7 @@ final class AgentBroker: @unchecked Sendable {
         case .create: allowed.formUnion(["name", "columns", "rows", "cwd", "shared"])
         case .close: allowed.insert("session_id")
         case .share: allowed.formUnion(["session_id", "shared"])
+        case .rename: allowed.formUnion(["session_id", "name"])
         case .attach: allowed.formUnion(["session_id", "columns", "rows", "mode", "peer"])
         case .input: allowed.insert("data")
         case .resize: allowed.formUnion(["columns", "rows"])
@@ -164,8 +170,7 @@ final class AgentBroker: @unchecked Sendable {
                 reply(sessions: try engine.sessions().map { withSharing($0) })
             }
         case .create:
-            guard connection.child == nil, let name = request.name, name == name.trimmingCharacters(in: .whitespacesAndNewlines),
-                  (1...64).contains(name.unicodeScalars.count), name.rangeOfCharacter(from: .controlCharacters) == nil else { throw AgentFailure(.invalidRequest) }
+            guard connection.child == nil, let name = request.name, validDisplayName(name) else { throw AgentFailure(.invalidRequest) }
             let (columns, rows) = try dimensions()
             let session = try engine.create(name: name, columns: columns, rows: rows, cwd: request.cwd, shared: request.shared == true)
             reply(session: withSharing(session))
@@ -181,6 +186,9 @@ final class AgentBroker: @unchecked Sendable {
                 }
             }
             reply(session: withSharing(try engine.session(id)))
+        case .rename:
+            guard connection.child == nil, let name = request.name, validDisplayName(name) else { throw AgentFailure(.invalidRequest) }
+            reply(session: withSharing(try engine.rename(try sessionID(), to: name)))
         case .close:
             let id = try sessionID()
             try engine.close(id)

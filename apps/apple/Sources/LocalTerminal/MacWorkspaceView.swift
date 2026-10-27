@@ -22,6 +22,7 @@ struct MacWorkspaceView: View {
     @State private var creatingSession = false
     @State private var endingSession: LocalSessionInfo?
     @State private var sharingSession: LocalSessionInfo?
+    @State private var renamingSession: LocalSessionInfo?
     @State private var search = ""
 
     var body: some View {
@@ -58,13 +59,32 @@ struct MacWorkspaceView: View {
         .focusedSceneValue(\.workspaceActions, WorkspaceActions(
             newSession: canCreateSession ? { creatingSession = true } : nil,
             newSSHConnection: sshUI.presentNew,
-            refresh: { Task { await refresh() } }
+            importSSHHosts: sshUI.presentImport,
+            refresh: { Task { await refresh() } },
+            terminalNames: openTerminals.map(\.name),
+            showTerminal: { index in
+                let terminals = openTerminals
+                if terminals.indices.contains(index) { selection = terminals[index].destination }
+            },
+            showAdjacentTerminal: { step in
+                let terminals = openTerminals
+                guard !terminals.isEmpty else { return }
+                let current = terminals.firstIndex { $0.destination == selection }
+                let next = current.map { ($0 + step + terminals.count) % terminals.count } ?? (step > 0 ? 0 : terminals.count - 1)
+                selection = terminals[next].destination
+            }
         ))
         .modifier(SSHPresentations(model: ssh, ui: sshUI))
         .sheet(isPresented: $creatingSession) {
             NewLocalSessionSheet { name in
                 guard let client = service.client else { return }
                 terminal.create(name: name, using: client)
+            }
+        }
+        .sheet(item: $renamingSession) { session in
+            NewLocalSessionSheet(renaming: session.name) { name in
+                guard let client = service.client, name != session.name else { return }
+                terminal.rename(session, to: name, using: client)
             }
         }
         .sheet(item: $sharingSession) { session in
@@ -117,6 +137,14 @@ struct MacWorkspaceView: View {
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)) { _ in
             Task { await refresh() }
         }
+    }
+
+    /// Terminals in sidebar order: sessions on this Mac, then connected SSH hosts.
+    private var openTerminals: [(name: String, destination: MacDestination)] {
+        let local = service.state == .ready && terminal.tmuxAvailable
+            ? terminal.sessions.map { (name: $0.name, destination: MacDestination.local($0.id)) } : []
+        return local + ssh.orderedProfiles().filter { ssh.session(for: $0.id) != nil }
+            .map { (name: $0.name, destination: MacDestination.ssh($0.id)) }
     }
 
     private var canCreateSession: Bool {
@@ -178,6 +206,10 @@ struct MacWorkspaceView: View {
                         .buttonStyle(.borderless)
                         .foregroundStyle(.secondary)
                         .accessibilityIdentifier("addSSHHostSidebar")
+                    Button(String(localized: "Import from SSH Config…", bundle: .main), systemImage: "square.and.arrow.down", action: sshUI.presentImport)
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("sshImportHosts")
                 }
             }
             Section(String(localized: "Devices", bundle: .main)) {
@@ -244,6 +276,7 @@ struct MacWorkspaceView: View {
                             Button(String(localized: "Stop Sharing", bundle: .main)) { terminal.setShared(session, false, using: client) }
                         }
                         Divider()
+                        Button(String(localized: "Rename…", bundle: .main)) { renamingSession = session }
                         Button(String(localized: "End Session", bundle: .main), role: .destructive) { endingSession = session }
                     }
                 }
@@ -356,22 +389,30 @@ struct MacWorkspaceView: View {
     private var detail: some View {
         switch selection {
         case .local?:
-            LocalTerminalDetail(service: service, model: terminal) { endingSession = $0 }
+            LocalTerminalDetail(service: service, model: terminal, endSession: { endingSession = $0 },
+                                renameSession: { renamingSession = $0 })
         case .ssh(let id)?:
             // A new host is selected as soon as it starts connecting, before
             // it is saved; show it so its progress and errors stay visible.
             if let profile = ssh.profiles.first(where: { $0.id == id })
                 ?? ssh.connectingProfile.flatMap({ $0.id == id ? $0 : nil }) {
                 SSHHostDetail(profile: profile, model: ssh, ui: sshUI)
+                    .safeAreaInset(edge: .top, spacing: 0) { offlineBanner }
             } else {
                 overview
             }
         case .devices(let id)?:
             MacDevicesView(service: service, server: servers.server(id: id))
                 .id(id)
+                .safeAreaInset(edge: .top, spacing: 0) { offlineBanner }
         case nil:
             overview
         }
+    }
+
+    /// Remote destinations only; terminals on this Mac work offline.
+    private var offlineBanner: some View {
+        OfflineBanner(insets: EdgeInsets(top: 12, leading: 20, bottom: 0, trailing: 20))
     }
 
     private var overview: some View {

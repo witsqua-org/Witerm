@@ -21,9 +21,41 @@ enum SSHUIError {
         case .transferTooLarge: String(localized: "The file exceeds the transfer limit.", bundle: .main)
         case .invalidPath: String(localized: "Unable to use this file path.", bundle: .main)
         case .cancelled: String(localized: "Operation cancelled.", bundle: .main)
+        case .hostNotFound: String(localized: "Unable to find this host. Check the address spelling, DNS, or VPN.", bundle: .main)
+        case .connectionRefused: String(localized: "The host refused the connection. Check the port and that its SSH server is running.", bundle: .main)
+        case .timedOut: String(localized: "The host did not respond in time. Check the network, firewall, or VPN, then try again.", bundle: .main)
+        case .networkUnreachable: String(localized: "This network can't reach the host. Check Wi-Fi, VPN, or the address.", bundle: .main)
+        case .jumpTargetUnreachable: String(localized: "The jump host could not reach the target. Check the target address and port as the jump host sees them.", bundle: .main)
+        case .authenticationFailed: String(localized: "The username, password, or key was not accepted. Check the credentials, then try again.", bundle: .main)
+        case .authenticationMethodUnavailable: String(localized: "The host does not accept this sign-in method. Use a password or an Ed25519 key it allows.", bundle: .main)
+        case .noCommonAlgorithms: String(localized: "The host offers no algorithms Witerm considers secure, so the connection was stopped. Ask its administrator to enable modern algorithms.", bundle: .main)
         default: String(localized: "The operation did not finish. Check the connection and permissions, then try again.", bundle: .main)
         }
     }
+
+    /// The next step an issue offers, beyond dismissing it.
+    static func recovery(_ error: Error) -> SSHRecovery? {
+        switch error as? SSHFailure {
+        case .hostNotFound, .connectionRefused, .jumpTargetUnreachable, .authenticationFailed,
+             .authenticationMethodUnavailable, .missingCredential, .unsupportedPrivateKey, .invalidConfiguration:
+            .editConnection
+        case .timedOut, .networkUnreachable, .backpressure, .disconnected: .tryAgain
+        default: nil
+        }
+    }
+}
+
+enum SSHRecovery { case editConnection, tryAgain }
+
+/// A deleted host kept briefly so the deletion can be undone. Credentials
+/// stay in memory only for the undo window, then are dropped.
+struct RemovedSSHProfile {
+    let profile: SSHProfile
+    fileprivate let credentials: [UUID: SSHCredential]
+    fileprivate let favorite: Bool
+    fileprivate let lastUsed: Double?
+    fileprivate let hue: Int?
+    let token = UUID()
 }
 
 /// One connected SSH host. The session owns its terminal renderer, so output
@@ -76,6 +108,13 @@ final class SSHWorkspaceModel {
     var issue: String?
     /// The host an issue belongs to, when it belongs to one.
     private(set) var issueProfileID: UUID?
+    private(set) var issueRecovery: SSHRecovery?
+    /// Completed connection attempts, for haptic feedback.
+    private(set) var recentlyRemoved: RemovedSSHProfile?
+    @ObservationIgnored private var removalExpiry: Task<Void, Never>?
+    static let undoWindow: Duration = .seconds(10)
+    private(set) var connectSuccesses = 0
+    private(set) var connectFailures = 0
     var trustPrompt: SSHTrustPrompt?
     private var untrustedKey: SSHHostKey?
     private var pendingAttempt: (profile: SSHProfile, credentials: [UUID: SSHCredential], remember: Set<UUID>)?
@@ -136,9 +175,20 @@ final class SSHWorkspaceModel {
     func removeProfile(_ profile: SSHProfile) async {
         if let session = session(for: profile.id) { disconnect(session) }
         if connectingProfile?.id == profile.id { cancelConnecting() }
+        let credentials = await savedCredentials(for: profile)
+        let removed = RemovedSSHProfile(
+            profile: profile, credentials: credentials, favorite: isFavorite(profile),
+            lastUsed: lastUsed[profile.id.uuidString], hue: IdentityHue.assignment(for: profile.id.uuidString))
         do {
             let store = try SSHProfileStore()
             try await store.delete(id: profile.id)
+            recentlyRemoved = removed
+            removalExpiry?.cancel()
+            removalExpiry = Task { [weak self] in
+                try? await Task.sleep(for: Self.undoWindow)
+                guard !Task.isCancelled, self?.recentlyRemoved?.token == removed.token else { return }
+                self?.recentlyRemoved = nil
+            }
             IdentityHue.forget(profile.id.uuidString)
             disconnected[profile.id] = nil
             favorites.remove(profile.id.uuidString)
@@ -147,6 +197,28 @@ final class SSHWorkspaceModel {
             UserDefaults.standard.set(lastUsed, forKey: "witerm.sshLastUsed")
             await load()
         } catch { report(SSHUIError.message(error), profileID: nil) }
+    }
+
+    /// Restores the last deleted host with its credentials, hue, and order.
+    func undoRemove() async {
+        guard let removed = recentlyRemoved else { return }
+        recentlyRemoved = nil
+        removalExpiry?.cancel()
+        let id = removed.profile.id.uuidString
+        IdentityHue.restore(id, index: removed.hue)
+        if removed.favorite { favorites.insert(id) }
+        lastUsed[id] = removed.lastUsed
+        UserDefaults.standard.set(Array(favorites), forKey: "witerm.sshFavorites")
+        UserDefaults.standard.set(lastUsed, forKey: "witerm.sshLastUsed")
+        do {
+            try await saveProfile(removed.profile, credentials: removed.credentials,
+                                  remember: Set(removed.credentials.keys))
+        } catch { report(SSHUIError.message(error), profileID: nil) }
+    }
+
+    func dismissUndo() {
+        recentlyRemoved = nil
+        removalExpiry?.cancel()
     }
 
     /// Starts a new attempt. Live sessions for other hosts are unaffected;
@@ -197,6 +269,7 @@ final class SSHWorkspaceModel {
                     self?.ended(error, token: token)
                 }
                 self.sessions.append(session)
+                self.connectSuccesses += 1
                 self.disconnected[profile.id] = nil
                 self.lastUsed[profile.id.uuidString] = Date().timeIntervalSince1970
                 UserDefaults.standard.set(self.lastUsed, forKey: "witerm.sshLastUsed")
@@ -214,7 +287,8 @@ final class SSHWorkspaceModel {
                     self.trustPrompt = SSHTrustPrompt(key: key)
                 } else if !Task.isCancelled {
                     self.pendingAttempt = nil
-                    self.report(SSHUIError.message(error), profileID: profile.id)
+                    self.connectFailures += 1
+                    self.report(SSHUIError.message(error), profileID: profile.id, recovery: SSHUIError.recovery(error))
                 }
             }
         }
@@ -297,10 +371,11 @@ final class SSHWorkspaceModel {
                profileID: session.id)
     }
 
-    func clearIssue() { issue = nil; issueProfileID = nil }
+    func clearIssue() { issue = nil; issueProfileID = nil; issueRecovery = nil }
 
-    private func report(_ message: String, profileID: UUID?) {
+    private func report(_ message: String, profileID: UUID?, recovery: SSHRecovery? = nil) {
         issue = message
         issueProfileID = profileID
+        issueRecovery = profileID == nil ? nil : recovery
     }
 }

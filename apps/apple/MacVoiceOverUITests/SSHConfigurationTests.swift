@@ -37,9 +37,6 @@ import XCTest
                 guard row.exists else { return }
                 row.rightClick()
                 app.menuItems["Delete Connection"].click()
-                let confirm = app.buttons["action-button-1"]
-                XCTAssertTrue(confirm.waitForExistence(timeout: 5))
-                confirm.click()
             }
         }
         XCTAssertFalse(app.buttons["sshTrustHost"].exists)

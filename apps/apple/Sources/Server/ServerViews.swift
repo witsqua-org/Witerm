@@ -64,10 +64,16 @@ struct ConnectionFeedback: View {
 struct ConnectionLifecycle: ViewModifier {
     @Environment(ServerList.self) private var servers
     @Environment(\.scenePhase) private var scenePhase
+    @State private var network = NetworkStatus()
 
     func body(content: Content) -> some View {
         content
+            .environment(network)
             .task { servers.checkAllIfNeeded() }
+            // A returning network rechecks servers; terminals still wait for an explicit Reconnect.
+            .onChange(of: network.online) { _, online in
+                if online { servers.checkAllIfNeeded() }
+            }
             .onChange(of: scenePhase) { _, phase in
                 switch phase {
                 case .background: servers.cancelAll()

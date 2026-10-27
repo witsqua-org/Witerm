@@ -22,8 +22,17 @@ final class SSHWorkspaceUI {
     var files: SSHSession?
     var forwarding: SSHSession?
     var appearance = false
+    var importing = false
+    /// A connected host a keyboard command asked to show; the workspace shows it and clears this.
+    var requestedSession: UUID?
     private(set) var visible = false
     @ObservationIgnored private var request = UUID()
+    @ObservationIgnored private var newRequested = false
+
+    /// For commands issued from another tab: presents once the workspace appears.
+    func presentNewWhenVisible() {
+        if visible { presentNew() } else { newRequested = true }
+    }
 
     func presentNew() {
         guard visible else { return }
@@ -33,7 +42,9 @@ final class SSHWorkspaceUI {
 
     /// Connects at once when every hop has credentials the person explicitly
     /// saved; otherwise opens the prefilled connection form.
-    func open(_ profile: SSHProfile, model: SSHWorkspaceModel, editing: Bool = false) {
+    /// `reviewing` always shows the prefilled form with Connect, so a rejected
+    /// credential is corrected instead of retried as is.
+    func open(_ profile: SSHProfile, model: SSHWorkspaceModel, editing: Bool = false, reviewing: Bool = false) {
         let token = UUID()
         request = token
         Task {
@@ -41,7 +52,7 @@ final class SSHWorkspaceUI {
             guard visible, request == token, !model.connecting, model.session(for: profile.id) == nil,
                   model.profiles.contains(where: { $0.id == profile.id }) else { return }
             let hosts = (profile.jumpHosts + [profile.host]).map(\.id)
-            if !editing, hosts.allSatisfy({ stored[$0] != nil }) {
+            if !editing, !reviewing, hosts.allSatisfy({ stored[$0] != nil }) {
                 model.connect(profile, credentials: stored, remember: Set(hosts))
             } else {
                 editorRequest = SSHEditorRequest(profile: profile, credentials: stored, purpose: editing ? .edit : .connect)
@@ -49,10 +60,19 @@ final class SSHWorkspaceUI {
         }
     }
 
+    func presentImport() {
+        guard visible else { return }
+        request = UUID()
+        importing = true
+    }
+
     func inspectKeys(_ profile: SSHProfile) { request = UUID(); inspectingKeys = profile }
     func remove(_ profile: SSHProfile) { request = UUID(); removing = profile }
 
-    func appeared() { visible = true }
+    func appeared() {
+        visible = true
+        if newRequested { newRequested = false; presentNew() }
+    }
 
     func disappeared() {
         visible = false
@@ -95,20 +115,102 @@ struct SSHPresentations: ViewModifier {
             .sheet(item: $ui.files) { session in SSHFilesView(connection: session.connection) }
             .sheet(item: $ui.forwarding) { session in SSHForwardingView(connection: session.connection) }
             .sheet(isPresented: $ui.appearance) { TerminalAppearanceSettings() }
+            .sheet(isPresented: $ui.importing) { SSHConfigImportView(model: model) }
             .sheet(item: $ui.inspectingKeys) { profile in SSHHostKeysView(profile: profile) }
-            .alert(String(localized: "Delete SSH Connection?", bundle: .main), isPresented: Binding(get: { ui.removing != nil }, set: { if !$0 { ui.removing = nil } })) {
-                Button(String(localized: "Cancel", bundle: .main), role: .cancel) { ui.removing = nil }
-                Button(String(localized: "Delete", bundle: .main), role: .destructive) {
-                    if let removing = ui.removing { Task { await model.removeProfile(removing) } }
-                    ui.removing = nil
-                }
-            } message: { Text(String(localized: "The saved connection and its credentials will be deleted.", bundle: .main)) }
+            // Deleting is immediate and undoable, rather than confirmed up front.
+            .onChange(of: ui.removing?.id) {
+                guard let removing = ui.removing else { return }
+                ui.removing = nil
+                Task { await model.removeProfile(removing) }
+            }
+            .overlay(alignment: .bottom) { SSHUndoRemovalBar(model: model) }
             .onChange(of: model.sessions.map(\.token)) { _, open in
                 if let files = ui.files, !open.contains(files.token) { ui.files = nil }
                 if let forwarding = ui.forwarding, !open.contains(forwarding.token) { ui.forwarding = nil }
             }
             .onAppear { ui.appeared() }
             .onDisappear { ui.disappeared() }
+    }
+}
+
+/// Offers to undo a host deletion for a few seconds.
+struct SSHUndoRemovalBar: View {
+    let model: SSHWorkspaceModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Group {
+            if let removed = model.recentlyRemoved {
+                HStack(spacing: 12) {
+                    Text(String(localized: "Deleted \(String(removed.profile.name)) and its saved credentials.", bundle: .main))
+                        .font(.subheadline)
+                        .foregroundStyle(WitermTheme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
+                    Button(String(localized: "Undo", bundle: .main)) { Task { await model.undoRemove() } }
+                        .font(.subheadline.weight(.semibold))
+                        .touchTarget()
+                        .accessibilityIdentifier("sshUndoRemove")
+                    Button(String(localized: "Dismiss", bundle: .main), systemImage: "xmark", action: model.dismissUndo)
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.borderless)
+                        .touchTarget(square: true)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(WitermTheme.surface, in: .capsule)
+                .overlay { Capsule().strokeBorder(WitermTheme.secondary.opacity(0.25), lineWidth: 1).allowsHitTesting(false) }
+                .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
+                .frame(maxWidth: 520)
+                .padding(16)
+                .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                .onAppear {
+                    AccessibilityNotification.Announcement(String(localized: "Deleted \(String(removed.profile.name)). Undo is available.", bundle: .main)).post()
+                }
+            }
+        }
+        .animation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.38, dampingFraction: 0.88),
+                   value: model.recentlyRemoved?.token)
+    }
+}
+
+/// The current SSH issue with its next step: correct the connection, or try
+/// the same one again after a network problem.
+struct SSHIssueBanner: View {
+    let model: SSHWorkspaceModel
+    let ui: SSHWorkspaceUI
+    let profile: SSHProfile?
+
+    var body: some View {
+        if let issue = model.issue {
+            IssueBanner(issue) {
+                HStack(spacing: 12) {
+                    if let profile, model.issueProfileID == profile.id {
+                        switch model.issueRecovery {
+                        case .editConnection:
+                            Button(String(localized: "Check Connection…", bundle: .main)) {
+                                model.clearIssue(); ui.open(profile, model: model, reviewing: true)
+                            }
+                            .touchTarget()
+                            .disabled(model.connecting)
+                            .accessibilityIdentifier("sshIssueEdit")
+                        case .tryAgain:
+                            Button(String(localized: "Try Again", bundle: .main)) {
+                                model.clearIssue(); ui.open(profile, model: model)
+                            }
+                            .touchTarget()
+                            .disabled(model.connecting)
+                            .accessibilityIdentifier("sshIssueRetry")
+                        case nil: EmptyView()
+                        }
+                    }
+                    Button(String(localized: "Dismiss Message", bundle: .main)) { model.clearIssue() }
+                        .touchTarget()
+                }
+                .font(.subheadline)
+            }
+            .accessibilityIdentifier("sshIssue")
+        }
     }
 }
 
@@ -247,16 +349,17 @@ struct SSHTerminalSurface: View {
     @AppStorage(TerminalFontSize.key) private var fontSize = TerminalFontSize.standard
     @AppStorage("witerm.terminalHighContrast") private var highContrast = false
     @AppStorage("witerm.terminalAnnounceOutput") private var announceOutput = false
+    @AppStorage(TerminalColorScheme.key) private var palette = TerminalColorScheme.system
 
     var body: some View {
         #if os(macOS)
         SSHNativeTerminalView(host: session.terminal, fontSize: TerminalFontSize.clamped(fontSize),
-            highContrast: highContrast || contrast == .increased,
+            highContrast: highContrast || contrast == .increased, palette: palette,
             scheme: systemColorScheme, announceOutput: announceOutput)
             .id(session.token)
         #else
         SSHNativeTerminalView(host: session.terminal, fontSize: TerminalFontSize.clamped(fontSize) * fontScale,
-            highContrast: highContrast || contrast == .increased,
+            highContrast: highContrast || contrast == .increased, palette: palette,
             scheme: systemColorScheme, announceOutput: announceOutput,
             keyboardRequest: keyboardRequest)
             .id(session.token)
@@ -270,9 +373,11 @@ struct SSHTerminalSurface: View {
 struct SSHWorkspaceView: View {
     /// Owned by the app root so sessions outlive tab switches.
     @Bindable var model: SSHWorkspaceModel
-    @State private var ui = SSHWorkspaceUI()
+    /// Owned by the app root so keyboard commands can reach it from any tab.
+    let ui: SSHWorkspaceUI
     @State private var shownID: UUID?
     @State private var keyboardRequest = 0
+    @State private var finding = false
     @State private var search = ""
     @State private var favoritesOnly = false
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -312,26 +417,46 @@ struct SSHWorkspaceView: View {
         .onChange(of: model.profiles.map(\.id)) { _, ids in
             if let shownID, !ids.contains(shownID) { show(nil) }
         }
+        .sensoryFeedback(.success, trigger: model.connectSuccesses)
+        .sensoryFeedback(.error, trigger: model.connectFailures)
+        .onChange(of: shownID) { finding = false }
+        .onChange(of: ui.requestedSession, initial: true) { _, id in
+            guard let id else { return }
+            ui.requestedSession = nil
+            if model.session(for: id) != nil { show(id) }
+        }
+    }
+
+    private func finder(for session: SSHSession) -> TerminalFinder {
+        let finder = TerminalFinder()
+        finder.terminal = session.terminal.surface.terminal
+        return finder
     }
 
     private var detail: some View {
         VStack(spacing: 0) {
-            if let issue = model.issue {
-                IssueBanner(issue) {
-                    Button(String(localized: "Dismiss Message", bundle: .main)) { model.clearIssue() }
-                        .font(.subheadline)
-                        .touchTarget()
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .accessibilityIdentifier("sshIssue")
+            OfflineBanner(insets: EdgeInsets(top: 8, leading: 16, bottom: 0, trailing: 16))
+            if model.issue != nil {
+                SSHIssueBanner(model: model, ui: ui, profile: shownProfile)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
             }
             if let session = shown {
                 // The host's hue edges the terminal and tints its controls, so
                 // the screen always shows which machine receives input.
                 TerminalHeader(nil, destination: session.profile.endpointSummary,
                                status: String(localized: "Input Enabled", bundle: .main),
-                               statusImage: "keyboard", live: true, hue: session.profile.identityHue) { EmptyView() }
+                               statusImage: "keyboard", live: true, hue: session.profile.identityHue) {
+                    Button(String(localized: "Find in Terminal", bundle: .main), systemImage: "magnifyingglass") { finding = true }
+                        .labelStyle(.iconOnly)
+                        .keyboardShortcut("f", modifiers: .command)
+                        .touchTarget(square: true)
+                        .accessibilityIdentifier("terminalFind")
+                }
+                if finding {
+                    TerminalFindBar(finder: finder(for: session)) { finding = false }
+                    Divider()
+                }
                 SSHTerminalSurface(session: session, keyboardRequest: keyboardRequest)
             } else if let connecting = model.connectingProfile {
                 VStack(spacing: 16) {
@@ -457,6 +582,9 @@ struct SSHWorkspaceView: View {
                     Text(String(localized: "Add a host to use the terminal, file transfers and port forwarding.", bundle: .main))
                 } actions: {
                     PrimaryButton(String(localized: "Add Host", bundle: .main), systemImage: "plus", action: ui.presentNew)
+                    Button(String(localized: "Import from SSH Config…", bundle: .main), action: ui.presentImport)
+                        .touchTarget()
+                        .accessibilityIdentifier("sshImportHosts")
                 }
             }
         }

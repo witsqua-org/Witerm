@@ -128,9 +128,18 @@ func waitForAgent(_ client: LocalAgentClient) async throws {
         try await restarted.send(Data("printf 'WT_''PID=%s\\n' \"$$\"; printf 'WT_''RESTART\\n'\n".utf8))
         try await waitFor("WT_RESTART", in: capture)
         guard try await shellPID(capture) == originalPID else { throw SmokeFailure("Shell changed after agent restart") }
+        // Renaming while attached changes only metadata; the same shell keeps running.
+        let renamed = try await client.rename(sessionID: session.id, to: "Smoke renamed")
+        guard renamed.name == "Smoke renamed",
+              try await client.sessions().first(where: { $0.id == session.id })?.name == "Smoke renamed"
+        else { throw SmokeFailure("Rename was not stored") }
+        await capture.clear()
+        try await restarted.send(Data("printf 'WT_''PID=%s\\n' \"$$\"; printf 'WT_''RENAMED\\n'\n".utf8))
+        try await waitFor("WT_RENAMED", in: capture)
+        guard try await shellPID(capture) == originalPID else { throw SmokeFailure("Shell changed after rename") }
         await restarted.disconnect(); reader.cancel()
         try await client.close(sessionID: session.id)
         guard try await client.sessions().isEmpty else { throw SmokeFailure("Close left a session") }
-        print("PASS: real PTY input, resize, controller exclusion, read-only, alternate-screen repaint, reconnect, agent restart and explicit close")
+        print("PASS: real PTY input, resize, controller exclusion, read-only, alternate-screen repaint, reconnect, agent restart, rename and explicit close")
     }
 }

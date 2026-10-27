@@ -223,7 +223,7 @@ enum RelayTerminalPolicy {
         case .detach:
             guard attached else { throw AgentFailure(.invalidRequest) }
             allowed = ["version", "id", "operation"]
-        case .create, .close, .share: throw AgentFailure(.invalidRequest)
+        case .create, .close, .share, .rename: throw AgentFailure(.invalidRequest)
         }
         guard Set(object.keys).isSubset(of: allowed) else { throw AgentFailure(.invalidRequest) }
         return request

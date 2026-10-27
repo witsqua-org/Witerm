@@ -8,6 +8,7 @@ private enum MobileTab: Hashable {
 struct MobileWorkspaceView: View {
     @State private var tab = MobileTab.devices
     @State private var ssh = SSHWorkspaceModel()
+    @State private var sshUI = SSHWorkspaceUI()
     @State private var loaded = false
     @State private var choosingTask = false
     @AppStorage("witerm.startTask") private var startTask = ""
@@ -92,7 +93,7 @@ struct MobileWorkspaceView: View {
             DevicesTab(openSSH: { tab = .ssh })
                 .tabItem { Label(String(localized: "Devices", bundle: .main), systemImage: "desktopcomputer") }
                 .tag(MobileTab.devices)
-            NavigationStack { SSHWorkspaceView(model: ssh) }
+            NavigationStack { SSHWorkspaceView(model: ssh, ui: sshUI) }
                 .tabItem { Label("SSH", systemImage: "terminal") }
                 .tag(MobileTab.ssh)
             MobileSettingsView()
@@ -100,6 +101,22 @@ struct MobileWorkspaceView: View {
                 .tag(MobileTab.settings)
         }
         .witermTint()
+        // Hardware-keyboard commands; the iPad lists them while ⌘ is held.
+        .focusedSceneValue(\.workspaceActions, WorkspaceActions(
+            newSSHConnection: { tab = .ssh; sshUI.presentNewWhenVisible() },
+            importSSHHosts: { tab = .ssh; sshUI.importing = true },
+            refresh: {
+                servers.servers.forEach { $0.check() }
+                Task { await ssh.load() }
+            },
+            terminalNames: ssh.orderedProfiles().filter { ssh.session(for: $0.id) != nil }.map(\.name),
+            showTerminal: { index in
+                let open = ssh.orderedProfiles().filter { ssh.session(for: $0.id) != nil }
+                guard open.indices.contains(index) else { return }
+                tab = .ssh
+                sshUI.requestedSession = open[index].id
+            }
+        ))
         .onChange(of: tab) { _, tab in
             if tab == .ssh { startTask = "ssh" }
             if tab == .devices { startTask = "mac" }

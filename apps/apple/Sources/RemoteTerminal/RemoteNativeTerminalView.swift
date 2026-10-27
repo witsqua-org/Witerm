@@ -12,7 +12,9 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
     var fontSize: CGFloat = 14
     var highContrast: Bool = false
     var preferredColorScheme: ColorScheme? = nil
+    var palette: TerminalColorScheme = .system
     var announceOutput: Bool = false
+    var finder: TerminalFinder? = nil
     var inputDestination: String? = nil
     let onFailure: (Error) -> Void
     let onEnded: () -> Void
@@ -26,11 +28,12 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         TerminalView.textInputDebugEnabled = false
         let surface = TerminalSurface(mode: mode, session: attachment.session,
                                       fontSize: fontSize, isInteractive: isInteractive)
-        surface.updateAppearance(highContrast: highContrast, scheme: preferredColorScheme)
+        surface.updateAppearance(highContrast: highContrast, scheme: preferredColorScheme, palette: palette)
         surface.announceOutput = announceOutput
         surface.terminal.inputDestination = inputDestination ?? attachment.session.name
         surface.terminal.terminalDelegate = context.coordinator
         context.coordinator.start(surface.terminal)
+        finder?.terminal = surface.terminal
         return surface
     }
 
@@ -38,7 +41,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         view.setInteractive(isInteractive)
         context.coordinator.setInteractive(isInteractive)
         view.updateFontSize(fontSize)
-        view.updateAppearance(highContrast: highContrast, scheme: preferredColorScheme)
+        view.updateAppearance(highContrast: highContrast, scheme: preferredColorScheme, palette: palette)
         view.announceOutput = announceOutput
         context.coordinator.requestKeyboardToggle(keyboardRequest, terminal: view.terminal)
     }
@@ -57,6 +60,8 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         private var frozenGrid: (columns: Int, rows: Int)?
         private var highContrast = false
         private var paletteDark: Bool?
+        private var palette = TerminalColorScheme.system
+        private var installedPalette: TerminalColorScheme?
         var announceOutput = false
 
         init(mode: LocalAttachmentMode, session: LocalSessionInfo, fontSize: CGFloat, isInteractive: Bool) {
@@ -171,23 +176,30 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         private func updateColors() {
             let dark = overrideUserInterfaceStyle == .dark
                 || (overrideUserInterfaceStyle == .unspecified && traitCollection.userInterfaceStyle == .dark)
-            terminal.nativeBackgroundColor = highContrast ? (dark ? .black : .white) : UIColor.systemBackground.resolvedColor(with: traitCollection)
-            terminal.nativeForegroundColor = highContrast ? (dark ? .white : .black) : UIColor.label.resolvedColor(with: traitCollection)
+            // Enhanced contrast takes precedence over a color scheme.
+            let values = highContrast ? nil : palette.values(dark: dark)
+            terminal.nativeBackgroundColor = highContrast ? (dark ? .black : .white)
+                : values.map { UIColor(terminalRGB: $0.background) } ?? UIColor.systemBackground.resolvedColor(with: traitCollection)
+            terminal.nativeForegroundColor = highContrast ? (dark ? .white : .black)
+                : values.map { UIColor(terminalRGB: $0.foreground) } ?? UIColor.label.resolvedColor(with: traitCollection)
             terminal.caretColor = dark ? .white : .black
             backgroundColor = terminal.nativeBackgroundColor
-            if paletteDark == nil || highContrast {
-                terminal.installColors(TerminalPalette.colors(highContrast: highContrast, dark: dark))
+            if paletteDark == nil || highContrast || installedPalette != palette || (palette != .system && paletteDark != dark) {
+                terminal.installColors(TerminalPalette.colors(highContrast: highContrast, dark: dark, scheme: palette))
+                installedPalette = palette
             }
             paletteDark = dark
         }
 
-        func updateAppearance(highContrast: Bool, scheme: ColorScheme?) {
+        func updateAppearance(highContrast: Bool, scheme: ColorScheme?, palette: TerminalColorScheme = .system) {
             let style: UIUserInterfaceStyle = scheme == .dark ? .dark : (scheme == .light ? .light : .unspecified)
-            guard overrideUserInterfaceStyle != style || self.highContrast != highContrast || paletteDark == nil else { return }
+            guard overrideUserInterfaceStyle != style || self.highContrast != highContrast || self.palette != palette
+                || paletteDark == nil else { return }
             overrideUserInterfaceStyle = style
-            let previous = self.highContrast
+            // Leaving enhanced contrast reinstalls the scheme's own palette.
+            if self.highContrast && !highContrast { installedPalette = nil }
             self.highContrast = highContrast
-            if previous && !highContrast { terminal.installColors(TerminalPalette.colors(highContrast: false, dark: false)) }
+            self.palette = palette
             updateColors()
         }
 
@@ -293,6 +305,15 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             guard acceptsInput else { return }
             controlModifier = false
             send(bytes)
+        }
+
+        /// Types a saved snippet. Multiline snippets go through the same review as
+        /// a multiline paste; a single line may add Return when the snippet asks.
+        func sendSnippet(_ snippet: CommandSnippet) {
+            guard acceptsInput else { return }
+            if snippet.isMultiline { reviewOrPaste(snippet.text); return }
+            controlModifier = false
+            send(snippet.input(bracketedPaste: getTerminal().bracketedPasteMode))
         }
 
         override func paste(_ sender: Any?) {
@@ -530,7 +551,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
         func scrolled(source: TerminalView, position: Double) { (source as? TerminalInputView)?.readingChanged?(false) }
         func rangeChanged(source: TerminalView, startY: Int, endY: Int) { (source as? TerminalInputView)?.readingChanged?(false) }
-        func bell(source: TerminalView) {}
+        func bell(source: TerminalView) { TerminalBell.ring() }
         func iTermContent(source: TerminalView, content: ArraySlice<UInt8>) {}
 
         func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {

@@ -2,7 +2,7 @@
 
 **Language.** The apps use the system's preferred language: English (the fallback) or Simplified Chinese. There is no in-app language picker. After changing the system language, relaunch the app. A per-app language set in system settings takes precedence.
 
-**Appearance.** The apps and their terminals follow system light/dark mode. You can still adjust terminal text size, enhanced contrast, and VoiceOver output notifications ([Terminal experience](terminal-experience.md)).
+**Appearance.** The apps and their terminals follow system light/dark mode. You can still adjust terminal text size, the color scheme (each has light and dark variants that follow the system), enhanced contrast, and VoiceOver output notifications ([Terminal experience](terminal-experience.md)).
 
 ## Translating
 
