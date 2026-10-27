@@ -100,16 +100,14 @@ import XCTest
     private func connectNewHost(_ fixture: Fixture, in app: XCUIApplication) -> String {
         XCTAssertFalse(row(fixture, in: app).exists, "A host with the fixture name already exists; refusing to touch it")
         app.typeKey("n", modifierFlags: [.command, .shift])
+        // The target's address comes first; name and jump hosts are under More Options.
+        let host = app.textFields.matching(identifier: "sshHostAddress").firstMatch
+        XCTAssertTrue(host.waitForExistence(timeout: 5))
+        host.click(); host.typeText("fixture@127.0.0.1:" + fixture.port)
+        app.buttons["sshMoreOptions"].click()
         let name = app.textFields["sshProfileName"]
         XCTAssertTrue(name.waitForExistence(timeout: 5))
         name.click(); name.typeText(fixture.name)
-        // The target host's fields come first; jump hosts follow.
-        let host = app.textFields.matching(identifier: "sshHostAddress").firstMatch
-        host.click(); host.typeText("127.0.0.1")
-        let portField = app.textFields.matching(identifier: "sshHostPort").firstMatch
-        portField.click(); portField.typeKey("a", modifierFlags: .command); portField.typeText(fixture.port)
-        let username = app.textFields.matching(identifier: "sshHostUsername").firstMatch
-        username.click(); username.typeText("fixture")
         let password = app.secureTextFields.matching(identifier: "sshHostPassword").firstMatch
         password.click(); password.typeText("witerm-fixture-only")
         app.buttons["sshConnect"].click()

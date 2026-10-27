@@ -378,6 +378,7 @@ struct SSHWorkspaceView: View {
     @State private var shownID: UUID?
     @State private var keyboardRequest = 0
     @State private var finding = false
+    @AppStorage("witerm.sshBackgroundTipSeen") private var backgroundTipSeen = false
     @State private var search = ""
     @State private var favoritesOnly = false
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -457,6 +458,17 @@ struct SSHWorkspaceView: View {
                     TerminalFindBar(finder: finder(for: session)) { finding = false }
                     Divider()
                 }
+                if !backgroundTipSeen {
+                    // Said once, the first time it applies: with a live SSH terminal on screen.
+                    IssueBanner(String(localized: "SSH closes when Witerm goes to the background", bundle: .main),
+                                message: String(localized: "iOS suspends the connection. To keep programs running, start them in tmux or screen on the server.", bundle: .main),
+                                systemImage: "info.circle") {
+                        Button(String(localized: "OK", bundle: .main)) { backgroundTipSeen = true }
+                            .font(.subheadline).touchTarget()
+                            .accessibilityIdentifier("sshBackgroundTipDismiss")
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 8)
+                }
                 SSHTerminalSurface(session: session, keyboardRequest: keyboardRequest)
             } else if let connecting = model.connectingProfile {
                 VStack(spacing: 16) {
@@ -519,13 +531,17 @@ struct SSHWorkspaceView: View {
         }
     }
 
+    /// Search and filters appear once there are enough hosts to need them.
+    private var showsFilters: Bool { model.profiles.count >= Self.filterThreshold }
+    static let filterThreshold = 8
+
     private var hostList: some View {
         List {
-            Section {
-                Toggle(String(localized: "Favorites Only", bundle: .main), isOn: $favoritesOnly)
-                    .accessibilityIdentifier("sshFavoritesOnly")
-            } footer: {
-                Text(String(localized: "SSH connections close when this app goes to the background. Remote programs follow the host’s session rules.", bundle: .main))
+            if showsFilters, model.profiles.contains(where: model.isFavorite) {
+                Section {
+                    Toggle(String(localized: "Favorites Only", bundle: .main), isOn: $favoritesOnly)
+                        .accessibilityIdentifier("sshFavoritesOnly")
+                }
             }
             ForEach(model.orderedProfiles(search: search, favoritesOnly: favoritesOnly)) { profile in
                 let session = model.session(for: profile.id)
@@ -566,7 +582,8 @@ struct SSHWorkspaceView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: String(localized: "Search Hosts", bundle: .main))
+        .modifier(HostSearch(enabled: showsFilters, text: $search))
+        .onChange(of: showsFilters) { _, shown in if !shown { search = ""; favoritesOnly = false } }
         .scrollContentBackground(.hidden)
         .overlay {
             if !model.profiles.isEmpty, model.orderedProfiles(search: search, favoritesOnly: favoritesOnly).isEmpty {
@@ -587,6 +604,20 @@ struct SSHWorkspaceView: View {
                         .accessibilityIdentifier("sshImportHosts")
                 }
             }
+        }
+    }
+}
+/// Host search, attached only when the list is long enough to need it.
+private struct HostSearch: ViewModifier {
+    let enabled: Bool
+    @Binding var text: String
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content.searchable(text: $text, placement: .navigationBarDrawer(displayMode: .always),
+                               prompt: String(localized: "Search Hosts", bundle: .main))
+        } else {
+            content
         }
     }
 }

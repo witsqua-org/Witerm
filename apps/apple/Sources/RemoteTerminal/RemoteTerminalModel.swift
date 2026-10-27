@@ -259,7 +259,7 @@ final class RemoteTerminalModel {
         guard busy == nil, let previous = deactivate() else { return }
         cancelWork()
         connectionState = .disconnected
-        busy = String(localized: "Disconnecting…", bundle: .main)
+        busy = String(localized: "Leaving…", bundle: .main)
         issue = nil
         let token = generation
         work = Task { [weak self] in
@@ -288,7 +288,7 @@ final class RemoteTerminalModel {
         // its output consumer first can race the release handshake.
         connectionState = .disconnected
         let token = generation
-        busy = String(localized: "Disconnecting…", bundle: .main)
+        busy = String(localized: "Leaving…", bundle: .main)
         work = Task { [weak self] in
             do {
                 try await previous.detach()

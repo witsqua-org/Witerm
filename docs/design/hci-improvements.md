@@ -41,4 +41,15 @@ The items Round 2 left open, also on 2026-10-27.
 | 4 | Control | Settings → Keyboard Row chooses and orders the iOS keys; open terminals update. | [MobileTerminalAccessory](../../apps/apple/Sources/RemoteTerminal/MobileTerminalAccessory.swift), [SnippetSettings](../../apps/apple/Sources/Snippets/SnippetSettings.swift) |
 | 5 | Memory load | Command snippets, stored on the device only: Terminal → Insert Snippet on the Mac, a Snippets key on iOS. Typed like a paste, reviewed on iOS when multiline, ignored by view-only terminals. | [CommandSnippets](../../apps/apple/Sources/Snippets/CommandSnippets.swift) |
 
+## Round 4
+
+From the fresh HCI review of 2026-10-27 (the "Now" items of its roadmap).
+
+| # | Principle | Change | Main code |
+|---|---|---|---|
+| 1 | Task, error prevention | The host form takes one `user@host:port` field and shows what it understood. Connect and Save for Later sit at the bottom; name and jump hosts move under More Options. | [SSHAddressInput](../../apps/apple/Sources/SSH/SSHAddressInput.swift), [SSHProfileForm](../../apps/apple/Sources/SSH/SSHProfileForm.swift) |
+| 2 | Crowding, dialogue | Search and Favorites Only appear from eight hosts. The background-disconnect note is shown once, with the first SSH terminal on screen, instead of on the list and the form. | [SSHWorkspaceView](../../apps/apple/Sources/SSH/SSHWorkspaceView.swift) |
+| 3 | Consistency, memory load | iOS Settings is an index: one row per server with its status, terminal preferences as links that show their current values, and a Display reset scoped to display. Server status is stated once on iOS and Mac. | [MobileWorkspaceView](../../apps/apple/Sources/Mobile/MobileWorkspaceView.swift), [TerminalAppearanceSettings](../../apps/apple/Sources/Design/TerminalAppearanceSettings.swift) |
+| 4 | Consistency | Fixed verbs: Leave a Mac session (it keeps running), End Session, Disconnect SSH, Share or Stop Sharing; one icon per idea. | [LocalTerminalWorkspace](../../apps/apple/Sources/LocalTerminal/LocalTerminalWorkspace.swift), [RemoteTerminalWorkspace](../../apps/apple/Sources/RemoteTerminal/RemoteTerminalWorkspace.swift) |
+
 **Still to evaluate on real hardware:** camera scanning and permission recovery, a full phone handoff, one-handed use, hardware keyboards and their ⌘ shortcut list, iPad multitasking, haptics including the bell, real Wi-Fi loss for the offline banner, and real-network background behavior.

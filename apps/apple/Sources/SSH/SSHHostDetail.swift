@@ -27,7 +27,7 @@ struct SSHHostDetail: View {
                             .touchTarget(square: true)
                             .help(String(localized: "Port Forwarding", bundle: .main))
                             .accessibilityIdentifier("sshForwarding")
-                        Button(String(localized: "Disconnect", bundle: .main), systemImage: "eject") { model.disconnect(session) }
+                        Button(String(localized: "Disconnect", bundle: .main), systemImage: "xmark.circle") { model.disconnect(session) }
                             .touchTarget()
                             .accessibilityIdentifier("sshDisconnect")
                     }

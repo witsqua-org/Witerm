@@ -69,10 +69,10 @@ struct LocalTerminalDetail: View {
                     }
                     .accessibilityIdentifier("stopSharingLocalSession")
                 }
-                Button(String(localized: "Disconnect", bundle: .main), systemImage: "eject", action: model.detach)
+                Button(String(localized: "Leave", bundle: .main), systemImage: "rectangle.portrait.and.arrow.right", action: model.detach)
                     .touchTarget()
                     .accessibilityIdentifier("detachLocalTerminal")
-                    .help(String(localized: "Disconnect; the session keeps running", bundle: .main))
+                    .help(String(localized: "Leave this session; it keeps running", bundle: .main))
                 Menu(String(localized: "More", bundle: .main), systemImage: "ellipsis") {
                     Button(String(localized: "Rename…", bundle: .main), systemImage: "pencil") { renameSession(session) }
                         .accessibilityIdentifier("renameLocalSessionMenu")
@@ -103,10 +103,10 @@ struct LocalTerminalDetail: View {
 
     private func disconnected(_ session: LocalSessionInfo, client: LocalAgentClient) -> some View {
         ContentUnavailableView {
-            Label(model.ended ? String(localized: "Session Ended", bundle: .main) : String(localized: "Terminal Disconnected", bundle: .main), systemImage: "terminal")
+            Label(model.ended ? String(localized: "Session Ended", bundle: .main) : String(localized: "Session Still Running", bundle: .main), systemImage: "terminal")
         } description: {
             Text(model.ended ? String(localized: "Refresh the list to choose another session.", bundle: .main)
-                 : String(localized: "This session keeps running after you disconnect. Connect to resume working.", bundle: .main))
+                 : String(localized: "It keeps running while you're away. Connect to pick up where you left off.", bundle: .main))
         } actions: {
             if model.ended {
                 Button(String(localized: "Refresh", bundle: .main)) { model.refresh(using: client) }

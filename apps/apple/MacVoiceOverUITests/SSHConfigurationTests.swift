@@ -11,17 +11,13 @@ import XCTest
         addTeardownBlock { await MainActor.run { app.terminate() } }
         app.menuBars.menuBarItems["File"].click()
         app.menuItems["New SSH Connection"].click()
+        let host = app.textFields["sshHostAddress"]
+        XCTAssertTrue(host.waitForExistence(timeout: 5))
+        host.click(); host.typeText("fixture@example.invalid")
+        app.buttons["sshMoreOptions"].click()
         let nameField = app.textFields["sshProfileName"]
         XCTAssertTrue(nameField.waitForExistence(timeout: 5))
         nameField.click(); nameField.typeText(name)
-        let host = app.textFields["sshHostAddress"]
-        // Use the form's normal keyboard traversal; XCTest's automatic scroll
-        // for the grouped LabeledContent field cannot locate a scroll hit point.
-        nameField.typeKey(.tab, modifierFlags: [])
-        host.typeText("example.invalid")
-        let user = app.textFields["sshHostUsername"]
-        host.typeKey(.tab, modifierFlags: [])
-        user.typeText("fixture")
         let formAttachment = XCTAttachment(screenshot: app.screenshot())
         formAttachment.name = "mac-ssh-save-form"
         formAttachment.lifetime = .keepAlways
