@@ -6,6 +6,7 @@ struct SSHEditorRequest: Identifiable {
     let id = UUID()
     let profile: SSHProfile?
     let credentials: [UUID: SSHCredential]
+    let purpose: SSHFormPurpose
 }
 
 /// Sheet and alert state for the SSH workspace, shared by the Mac sidebar and
@@ -27,7 +28,7 @@ final class SSHWorkspaceUI {
     func presentNew() {
         guard visible else { return }
         request = UUID()
-        editorRequest = SSHEditorRequest(profile: nil, credentials: [:])
+        editorRequest = SSHEditorRequest(profile: nil, credentials: [:], purpose: .new)
     }
 
     /// Connects at once when every hop has credentials the person explicitly
@@ -43,7 +44,7 @@ final class SSHWorkspaceUI {
             if !editing, hosts.allSatisfy({ stored[$0] != nil }) {
                 model.connect(profile, credentials: stored, remember: Set(hosts))
             } else {
-                editorRequest = SSHEditorRequest(profile: profile, credentials: stored)
+                editorRequest = SSHEditorRequest(profile: profile, credentials: stored, purpose: editing ? .edit : .connect)
             }
         }
     }
@@ -77,7 +78,11 @@ struct SSHPresentations: ViewModifier {
                     model.connect(pending.0, credentials: pending.1, remember: pending.2)
                 }
             }) { request in
-                SSHProfileForm(profile: request.profile, credentials: request.credentials) { profile, auth, remember in
+                SSHProfileForm(profile: request.profile, credentials: request.credentials, purpose: request.purpose,
+                               onSave: { profile, auth, remember in
+                    guard ui.visible, ui.editorRequest?.id == request.id else { throw CancellationError() }
+                    try await model.saveProfile(profile, credentials: auth, remember: remember)
+                }) { profile, auth, remember in
                     guard ui.visible, ui.editorRequest?.id == request.id else { return }
                     ui.pendingConnection = (profile, auth, remember)
                 }
@@ -183,6 +188,7 @@ struct SSHHostRowContent: View {
     let profile: SSHProfile
     let active: Bool
     var expanded = false
+    var favorite = false
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
@@ -201,8 +207,10 @@ struct SSHHostRowContent: View {
 
     private var details: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(profile.name)
-                .lineLimit(expanded ? nil : 1)
+            HStack(spacing: 6) {
+                Text(profile.name).lineLimit(expanded ? nil : 1)
+                if favorite { Image(systemName: "star.fill").font(.caption).accessibilityHidden(true) }
+            }
             Text(verbatim: profile.endpointSummary)
                 .font(.caption.monospaced())
                 .foregroundStyle(.secondary)
@@ -265,7 +273,11 @@ struct SSHWorkspaceView: View {
     @State private var ui = SSHWorkspaceUI()
     @State private var shownID: UUID?
     @State private var keyboardRequest = 0
+    @State private var search = ""
+    @State private var favoritesOnly = false
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
+    private var shownProfile: SSHProfile? { model.profiles.first { $0.id == shownID } }
     private var shown: SSHSession? { shownID.flatMap(model.session(for:)) }
 
     /// Switches between the list and a terminal without animating the tab
@@ -278,6 +290,31 @@ struct SSHWorkspaceView: View {
     }
 
     var body: some View {
+        Group {
+            if sizeClass == .regular {
+                NavigationSplitView {
+                    hostList
+                        .navigationTitle("SSH")
+                        .toolbar {
+                            ToolbarItem(placement: .primaryAction) {
+                                Button(String(localized: "New SSH Connection", bundle: .main), systemImage: "plus", action: ui.presentNew)
+                                    .accessibilityIdentifier("newSSHProfile")
+                                    .disabled(model.connecting)
+                            }
+                        }
+                } detail: { detail }
+            } else { detail }
+        }
+        .modifier(SSHPresentations(model: model, ui: ui))
+        .onChange(of: model.sessions.map(\.token)) { old, _ in
+            if let opened = model.sessions.first(where: { !old.contains($0.token) }) { show(opened.id) }
+        }
+        .onChange(of: model.profiles.map(\.id)) { _, ids in
+            if let shownID, !ids.contains(shownID) { show(nil) }
+        }
+    }
+
+    private var detail: some View {
         VStack(spacing: 0) {
             if let issue = model.issue {
                 IssueBanner(issue) {
@@ -292,10 +329,9 @@ struct SSHWorkspaceView: View {
             if let session = shown {
                 // The host's hue edges the terminal and tints its controls, so
                 // the screen always shows which machine receives input.
-                Rectangle()
-                    .fill(session.profile.identityHue.opacity(0.7))
-                    .frame(height: 2)
-                    .accessibilityHidden(true)
+                TerminalHeader(nil, destination: session.profile.endpointSummary,
+                               status: String(localized: "Input Enabled", bundle: .main),
+                               statusImage: "keyboard", live: true, hue: session.profile.identityHue) { EmptyView() }
                 SSHTerminalSurface(session: session, keyboardRequest: keyboardRequest)
             } else if let connecting = model.connectingProfile {
                 VStack(spacing: 16) {
@@ -303,21 +339,34 @@ struct SSHWorkspaceView: View {
                     Button(String(localized: "Cancel", bundle: .main), action: model.cancelConnecting).touchTarget()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let profile = shownProfile, let reason = model.disconnected[profile.id] {
+                ContentUnavailableView {
+                    Label(String(localized: "SSH Disconnected", bundle: .main), systemImage: "bolt.horizontal.circle")
+                } description: {
+                    Text(profile.endpointSummary + "\n" + reason)
+                } actions: {
+                    PrimaryButton(String(localized: "Reconnect", bundle: .main)) { ui.open(profile, model: model) }
+                        .disabled(model.connecting)
+                        .accessibilityIdentifier("sshReconnect")
+                }
+            } else if sizeClass == .regular {
+                ContentUnavailableView(String(localized: "Choose an SSH Host", bundle: .main), systemImage: "terminal")
             } else {
                 hostList
             }
         }
         .background(WitermTheme.canvas)
-        .tint(shown?.profile.identityHue)
-        .navigationTitle(shown?.profile.name ?? "SSH")
-        .navigationBarTitleDisplayMode(shown == nil ? .large : .inline)
-        .toolbar(shown == nil ? .automatic : .hidden, for: .tabBar)
+        .tint(shownProfile?.identityHue)
+        .navigationTitle(shownProfile?.name ?? "SSH")
+        .navigationBarTitleDisplayMode(shownID == nil ? .large : .inline)
+        .toolbar(shownID == nil || sizeClass == .regular ? .automatic : .hidden, for: .tabBar)
         .toolbar {
-            if shown != nil {
+            if shownID != nil, sizeClass != .regular {
                 ToolbarItem(placement: .topBarLeading) {
                     Button(String(localized: "Hosts", bundle: .main), systemImage: "chevron.backward") { show(nil) }
                         .labelStyle(.titleAndIcon)
-                        .accessibilityHint(String(localized: "The session stays connected.", bundle: .main))
+                        .accessibilityHint(shown != nil ? String(localized: "The session stays connected.", bundle: .main)
+                                            : String(localized: "Returns to saved hosts.", bundle: .main))
                         .accessibilityIdentifier("sshShowHosts")
                 }
             }
@@ -330,7 +379,7 @@ struct SSHWorkspaceView: View {
                         Button(String(localized: "Disconnect", bundle: .main), systemImage: "xmark.circle", role: .destructive) { model.disconnect(session) }
                     } label: { Label(String(localized: "SSH Actions", bundle: .main), systemImage: "ellipsis.circle") }
                     .accessibilityIdentifier("sshSessionActions")
-                } else {
+                } else if sizeClass != .regular {
                     Button(String(localized: "New SSH Connection", bundle: .main), systemImage: "plus", action: ui.presentNew)
                         .disabled(model.connecting)
                         .accessibilityIdentifier("newSSHProfile")
@@ -343,23 +392,23 @@ struct SSHWorkspaceView: View {
                 }
             }
         }
-        .modifier(SSHPresentations(model: model, ui: ui))
-        .onChange(of: model.sessions.map(\.token)) { old, new in
-            // Show a session as soon as it opens; leave a closed one.
-            if let opened = model.sessions.first(where: { !old.contains($0.token) }) { show(opened.id) }
-            if let shownID, model.session(for: shownID) == nil { show(nil) }
-        }
     }
 
     private var hostList: some View {
         List {
-            ForEach(model.profiles) { profile in
+            Section {
+                Toggle(String(localized: "Favorites Only", bundle: .main), isOn: $favoritesOnly)
+                    .accessibilityIdentifier("sshFavoritesOnly")
+            } footer: {
+                Text(String(localized: "SSH connections close when this app goes to the background. Remote programs follow the host’s session rules.", bundle: .main))
+            }
+            ForEach(model.orderedProfiles(search: search, favoritesOnly: favoritesOnly)) { profile in
                 let session = model.session(for: profile.id)
                 HStack(spacing: 4) {
                     Button {
                         if session != nil { show(profile.id) } else { ui.open(profile, model: model) }
                     } label: {
-                        SSHHostRowContent(profile: profile, active: session != nil, expanded: true)
+                        SSHHostRowContent(profile: profile, active: session != nil, expanded: true, favorite: model.isFavorite(profile))
                             .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
                         .contentShape(Rectangle())
                     }
@@ -367,11 +416,14 @@ struct SSHWorkspaceView: View {
                     .accessibilityIdentifier("sshProfileRow-\(profile.id.uuidString)")
                     .accessibilityLabel(profile.name)
                     .accessibilityValue(profile.accessibilitySummary
-                        + (session == nil ? "" : String(localized: ", connected", bundle: .main)))
+                        + (session == nil ? "" : String(localized: ", connected", bundle: .main))
+                        + (model.isFavorite(profile) ? String(localized: ", favorite", bundle: .main) : ""))
                     .accessibilityHint(session == nil
                         ? String(localized: "Connects, or asks for credentials that are not saved.", bundle: .main)
                         : String(localized: "Shows the connected terminal.", bundle: .main))
+                    .accessibilityAddTraits(shownID == profile.id ? .isSelected : [])
                     Menu {
+                        Button(model.isFavorite(profile) ? String(localized: "Remove from Favorites", bundle: .main) : String(localized: "Add to Favorites", bundle: .main), systemImage: "star") { model.toggleFavorite(profile) }
                         if let session {
                             Button(String(localized: "Disconnect", bundle: .main), systemImage: "xmark.circle", role: .destructive) { model.disconnect(session) }
                         } else {
@@ -385,12 +437,20 @@ struct SSHWorkspaceView: View {
                     .accessibilityLabel(String(localized: "Actions for \(String(profile.name))", bundle: .main))
                     .accessibilityIdentifier("sshProfileActions-\(profile.id.uuidString)")
                 }
+                .listRowBackground(sizeClass == .regular && shownID == profile.id ? profile.identityHue.opacity(0.12) : nil)
             }
         }
         .listStyle(.insetGrouped)
+        .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: String(localized: "Search Hosts", bundle: .main))
         .scrollContentBackground(.hidden)
         .overlay {
-            if model.profiles.isEmpty {
+            if !model.profiles.isEmpty, model.orderedProfiles(search: search, favoritesOnly: favoritesOnly).isEmpty {
+                ContentUnavailableView {
+                    Label(String(localized: "No Matching Hosts", bundle: .main), systemImage: "magnifyingglass")
+                } actions: {
+                    Button(String(localized: "Show All Hosts", bundle: .main)) { search = ""; favoritesOnly = false }
+                }
+            } else if model.profiles.isEmpty {
                 ContentUnavailableView {
                     Label(String(localized: "Connect Directly With SSH", bundle: .main), systemImage: "terminal")
                 } description: {

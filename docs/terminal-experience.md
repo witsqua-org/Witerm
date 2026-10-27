@@ -83,6 +83,10 @@ xcodebuild -project apps/apple/Witerm.xcodeproj -scheme WitermiOSTerminalTests \
 - Run the two platforms one after the other, not in parallel.
 - Tests restore your VoiceOver setting afterwards.
 
+On macOS, call `voiceOverService.enable()` before **each** harness launch, including when `isEnabled` is already true. The latter reports the system setting; it does not establish navigation readiness for the current XCTest driver. Checking the setting and skipping initialization caused stale speech and failed navigation even though ordinary SwiftUI controls worked. Backward navigation may land on the enclosing native scroll container first; interact with that container to return to its text.
+
 **On the Mac, before the first run**, check for the "Welcome to VoiceOver" window. If it's open, choose **Use VoiceOver**. VoiceOver can be switched on but not actually running while that window is up, and the test's `enable()` call then times out.
+
+Exit the VoiceOver tutorial before testing navigation. If VoiceOver was initially off and was enabled outside XCTest to finish this welcome step, record that state and set `TEST_RUNNER_WITERM_HCI_RESTORE_VOICEOVER_OFF=1` on the final ordinary-baseline run to restore it afterward. Leave this override unset during the other speech cases. macOS UI automation's password authorization is a separate prerequisite.
 
 **Test infrastructure.** Unit tests of the accessibility APIs don't replace real speech and navigation checks, and simulated sleep notifications don't count as real sleep. Test fixtures use a steady cursor, because a blinking cursor keeps XCTest from ever seeing the app as idle.

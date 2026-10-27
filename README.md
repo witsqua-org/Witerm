@@ -63,11 +63,11 @@ The Mac app needs `tmux` (`brew install tmux`) and a normally signed build with 
 - **SSH**: on the Mac, use File → New SSH Connection (⇧⌘N); on iOS, use the SSH tab. Verify each host's fingerprint on first connect.
 - **Mac terminal**: start the local service from the main window, then create a session under This Mac.
 - **Continue on iPhone**:
-  1. Add the same server on both devices.
-  2. On the Mac, create an invitation under Paired Devices.
-  3. On iOS, paste it, check the fingerprint, and send the request.
-  4. On the Mac, approve view-only or control access, then turn on **Allow Remote Access**.
-  5. Share a session: **Share** in its terminal header, or `witerm share`.
+  1. On the Mac, open a session and choose **Continue on iPhone…** in its header or context menu.
+  2. Follow its preparation checks: use the same server on both devices, pair a device, allow remote access, and share this session.
+  3. On iOS, choose **Continue from My Mac** on first use. Scan or paste the Mac's invitation, check the fingerprint, and send the request.
+  4. On the Mac, approve view-only or control access. The preparation sheet shows when the session is ready.
+  5. For typing on iOS, release the Mac's control using the preparation sheet. Sessions can also be shared with `witerm share`.
 
   The Mac and its shared sessions now appear in the iOS Devices tab.
 - **Command line**: Settings → Command Line → Install, then run `witerm new` in any folder.

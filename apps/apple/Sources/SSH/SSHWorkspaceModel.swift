@@ -47,6 +47,9 @@ final class SSHSession: Identifiable {
         self.connection = connection
         self.shell = shell
         terminal = SSHTerminalHost(shell: shell, onEnded: onEnded)
+        #if os(iOS)
+        terminal.surface.terminal.inputDestination = profile.endpointSummary
+        #endif
     }
 
     func close() {
@@ -64,6 +67,10 @@ final class SSHWorkspaceModel {
 
     var profiles: [SSHProfile] = []
     private(set) var sessions: [SSHSession] = []
+    /// Connection context only. Terminal frames, input and credentials are not retained here.
+    private(set) var disconnected: [UUID: String] = [:]
+    private(set) var favorites = Set(UserDefaults.standard.stringArray(forKey: "witerm.sshFavorites") ?? [])
+    private(set) var lastUsed = UserDefaults.standard.dictionary(forKey: "witerm.sshLastUsed") as? [String: Double] ?? [:]
     /// The single connection attempt in flight, including host-key review.
     private(set) var connectingProfile: SSHProfile?
     var issue: String?
@@ -79,6 +86,36 @@ final class SSHWorkspaceModel {
     var connecting: Bool { connectTask != nil }
 
     func session(for profileID: UUID) -> SSHSession? { sessions.first { $0.id == profileID } }
+
+    func isFavorite(_ profile: SSHProfile) -> Bool { favorites.contains(profile.id.uuidString) }
+
+    func toggleFavorite(_ profile: SSHProfile) {
+        if !favorites.insert(profile.id.uuidString).inserted { favorites.remove(profile.id.uuidString) }
+        UserDefaults.standard.set(Array(favorites), forKey: "witerm.sshFavorites")
+    }
+
+    func orderedProfiles(search: String = "", favoritesOnly: Bool = false) -> [SSHProfile] {
+        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        return profiles.filter {
+            (!favoritesOnly || isFavorite($0)) && (query.isEmpty || $0.name.localizedCaseInsensitiveContains(query)
+                || $0.endpointSummary.localizedCaseInsensitiveContains(query))
+        }.sorted {
+            if isFavorite($0) != isFavorite($1) { return isFavorite($0) }
+            let first = lastUsed[$0.id.uuidString] ?? 0, second = lastUsed[$1.id.uuidString] ?? 0
+            if first != second { return first > second }
+            let names = $0.name.localizedStandardCompare($1.name)
+            return names == .orderedSame ? $0.id.uuidString < $1.id.uuidString : names == .orderedAscending
+        }
+    }
+
+    func saveProfile(_ profile: SSHProfile, credentials: [UUID: SSHCredential], remember: Set<UUID>) async throws {
+        let store = try SSHProfileStore()
+        try await store.save(profile)
+        for host in profile.jumpHosts + [profile.host] {
+            try await store.setCredential(remember.contains(host.id) ? credentials[host.id] : nil, hostID: host.id)
+        }
+        profiles = try await store.profiles()
+    }
 
     func load() async {
         do { profiles = try await SSHProfileStore().profiles() }
@@ -103,6 +140,11 @@ final class SSHWorkspaceModel {
             let store = try SSHProfileStore()
             try await store.delete(id: profile.id)
             IdentityHue.forget(profile.id.uuidString)
+            disconnected[profile.id] = nil
+            favorites.remove(profile.id.uuidString)
+            lastUsed[profile.id.uuidString] = nil
+            UserDefaults.standard.set(Array(favorites), forKey: "witerm.sshFavorites")
+            UserDefaults.standard.set(lastUsed, forKey: "witerm.sshLastUsed")
             await load()
         } catch { report(SSHUIError.message(error), profileID: nil) }
     }
@@ -155,6 +197,9 @@ final class SSHWorkspaceModel {
                     self?.ended(error, token: token)
                 }
                 self.sessions.append(session)
+                self.disconnected[profile.id] = nil
+                self.lastUsed[profile.id.uuidString] = Date().timeIntervalSince1970
+                UserDefaults.standard.set(self.lastUsed, forKey: "witerm.sshLastUsed")
                 self.connectingProfile = nil
                 self.connectTask = nil
                 self.pendingAttempt = nil
@@ -226,20 +271,28 @@ final class SSHWorkspaceModel {
     }
 
     func disconnect(_ session: SSHSession) {
+        disconnected[session.id] = String(localized: "Reconnect to open a new SSH shell. Whether previous programs keep running depends on the remote host.", bundle: .main)
         sessions.removeAll { $0 === session }
         session.close()
     }
 
-    func disconnectAll() {
+    func disconnectAll(forBackground: Bool = false) {
         cancelConnecting()
         let open = sessions
         sessions = []
+        for session in open {
+            disconnected[session.id] = forBackground
+                ? String(localized: "SSH disconnected when the app went to the background. Reconnect to open a new shell; previous programs depend on the remote host.", bundle: .main)
+                : String(localized: "Reconnect to open a new SSH shell. Whether previous programs keep running depends on the remote host.", bundle: .main)
+        }
         open.forEach { $0.close() }
     }
 
     private func ended(_ error: Error?, token: UUID) {
         guard let session = sessions.first(where: { $0.token == token }) else { return }
         disconnect(session)
+        disconnected[session.id] = error.map(SSHUIError.message)
+            ?? String(localized: "The SSH session has ended.", bundle: .main)
         report(error.map(SSHUIError.message) ?? String(localized: "The SSH session has ended.", bundle: .main),
                profileID: session.id)
     }

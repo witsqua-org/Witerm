@@ -13,10 +13,13 @@ private struct SSHHostDraft: Identifiable {
     var showingPrivateKey = false
     var passphrase = ""
     var remember = false
+    var showPort = false
+    var credentialsReset = false
     var credentialHost: SSHHost
     init(_ host: SSHHost, credential: SSHCredential? = nil) {
         id = host.id; hostname = host.hostname; port = String(host.port); username = host.username
         credentialHost = host
+        showPort = host.port != 22
         switch credential {
         case .password(let value): password = value; remember = true
         case .privateKey(let key, let phrase):
@@ -37,8 +40,12 @@ private struct SSHHostDraft: Identifiable {
     }
 }
 
+enum SSHFormPurpose { case new, edit, connect }
+
 struct SSHProfileForm: View {
     let profile: SSHProfile?
+    let purpose: SSHFormPurpose
+    let onSave: (SSHProfile, [UUID: SSHCredential], Set<UUID>) async throws -> Void
     let onConnect: (SSHProfile, [UUID: SSHCredential], Set<UUID>) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var profileID = UUID()
@@ -46,12 +53,19 @@ struct SSHProfileForm: View {
     @State private var target = SSHHostDraft(SSHHost(hostname: "", username: ""))
     @State private var jumps: [SSHHostDraft] = []
     @State private var issue: String?
+    @State private var saving = false
+    @State private var showJumps = false
+    private enum Field: Hashable { case name, address(UUID), port(UUID), username(UUID), credential(UUID) }
+    @FocusState private var focused: Field?
+    @State private var errors: [Field: String] = [:]
     @State private var importingKey = false
     @State private var importingKeyHost: UUID?
 
-    init(profile: SSHProfile?, credentials: [UUID: SSHCredential],
+    init(profile: SSHProfile?, credentials: [UUID: SSHCredential], purpose: SSHFormPurpose,
+         onSave: @escaping (SSHProfile, [UUID: SSHCredential], Set<UUID>) async throws -> Void,
          onConnect: @escaping (SSHProfile, [UUID: SSHCredential], Set<UUID>) -> Void) {
-        self.profile = profile; self.onConnect = onConnect
+        self.profile = profile; self.onConnect = onConnect; self.purpose = purpose; self.onSave = onSave
+        _showJumps = State(initialValue: !(profile?.jumpHosts.isEmpty ?? true))
         _profileID = State(initialValue: profile?.id ?? UUID())
         _name = State(initialValue: profile?.name ?? "")
         let host = profile?.host ?? SSHHost(hostname: "", username: "")
@@ -64,38 +78,64 @@ struct SSHProfileForm: View {
     var body: some View {
         NavigationStack {
             Form {
+                #if os(iOS)
+                if purpose == .new {
+                    Section {
+                        Text(String(localized: "SSH connections close when this app goes to the background. Remote programs follow the host’s session rules.", bundle: .main))
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+                #endif
                 Section(String(localized: "Name", bundle: .main)) {
-                    TextField(String(localized: "Connection Name", bundle: .main), text: $name).accessibilityIdentifier("sshProfileName")
+                    TextField(String(localized: "Connection Name (Optional)", bundle: .main), text: $name)
+                        .focused($focused, equals: .name).accessibilityIdentifier("sshProfileName")
+                        .onChange(of: name) { _, _ in errors[.name] = nil }
+                    fieldError(.name)
                 }
                 Section(String(localized: "Target Host", bundle: .main)) { hostFields($target) }
-                ForEach($jumps) { draft in
-                    let index = jumps.firstIndex(where: { $0.id == draft.wrappedValue.id }) ?? 0
-                    Section(String(localized: "Jump Host \(String(index + 1))", bundle: .main)) {
-                        hostFields(draft)
-                        Button(String(localized: "Remove This Jump Host", bundle: .main), role: .destructive) {
-                            let id = draft.wrappedValue.id
-                            jumps.removeAll { $0.id == id }
-                        }
-                    }
-                }
                 Section {
-                    Button(String(localized: "Add Jump Host", bundle: .main), systemImage: "point.topleft.down.curvedto.point.bottomright.up") {
-                        jumps.append(SSHHostDraft(SSHHost(hostname: "", username: "")))
-                    }
-                    .disabled(jumps.count >= 4)
-                    if !jumps.isEmpty {
+                    DisclosureGroup(String(localized: "Jump Hosts", bundle: .main), isExpanded: $showJumps) {
+                        ForEach($jumps) { draft in
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text(String(localized: "Jump Host", bundle: .main)).font(.headline)
+                                hostFields(draft)
+                                Button(String(localized: "Remove This Jump Host", bundle: .main), role: .destructive) {
+                                    let id = draft.wrappedValue.id
+                                    jumps.removeAll { $0.id == id }
+                                }
+                            }
+                        }
+                        Button(String(localized: "Add Jump Host", bundle: .main), systemImage: "plus") {
+                            jumps.append(SSHHostDraft(SSHHost(hostname: "", username: "")))
+                        }
+                        .disabled(jumps.count >= 4)
                         Text(String(localized: "Jump hosts are connected in list order, followed by the target host.", bundle: .main))
                             .font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+                if purpose == .new {
+                    Section {
+                        Button(String(localized: "Save Without Connecting", bundle: .main)) { submit(connect: false) }
+                            .accessibilityIdentifier("sshSaveOnly")
                     }
                 }
                 if let issue { Section { Text(issue).foregroundStyle(WitermTheme.warning) } }
             }
             .formStyle(.grouped)
-            .navigationTitle(profile == nil ? String(localized: "New SSH Connection", bundle: .main) : String(localized: "Connect With SSH", bundle: .main))
+            .navigationTitle(purpose == .new ? String(localized: "New SSH Connection", bundle: .main)
+                             : purpose == .edit ? String(localized: "Edit SSH Connection", bundle: .main)
+                             : String(localized: "Connect With SSH", bundle: .main))
+            .disabled(saving)
+            .interactiveDismissDisabled(saving)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(String(localized: "Cancel", bundle: .main)) { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button(String(localized: "Cancel", bundle: .main)) { dismiss() }.disabled(saving) }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(String(localized: "Connect", bundle: .main), action: submit).accessibilityIdentifier("sshConnect")
+                    Button(purpose == .edit ? String(localized: "Save", bundle: .main)
+                           : purpose == .new ? String(localized: "Save and Connect", bundle: .main)
+                           : String(localized: "Connect", bundle: .main)) { submit(connect: purpose != .edit) }
+                        .accessibilityIdentifier(purpose == .edit ? "sshSaveProfile" : "sshConnect")
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(saving)
                 }
             }
             .fileImporter(isPresented: $importingKey, allowedContentTypes: [.data, .plainText]) { result in
@@ -130,16 +170,33 @@ struct SSHProfileForm: View {
     }
 
     @ViewBuilder private func hostFields(_ draft: Binding<SSHHostDraft>) -> some View {
-        TextField(String(localized: "Host Address", bundle: .main), text: draft.hostname)
-            .autocorrectionDisabled().sshLiteralInput()
-            .accessibilityIdentifier("sshHostAddress")
-            .onChange(of: draft.wrappedValue.hostname) { _, _ in resetChangedEndpoint(draft) }
-        TextField(String(localized: "Port", bundle: .main), text: draft.port)
-            .accessibilityIdentifier("sshHostPort")
-            .onChange(of: draft.wrappedValue.port) { _, _ in resetChangedEndpoint(draft) }
-        TextField(String(localized: "Username", bundle: .main), text: draft.username).textContentType(.username).autocorrectionDisabled().sshLiteralInput()
-            .accessibilityIdentifier("sshHostUsername")
-            .onChange(of: draft.wrappedValue.username) { _, _ in resetChangedEndpoint(draft) }
+        LabeledContent(String(localized: "Host Address", bundle: .main)) {
+            TextField(String(localized: "Host Address", bundle: .main), text: draft.hostname)
+                .labelsHidden()
+                .autocorrectionDisabled().sshLiteralInput()
+                .focused($focused, equals: .address(draft.wrappedValue.id))
+                .accessibilityIdentifier("sshHostAddress")
+                .onChange(of: draft.wrappedValue.hostname) { _, _ in errors[.address(draft.wrappedValue.id)] = nil; resetChangedEndpoint(draft) }
+        }
+        fieldError(.address(draft.wrappedValue.id))
+        DisclosureGroup(String(localized: "Advanced Options", bundle: .main), isExpanded: draft.showPort) {
+            LabeledContent(String(localized: "Port", bundle: .main)) {
+                TextField(String(localized: "Port", bundle: .main), text: draft.port)
+                    .labelsHidden()
+                    .focused($focused, equals: .port(draft.wrappedValue.id))
+                    .accessibilityIdentifier("sshHostPort")
+                    .onChange(of: draft.wrappedValue.port) { _, _ in errors[.port(draft.wrappedValue.id)] = nil; resetChangedEndpoint(draft) }
+            }
+            fieldError(.port(draft.wrappedValue.id))
+        }
+        LabeledContent(String(localized: "Username", bundle: .main)) {
+            TextField(String(localized: "Username", bundle: .main), text: draft.username).textContentType(.username).autocorrectionDisabled().sshLiteralInput()
+                .labelsHidden()
+                .focused($focused, equals: .username(draft.wrappedValue.id))
+                .accessibilityIdentifier("sshHostUsername")
+                .onChange(of: draft.wrappedValue.username) { _, _ in errors[.username(draft.wrappedValue.id)] = nil; resetChangedEndpoint(draft) }
+        }
+        fieldError(.username(draft.wrappedValue.id))
         Picker(String(localized: "Authentication", bundle: .main), selection: draft.useKey) {
             Text(String(localized: "Password", bundle: .main)).tag(false)
             Text(String(localized: "Private Key", bundle: .main)).tag(true)
@@ -156,6 +213,7 @@ struct SSHProfileForm: View {
                     .font(.system(.caption, design: .monospaced))
                     .frame(minHeight: 120).accessibilityLabel(String(localized: "OpenSSH Private Key", bundle: .main))
                     .autocorrectionDisabled()
+                    .focused($focused, equals: .credential(draft.wrappedValue.id))
                     .sshLiteralInput()
                 Button(String(localized: "Hide Private Key", bundle: .main)) { draft.wrappedValue.showingPrivateKey = false }
             } else {
@@ -166,7 +224,13 @@ struct SSHProfileForm: View {
             SecureField(String(localized: "Private Key Passphrase (Optional)", bundle: .main), text: draft.passphrase)
         } else {
             SecureField(String(localized: "Password", bundle: .main), text: draft.password).textContentType(.password)
+                .focused($focused, equals: .credential(draft.wrappedValue.id))
                 .accessibilityIdentifier("sshHostPassword")
+        }
+        fieldError(.credential(draft.wrappedValue.id))
+        if draft.wrappedValue.credentialsReset {
+            Text(String(localized: "Credentials cleared because the connection address changed. Enter them again if needed.", bundle: .main))
+                .font(.caption).foregroundStyle(WitermTheme.secondary)
         }
         Toggle(String(localized: "Save Credentials on This Device", bundle: .main), isOn: draft.remember)
             .tint(WitermTheme.positive)
@@ -174,27 +238,83 @@ struct SSHProfileForm: View {
 
     private func resetChangedEndpoint(_ draft: Binding<SSHHostDraft>) {
         guard draft.wrappedValue.host != draft.wrappedValue.credentialHost else { return }
+        draft.wrappedValue.credentialsReset = draft.wrappedValue.credentialsReset || draft.wrappedValue.credential != nil
         draft.wrappedValue.password = ""; draft.wrappedValue.privateKey = ""; draft.wrappedValue.passphrase = ""
         draft.wrappedValue.showingPrivateKey = false
         draft.wrappedValue.remember = false
         draft.wrappedValue.credentialHost = draft.wrappedValue.host
     }
 
-    private func submit() {
-        let profile = SSHProfile(id: profileID, name: name, host: target.host, jumpHosts: jumps.map(\.host))
-        do {
-            try profile.validate()
-            var credentials: [UUID: SSHCredential] = [:]
-            var remember: Set<UUID> = []
-            for endpoint in jumps + [target] {
-                guard let credential = endpoint.credential else { throw SSHFailure.missingCredential }
-                credentials[endpoint.id] = credential
-                if endpoint.remember { remember.insert(endpoint.id) }
+    @ViewBuilder private func fieldError(_ field: Field) -> some View {
+        if let error = errors[field] {
+            Label(error, systemImage: "exclamationmark.circle")
+                .font(.caption).foregroundStyle(WitermTheme.warning)
+                .accessibilityIdentifier("sshFieldError")
+        }
+    }
+
+    private func submit(connect: Bool) {
+        guard !saving else { return }
+        errors = [:]
+        issue = nil
+        let endpoints = jumps + [target]
+        for endpoint in endpoints {
+            let host = endpoint.host
+            if host.hostname.isEmpty || host.hostname.utf8.count > 253
+                || host.hostname.contains(where: { $0.isWhitespace || $0.isNewline })
+                || host.hostname.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) {
+                errors[.address(host.id)] = String(localized: "Enter a valid host address without spaces.", bundle: .main)
             }
+            if !(1...65535).contains(host.port) {
+                errors[.port(host.id)] = String(localized: "Enter a port from 1 to 65535.", bundle: .main)
+                if host.id == target.id { target.showPort = true }
+                else if let index = jumps.firstIndex(where: { $0.id == host.id }) { jumps[index].showPort = true }
+            }
+            if host.username.isEmpty || host.username.utf8.count > 255
+                || host.username.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) {
+                errors[.username(host.id)] = String(localized: "Enter a valid username.", bundle: .main)
+            }
+            if (connect || endpoint.remember), endpoint.credential == nil {
+                errors[.credential(host.id)] = String(localized: "Enter a password or load a private key.", bundle: .main)
+                if endpoint.useKey {
+                    if host.id == target.id { target.showingPrivateKey = true }
+                    else if let index = jumps.firstIndex(where: { $0.id == host.id }) { jumps[index].showingPrivateKey = true }
+                }
+            }
+        }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.count > 80 || trimmed.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) {
+            errors[.name] = String(localized: "Use a name of up to 80 characters without control characters.", bundle: .main)
+        }
+        let order: [Field] = [.name] + endpoints.flatMap { [.address($0.id), .port($0.id), .username($0.id), .credential($0.id)] }
+        if let first = order.first(where: { errors[$0] != nil }) {
+            if !jumps.isEmpty { showJumps = true }
+            focused = first
+            return
+        }
+        let automaticName = String("\(target.host.username)@\(target.host.hostname)".prefix(80))
+        let profile = SSHProfile(id: profileID, name: trimmed.isEmpty ? automaticName : trimmed,
+                                 host: target.host, jumpHosts: jumps.map(\.host))
+        do { try profile.validate() } catch { issue = SSHUIError.message(error); return }
+        let credentials = Dictionary(uniqueKeysWithValues: endpoints.compactMap { endpoint in
+            endpoint.credential.map { (endpoint.id, $0) }
+        })
+        let remember = Set(endpoints.filter(\.remember).map(\.id))
+        if connect {
             onConnect(profile, credentials, remember)
             dismiss()
-        } catch { issue = SSHUIError.message(error) }
+        } else {
+            saving = true
+            Task {
+                do {
+                    try await onSave(profile, credentials, remember)
+                    if !Task.isCancelled { dismiss() }
+                } catch { issue = SSHUIError.message(error) }
+                saving = false
+            }
+        }
     }
+
 }
 
 extension View {

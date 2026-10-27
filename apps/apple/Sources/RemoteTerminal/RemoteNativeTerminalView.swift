@@ -13,6 +13,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
     var highContrast: Bool = false
     var preferredColorScheme: ColorScheme? = nil
     var announceOutput: Bool = false
+    var inputDestination: String? = nil
     let onFailure: (Error) -> Void
     let onEnded: () -> Void
 
@@ -27,6 +28,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
                                       fontSize: fontSize, isInteractive: isInteractive)
         surface.updateAppearance(highContrast: highContrast, scheme: preferredColorScheme)
         surface.announceOutput = announceOutput
+        surface.terminal.inputDestination = inputDestination ?? attachment.session.name
         surface.terminal.terminalDelegate = context.coordinator
         context.coordinator.start(surface.terminal)
         return surface
@@ -257,6 +259,10 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
     @MainActor final class TerminalInputView: TerminalView {
         private let mode: LocalAttachmentMode
         private var inputEnabled: Bool
+        var inputDestination = ""
+        private var pasteToken: UUID?
+        private weak var pasteReview: UIViewController?
+        var acceptsInput: Bool { mode == .control && inputEnabled }
 
         init(mode: LocalAttachmentMode, session: LocalSessionInfo, fontSize: CGFloat, isInteractive: Bool) {
             TerminalView.textInputDebugEnabled = false
@@ -264,6 +270,8 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             inputEnabled = isInteractive
             super.init(frame: .zero, font: .monospacedSystemFont(ofSize: fontSize, weight: .regular),
                        options: TerminalOptions(cols: session.columns, rows: session.rows))
+            inputDestination = session.name
+            inputAccessoryView = MobileTerminalAccessory(terminal: self)
         }
 
         required init?(coder: NSCoder) { nil }
@@ -273,7 +281,56 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         }
         override var canBecomeFirstResponder: Bool { mode == .control && inputEnabled }
 
-        func disableInput() { inputEnabled = false }
+        func disableInput() {
+            inputEnabled = false
+            controlModifier = false
+            pasteToken = nil
+            pasteReview?.dismiss(animated: false)
+            inputAccessoryView?.isUserInteractionEnabled = false
+        }
+
+        func sendAccessory(_ bytes: [UInt8]) {
+            guard acceptsInput else { return }
+            controlModifier = false
+            send(bytes)
+        }
+
+        override func paste(_ sender: Any?) {
+            guard acceptsInput, let text = UIPasteboard.general.string else { return }
+            reviewOrPaste(text)
+        }
+
+        /// Shared by the normal Paste action and native acceptance tests.
+        func reviewOrPaste(_ text: String) {
+            guard acceptsInput else { return }
+            guard text.contains(where: { $0.isNewline }) else { pasteText(text); return }
+            guard pasteReview == nil else { return }
+            var responder: UIResponder? = self
+            while responder != nil, !(responder is UIViewController) { responder = responder?.next }
+            guard let controller = responder as? UIViewController, controller.presentedViewController == nil else { return }
+            let token = UUID()
+            pasteToken = token
+            let review = UIHostingController(rootView: TerminalPasteReview(text: text, destination: inputDestination,
+                cancel: { [weak self] in
+                    self?.pasteToken = nil
+                    self?.pasteReview?.dismiss(animated: true)
+                }, confirm: { [weak self] in
+                    guard let self, self.acceptsInput, self.pasteToken == token else { return }
+                    self.pasteToken = nil
+                    self.pasteReview?.dismiss(animated: true)
+                    self.pasteText(text)
+                }))
+            pasteReview = review
+            controller.present(review, animated: true)
+        }
+
+        private func pasteText(_ text: String) {
+            guard acceptsInput else { return }
+            controlModifier = false
+            if getTerminal().bracketedPasteMode { send(Array("\u{1b}[200~".utf8)) }
+            send(txt: text)
+            if getTerminal().bracketedPasteMode { send(Array("\u{1b}[201~".utf8)) }
+        }
 
         override func insertText(_ text: String) {
             guard mode == .control, inputEnabled else { return }

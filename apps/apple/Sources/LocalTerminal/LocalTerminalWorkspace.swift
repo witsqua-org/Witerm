@@ -13,6 +13,7 @@ struct LocalTerminalDetail: View {
     @AppStorage(TerminalFontSize.key) private var terminalFontSize = TerminalFontSize.standard
     @AppStorage("witerm.terminalHighContrast") private var terminalHighContrast = false
     @AppStorage("witerm.terminalAnnounceOutput") private var terminalAnnounceOutput = false
+    @State private var showingHandoff = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -37,6 +38,11 @@ struct LocalTerminalDetail: View {
         .background(WitermTheme.canvas)
         .navigationTitle(model.selectedSession?.name ?? String(localized: "Local Terminal", bundle: .main))
         .onDisappear { model.detach() }
+        .sheet(isPresented: $showingHandoff) {
+            if let session = model.selectedSession {
+                SessionHandoffView(service: service, terminal: model, sessionID: session.id)
+            }
+        }
     }
 
     private func terminal(_ attachment: LocalTerminalAttachment, session: LocalSessionInfo, client: LocalAgentClient) -> some View {
@@ -44,27 +50,32 @@ struct LocalTerminalDetail: View {
         return VStack(spacing: 0) {
             TerminalHeader(
                 nil,
+                destination: String(localized: "This Mac", bundle: .main),
                 status: model.mode == .view ? String(localized: "View Only", bundle: .main) : String(localized: "Input Enabled", bundle: .main),
                 statusImage: model.mode == .view ? "eye" : "keyboard",
                 live: true
             ) {
                 let shared = session.sharing?.shared == true
-                Button(shared ? String(localized: "Stop Sharing", bundle: .main) : String(localized: "Share", bundle: .main),
-                       systemImage: shared ? "antenna.radiowaves.left.and.right.slash" : "antenna.radiowaves.left.and.right") {
-                    model.setShared(session, !shared, using: client)
-                }
+                Button(shared ? String(localized: "Sharing…", bundle: .main) : String(localized: "Continue on iPhone…", bundle: .main),
+                       systemImage: "antenna.radiowaves.left.and.right") { showingHandoff = true }
                 .touchTarget()
                 .accessibilityIdentifier("shareLocalSession")
-                .help(shared ? String(localized: "Stop sharing; paired devices disconnect and the session keeps running", bundle: .main)
-                             : String(localized: "Let paired devices open this session", bundle: .main))
+                .help(String(localized: "Pair a device and share this session", bundle: .main))
+                if shared {
+                    Button(String(localized: "Stop Sharing", bundle: .main), systemImage: "antenna.radiowaves.left.and.right.slash") {
+                        model.setShared(session, false, using: client)
+                    }
+                    .accessibilityIdentifier("stopSharingLocalSession")
+                }
                 Button(String(localized: "Disconnect", bundle: .main), systemImage: "eject", action: model.detach)
                     .touchTarget()
                     .accessibilityIdentifier("detachLocalTerminal")
                     .help(String(localized: "Disconnect; the session keeps running", bundle: .main))
-                Button(String(localized: "End Session", bundle: .main), systemImage: "xmark.circle", role: .destructive) { endSession(session) }
-                    .labelStyle(.iconOnly)
-                    .touchTarget(square: true)
-                    .help(String(localized: "End Session", bundle: .main))
+                Menu(String(localized: "More", bundle: .main), systemImage: "ellipsis") {
+                    Button(String(localized: "End Session", bundle: .main), systemImage: "xmark.circle", role: .destructive) { endSession(session) }
+                }
+                .menuStyle(.borderlessButton)
+                .help(String(localized: "Terminal Actions", bundle: .main))
             }
             .buttonStyle(.borderless)
             if let sharing = session.sharing, sharing.shared {
@@ -89,9 +100,12 @@ struct LocalTerminalDetail: View {
         ContentUnavailableView {
             Label(model.ended ? String(localized: "Session Ended", bundle: .main) : String(localized: "Terminal Disconnected", bundle: .main), systemImage: "terminal")
         } description: {
-            Text(String(localized: "Connect to this session, or refresh the session list.", bundle: .main))
+            Text(model.ended ? String(localized: "Refresh the list to choose another session.", bundle: .main)
+                 : String(localized: "This session keeps running after you disconnect. Connect to resume working.", bundle: .main))
         } actions: {
-            HStack(spacing: 12) {
+            if model.ended {
+                Button(String(localized: "Refresh", bundle: .main)) { model.refresh(using: client) }
+            } else { HStack(spacing: 12) {
                 PrimaryButton(String(localized: "Connect", bundle: .main)) { model.attach(session, using: client, mode: .control) }
                     .accessibilityIdentifier("reconnectLocalTerminal")
                 Button(String(localized: "View Only", bundle: .main)) { model.attach(session, using: client, mode: .view) }
@@ -100,6 +114,7 @@ struct LocalTerminalDetail: View {
                     .accessibilityIdentifier("viewLocalTerminal")
             }
             .disabled(model.isWorking)
+            }
         }
     }
 }

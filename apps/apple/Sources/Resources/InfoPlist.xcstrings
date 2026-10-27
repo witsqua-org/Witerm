@@ -17,6 +17,23 @@
           }
         }
       }
+    },
+    "NSCameraUsageDescription": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan a pairing invitation from your Mac."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "扫描 Mac 上的配对邀请。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

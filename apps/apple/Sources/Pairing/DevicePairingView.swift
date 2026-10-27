@@ -14,6 +14,7 @@ enum PairingPresentation {
 
 struct DevicePairingView: View {
     let presentation: PairingPresentation
+    let onGrantsChanged: (([DeviceGrant]) -> Void)?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -22,9 +23,15 @@ struct DevicePairingView: View {
     @State private var permission = PairingPermission.view
     @State private var copied = false
     @State private var revoking: DeviceGrant?
+    #if os(iOS)
+    @State private var scanning = false
+    @State private var scannedInvitation: String?
+    #endif
 
-    init(serverAddress: String, presentation: PairingPresentation = .sheet) {
+    init(serverAddress: String, presentation: PairingPresentation = .sheet,
+         onGrantsChanged: (([DeviceGrant]) -> Void)? = nil) {
         self.presentation = presentation
+        self.onGrantsChanged = onGrantsChanged
         _model = State(initialValue: DevicePairingModel(serverAddress: serverAddress))
     }
 
@@ -63,6 +70,7 @@ struct DevicePairingView: View {
         }
         .onDisappear { model.suspend() }
         .onChange(of: model.invitation?.urlString) { copied = false }
+        .onChange(of: model.grants, initial: true) { _, grants in onGrantsChanged?(grants) }
         .onChange(of: model.pairing?.id) { _, id in
             permission = .view
             if id == nil { invitationText = "" }
@@ -79,8 +87,26 @@ struct DevicePairingView: View {
         }
         #if os(iOS)
         .sensoryFeedback(.success, trigger: model.successCount)
+        .sheet(isPresented: $scanning, onDismiss: reviewScannedInvitation) {
+            PairingScannerView { invitation in
+                invitationText = invitation
+                scannedInvitation = invitation
+            }
+        }
+        .onChange(of: model.isWorking) { _, working in
+            if !working && !scanning { reviewScannedInvitation() }
+        }
         #endif
     }
+
+    #if os(iOS)
+    private func reviewScannedInvitation() {
+        guard let invitation = scannedInvitation, !model.isWorking,
+              model.issue?.integrityFailure != true else { return }
+        scannedInvitation = nil
+        model.prepare(invitation)
+    }
+    #endif
 
     private var refreshButton: some View {
         Button(String(localized: "Refresh", bundle: .main), systemImage: "arrow.clockwise", action: model.refresh)
@@ -297,6 +323,11 @@ struct DevicePairingView: View {
             } else {
                 Text(String(localized: "On the other device, open Paired Devices and create an invitation.", bundle: .main))
                     .font(.subheadline).foregroundStyle(WitermTheme.secondary)
+                Button(String(localized: "Scan Mac’s QR Code", bundle: .main), systemImage: "qrcode.viewfinder") { scanning = true }
+                    .buttonStyle(.bordered)
+                    .witermControl()
+                    .disabled(model.isWorking || model.issue?.integrityFailure == true)
+                    .accessibilityIdentifier("scanPairingInvitation")
                 TextField(String(localized: "Paste the pairing invitation from the other device", bundle: .main), text: $invitationText, axis: .vertical)
                     .lineLimit(3...6)
                     .font(.system(.subheadline, design: .monospaced))
@@ -396,7 +427,11 @@ struct DevicePairingView: View {
         let symbol: String
         switch pairing.status {
         case .approved where pairing.grant != nil:
+            #if os(iOS)
+            text = String(localized: "Paired. On your Mac, allow remote access and share a session. Then open Devices on this iPhone or iPad.", bundle: .main)
+            #else
             text = String(localized: "Pairing Confirmed", bundle: .main)
+            #endif
             symbol = "checkmark.shield.fill"
         case .approved:
             text = String(localized: "Access Revoked", bundle: .main)

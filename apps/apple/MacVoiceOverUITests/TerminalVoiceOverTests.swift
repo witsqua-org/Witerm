@@ -107,11 +107,15 @@ final class TerminalVoiceOverTests: XCTestCase {
             "VO_FIXED_FIXTURE seek=begin target=\(target) backward=\(backward) appForeground=\(harnessApplication?.state == .runningForeground)"
         )
         if try speech(.current).contains(marker) { return true }
-        for _ in 0..<18 {
+        for step in 0..<18 {
             guard Date() < deadline else { return false }
             let next = try speech(backward ? .backward : .forward)
             if next.contains(marker) { return true }
-            if terminalContent, !groupNavigationUnavailable, next.contains("终端"),
+            // From the trailing anchor, backward navigation first reaches
+            // the native scroll container, whose speech may omit its label.
+            // Interact with it to return to the text, as a VoiceOver user does.
+            if terminalContent, !groupNavigationUnavailable,
+                next.contains("终端") || (backward && step == 0),
                 try speech(.inside).contains(marker)
             {
                 return true
@@ -158,7 +162,7 @@ final class TerminalVoiceOverTests: XCTestCase {
         XCTAssertEqual(value(app, "harnessAnchorActivation"), String(previous + 1))
     }
 
-    private func launch(readOnly: Bool = false, plainBaseline: Bool = false) -> XCUIApplication {
+    private func launch(readOnly: Bool = false, plainBaseline: Bool = false) throws -> XCUIApplication {
         let app = XCUIApplication()
         harnessApplication = app
         let originalVoiceOver = XCUIDevice.shared.voiceOverService.isEnabled
@@ -172,6 +176,10 @@ final class TerminalVoiceOverTests: XCTestCase {
         addTeardownBlock {
             await Self.restore(originalVoiceOver, app: app)
         }
+        // isEnabled reports the system setting, not this runner's navigation
+        // readiness. Initialize the driver before every harness launch, even
+        // when the user already has VoiceOver running.
+        try XCUIDevice.shared.voiceOverService.enable()
         app.launchArguments = ["--witerm-terminal-accessibility-harness"]
         if readOnly { app.launchArguments.append("--witerm-terminal-read-only") }
         if plainBaseline { app.launchArguments.append("--witerm-voiceover-plain-baseline") }
@@ -188,9 +196,14 @@ final class TerminalVoiceOverTests: XCTestCase {
     private static func restore(_ previous: Bool, app: XCUIApplication) {
         app.terminate()
         let service = XCUIDevice.shared.voiceOverService
+        // The acceptance driver can record an initially-off state before
+        // completing the system's first-run welcome window outside XCTest.
+        let restoreEnabled =
+            ProcessInfo.processInfo.environment["WITERM_HCI_RESTORE_VOICEOVER_OFF"] == "1"
+            ? false : previous
         do {
-            if service.isEnabled != previous {
-                if previous { try service.enable() } else { try service.disable() }
+            if service.isEnabled != restoreEnabled {
+                if restoreEnabled { try service.enable() } else { try service.disable() }
             }
         } catch { XCTFail("Could not restore the previous VoiceOver state") }
     }
@@ -211,22 +224,24 @@ final class TerminalVoiceOverTests: XCTestCase {
 
     func testVoiceOverOrdinarySwiftUIBaseline() throws {
         let originalVoiceOver = XCUIDevice.shared.voiceOverService.isEnabled
+        let restoreVoiceOver =
+            ProcessInfo.processInfo.environment["WITERM_HCI_RESTORE_VOICEOVER_OFF"] == "1"
+            ? false : originalVoiceOver
         // Isolate service initialization from any App launch or AX session.
         // Register cleanup first, including the initialization-failure path.
         addTeardownBlock {
             await MainActor.run {
                 let service = XCUIDevice.shared.voiceOverService
                 do {
-                    if service.isEnabled != originalVoiceOver {
-                        if originalVoiceOver { try service.enable() } else { try service.disable() }
+                    if service.isEnabled != restoreVoiceOver {
+                        if restoreVoiceOver { try service.enable() } else { try service.disable() }
                     }
                 } catch { XCTFail("Could not restore the previous VoiceOver state") }
             }
         }
         print(
             "VO_FIXED_FIXTURE initialization=beforeAppLaunch initiallyEnabled=\(originalVoiceOver)")
-        try XCUIDevice.shared.voiceOverService.enable()
-        let app = launch(plainBaseline: true)
+        let app = try launch(plainBaseline: true)
         XCTAssertFalse(app.buttons["harnessKeyboard"].exists)
         focusAnchor(app, button: "harnessBaselineOne", expected: "baselineOne")
         XCTAssertTrue(
@@ -240,7 +255,7 @@ final class TerminalVoiceOverTests: XCTestCase {
     }
 
     func testNativeVoiceOverContentAndReadingDoNotWriteThenKeyboardDoes() throws {
-        let app = launch()
+        let app = try launch()
         try ensureVoiceOver(true)
         focusBefore(app)
         XCTAssertTrue(try seek("中文终端验证"), "VoiceOver did not speak the native terminal fixture")
@@ -265,7 +280,7 @@ final class TerminalVoiceOverTests: XCTestCase {
     }
 
     func testReadOnlyNativeTextAlternateAndLargeNarrowHighContrast() throws {
-        let app = launch(readOnly: true)
+        let app = try launch(readOnly: true)
         try ensureVoiceOver(true)
         focusBefore(app)
         XCTAssertTrue(try seek("中文终端验证"), "VoiceOver did not read the readonly terminal fixture")

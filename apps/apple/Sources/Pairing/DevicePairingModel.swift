@@ -269,7 +269,9 @@ final class DevicePairingModel {
         }
         if !hasLivePairing {
             invitation = nil
-            preparedInvitation = nil
+            // Foreground refreshes with no submitted request must not discard
+            // an invitation being reviewed after scanning or pasting.
+            if pairing != nil { preparedInvitation = nil }
         }
     }
 
