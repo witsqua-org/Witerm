@@ -258,7 +258,7 @@ final class RelayLiveTests: XCTestCase {
             try? FileManager.default.removeItem(at: directory)
         }
         try broker.start()
-        let created = try await local.create(name: "Multi server " + suffix)
+        let created = try await local.create(name: "Multi server " + suffix, shared: true)
         let store = RelayHostConfigurationStore(stateDirectory: directory)
         try store.writeAll(servers.map { RelayHostConfiguration(serverAddress: $0, deviceName: "Multi Mac " + suffix, enabled: true) })
         await coordinator.start()
@@ -332,7 +332,7 @@ final class RelayLiveTests: XCTestCase {
             try? FileManager.default.removeItem(at: directory)
         }
         try broker.start()
-        let created = try await local.create(name: "Relay live " + suffix)
+        let created = try await local.create(name: "Relay live " + suffix, shared: true)
         try RelayHostConfigurationStore(stateDirectory: directory).upsert(
             RelayHostConfiguration(serverAddress: address, deviceName: "Live Mac " + suffix, enabled: true))
         await coordinator.start()
@@ -344,6 +344,17 @@ final class RelayLiveTests: XCTestCase {
             catch RelayError.offline { return false }
         }
         XCTAssertEqual(listing.map(\.id), [created.id])
+
+        stage = "unshared session stays private"
+        let hidden = try await local.create(name: "Private " + suffix)
+        let visible = try await remote.sessions()
+        XCTAssertEqual(visible.map(\.id), [created.id], "A paired device listed an unshared session")
+        do {
+            let leaked = try await remote.attach(sessionID: hidden.id, mode: .view)
+            await leaked.disconnect()
+            XCTFail("A paired device attached to an unshared session")
+        } catch RelayError.sessionUnavailable { }
+        try await local.close(sessionID: hidden.id)
 
         stage = "control attach and input"
         let control = try await remote.attach(sessionID: created.id)
@@ -567,6 +578,19 @@ final class RelayLiveTests: XCTestCase {
         do { _ = try await remote.sessions(); XCTFail("A new encrypted handshake bypassed local revocation") }
         catch { /* Host rejects the proof/tunnel without accepting a request. */ }
         XCTAssertEqual(try panePID(sessionID: created.id, directory: directory, configuration: configuration), originalPID)
+
+        stage = "stop sharing disconnects paired devices"
+        let watcher = try await readOnlyClient.attach(sessionID: created.id, mode: .view)
+        let watched = RelayLiveCapture()
+        let watchReader = capture(watcher, into: watched)
+        defer { watchReader.cancel() }
+        let unshared = try await local.share(sessionID: created.id, shared: false)
+        XCTAssertEqual(unshared.sharing?.shared, false)
+        try await eventually("Stopping sharing did not disconnect the paired device", seconds: 3) { await watched.finished }
+        let afterUnshare = try await readOnlyClient.sessions()
+        XCTAssertTrue(afterUnshare.isEmpty, "An unshared session stayed listed")
+        XCTAssertEqual(try panePID(sessionID: created.id, directory: directory, configuration: configuration), originalPID,
+                       "Stopping sharing changed the shell")
         await recovered.disconnect()
         await coordinator.stop()
         try await local.close(sessionID: created.id)
@@ -609,7 +633,7 @@ final class RelayLiveTests: XCTestCase {
             try? FileManager.default.removeItem(at: directory)
         }
         try broker.start()
-        let session = try await local.create(name: "Weak endpoint " + suffix)
+        let session = try await local.create(name: "Weak endpoint " + suffix, shared: true)
         let originalPID = try panePID(sessionID: session.id, directory: directory, configuration: configuration)
         try RelayHostConfigurationStore(stateDirectory: directory).upsert(
             RelayHostConfiguration(serverAddress: address, deviceName: "Weak Mac " + suffix, enabled: true))

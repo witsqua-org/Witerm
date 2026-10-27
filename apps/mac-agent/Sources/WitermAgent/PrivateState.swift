@@ -118,12 +118,34 @@ final class PrivateState {
     }
 
     func saveMetadata(_ records: [String: LocalSessionInfo]) throws {
-        let data = try wireEncoder().encode(records.values.sorted { $0.id < $1.id })
-        let temporary = directory.appendingPathComponent(".sessions-\(UUID().uuidString)")
+        try replace("sessions.json", with: wireEncoder().encode(records.values.sorted { $0.id < $1.id }))
+    }
+
+    /// Sessions shared with paired devices. A missing file shares nothing, so
+    /// sessions from before sharing existed stay private until shared.
+    func loadSharing() throws -> Set<String> {
+        let path = directory.appendingPathComponent("sharing.json")
+        var value = stat()
+        if lstat(path.path, &value) != 0 {
+            if errno == ENOENT { return [] }; throw AgentFailure()
+        }
+        guard value.st_uid == geteuid(), value.st_mode & S_IFMT == S_IFREG,
+              value.st_mode & 0o7777 == 0o600, value.st_size <= 4096 else { throw AgentFailure() }
+        let ids = try JSONDecoder().decode([String].self, from: Data(contentsOf: path))
+        guard ids.count <= 16, ids.allSatisfy(validSessionID) else { throw AgentFailure() }
+        return Set(ids)
+    }
+
+    func saveSharing(_ ids: Set<String>) throws {
+        try replace("sharing.json", with: JSONEncoder().encode(ids.sorted()))
+    }
+
+    private func replace(_ name: String, with data: Data) throws {
+        let temporary = directory.appendingPathComponent(".\(name)-\(UUID().uuidString)")
         let fd = open(temporary.path, O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW | O_CLOEXEC, 0o600)
         guard fd >= 0 else { throw AgentFailure() }
         defer { Darwin.close(fd); _ = unlink(temporary.path) }
         guard Posix.writeAll(fd, data: data), fsync(fd) == 0,
-              rename(temporary.path, directory.appendingPathComponent("sessions.json").path) == 0 else { throw AgentFailure() }
+              rename(temporary.path, directory.appendingPathComponent(name).path) == 0 else { throw AgentFailure() }
     }
 }

@@ -55,7 +55,10 @@ final class LocalTerminalModel {
     private(set) var issue: LocalTerminalIssue?
     private(set) var tmuxAvailable = true
     private(set) var ended = false
+    /// Remote access per server; empty when Allow Remote Access is off.
+    private(set) var relays: [LocalRelayStatus] = []
     @ObservationIgnored private var work: Task<Void, Never>?
+    @ObservationIgnored private var watcher: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
 
     var selectedSession: LocalSessionInfo? { sessions.first { $0.id == selectedID } }
@@ -69,10 +72,59 @@ final class LocalTerminalModel {
             try Task.checkCancellation()
             guard let self, self.generation == expected else { return }
             self.tmuxAvailable = status.tmuxAvailable
+            self.relays = status.relays ?? []
             self.sessions = sessions
             if let selectedID = self.selectedID, !sessions.contains(where: { $0.id == selectedID }) {
                 self.detach()
                 self.selectedID = nil
+            }
+        }
+    }
+
+    /// Keeps the list current while the window is open, so sessions started
+    /// from the command line, sharing, and who is attached appear on their own.
+    func watch(using client: LocalAgentClient) {
+        watcher?.cancel()
+        watcher = Task { [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(2)) } catch { return }
+                guard let self else { return }
+                await self.quietRefresh(client)
+            }
+        }
+    }
+
+    func stopWatching() {
+        watcher?.cancel()
+        watcher = nil
+    }
+
+    private func quietRefresh(_ client: LocalAgentClient) async {
+        guard !isWorking, let status = try? await client.status() else { return }
+        let relays = status.relays ?? []
+        if relays != self.relays { self.relays = relays }
+        guard status.tmuxAvailable, tmuxAvailable, let sessions = try? await client.sessions(),
+              !isWorking, !Task.isCancelled else { return }
+        if sessions != self.sessions { self.sessions = sessions }
+        // A session ended elsewhere; an open terminal learns that from its own stream.
+        if let selectedID, attachment == nil, !sessions.contains(where: { $0.id == selectedID }) {
+            self.selectedID = nil
+        }
+    }
+
+    /// Lets paired devices reach a session, or stops it. Stopping disconnects
+    /// them; the session keeps running.
+    func setShared(_ session: LocalSessionInfo, _ shared: Bool, using client: LocalAgentClient) {
+        Task { [weak self] in
+            do {
+                let updated = try await client.share(sessionID: session.id, shared: shared)
+                guard let self else { return }
+                self.sessions = self.sessions.map { $0.id == updated.id ? updated : $0 }
+                AccessibilityNotification.Announcement(shared
+                    ? String(localized: "Session Shared", bundle: .main)
+                    : String(localized: "Sharing Stopped", bundle: .main)).post()
+            } catch {
+                self?.report(error)
             }
         }
     }

@@ -1,14 +1,17 @@
 # Encrypted Relay
 
-The relay lets a paired iPhone or iPad use sessions that already exist on a Mac. The server authenticates devices and routes traffic. Only the two devices can read terminal contents. Sessions keep running in the Mac's private tmux server whatever happens to the relay.
+The relay lets a paired iPhone or iPad use the sessions a Mac shares. The server authenticates devices and routes traffic. Only the two devices can read terminal contents. Sessions keep running in the Mac's private tmux server whatever happens to the relay.
 
 Contracts: [relay-v1](../protocol/relay-v1.md) for the relay, [local-agent-v1](../protocol/local-agent-v1.md) for the terminal messages carried inside it.
 
 ## Using it
 
 1. Pair the devices through the same server and approve view-only or control access ([Device pairing](pairing.md)).
-2. On the Mac, start the local service, create a session, and turn on **Allow Remote Access** under Paired Devices. It is off by default.
-3. On iOS, open the Devices tab, pick the Mac, then pick a session.
+2. On the Mac, start the local service and turn on **Allow Remote Access** under Paired Devices. It is off by default.
+3. Share a session: **Share** in the terminal header or the session's context menu, or `witerm share` / `witerm new --share` from the [command line](cli.md). Sessions are private until shared.
+4. On iOS, open the Devices tab, pick the Mac, then pick a session.
+
+**Sharing.** A paired device sees only shared sessions, and only within the access its grant allows. **Stop Sharing** (or `witerm unshare`) disconnects paired devices and keeps the session running; the phone shows "Session Unavailable". The Mac's terminal header shows whether remote access is ready and which devices are connected.
 
 **Control.** Each session has one controller. If someone else has control, you can watch read-only, but you can't take over by force. **Release Control** switches you to read-only. **Take Control** asks for control once the other device has released it.
 
@@ -50,7 +53,7 @@ That's the whole surface. Creating or ending sessions, file transfer, and clipbo
 
 It can also refuse, delay, or cut connections. Tokens travel only in `Authorization` headers.
 
-**Authorization.** The Mac enforces permissions itself; a server-assigned tunnel is not permission to control.
+**Authorization.** The Mac enforces permissions itself; a server-assigned tunnel is not permission to control. Its relay endpoint tells the local service which paired device each request is for, and the service shows that device only shared sessions.
 
 - Both devices recheck their local grant on every connection, signature, and request, and every 250 ms while idle.
 - Revoking writes a local denial first, then tells the server. Live channels close even if the server is unreachable or still lists the grant.
@@ -97,6 +100,7 @@ The live tests pair throwaway in-memory identities against the real server, usin
 
 - real input and grid sizes
 - view-only enforcement, even for raw encrypted requests that bypass the SDK
+- unshared sessions staying invisible, and stopping sharing disconnecting a watching device
 - immediate control handoff after detach
 - reconnect redraws and an unchanged shell PID
 - local revocation closing live tunnels while the server grant is still valid

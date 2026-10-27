@@ -19,6 +19,8 @@ enum RelayTrace {
 public enum RelayError: Error, Sendable, Equatable {
   case offline, untrusted, revoked, unauthorized, invalidMessage, transport, backpressure
   case readOnly, sessionBusy, unavailable
+  /// The session ended, or the Mac stopped sharing it.
+  case sessionUnavailable
 }
 
 public struct RelayCredentials: Sendable {

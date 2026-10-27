@@ -36,8 +36,11 @@
       return status
     }
 
-    public func sessions() async throws -> [LocalSessionInfo] {
-      let frame = try await rpc(LocalAgentRequest(operation: .list))
+    /// Every session with its sharing state, or, for the relay endpoint acting
+    /// for `peer`, only the sessions shared with paired devices.
+    public func sessions(peer: LocalRemotePeer? = nil) async throws -> [LocalSessionInfo] {
+      try peer.map(LocalWire.validatePeer)
+      let frame = try await rpc(LocalAgentRequest(operation: .list, peer: peer))
       guard let sessions = frame.sessions, sessions.count <= 16,
         Set(sessions.map(\.id)).count == sessions.count
       else { throw LocalAgentClientError.invalidResponse }
@@ -45,16 +48,35 @@
       return sessions
     }
 
-    public func create(name: String, columns: Int = 80, rows: Int = 24) async throws
-      -> LocalSessionInfo
-    {
+    /// Creates a session. `cwd` is an absolute directory for the shell to start
+    /// in; `shared` makes it reachable by paired devices from the start.
+    public func create(
+      name: String, columns: Int = 80, rows: Int = 24, cwd: String? = nil, shared: Bool = false
+    ) async throws -> LocalSessionInfo {
       let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-      guard LocalWire.validName(trimmed), LocalWire.validSize(columns: columns, rows: rows) else {
+      guard LocalWire.validName(trimmed), LocalWire.validSize(columns: columns, rows: rows),
+        cwd.map(LocalWire.validDirectory) ?? true
+      else {
         throw LocalAgentClientError.rejected(.invalidRequest)
       }
       let frame = try await rpc(
-        LocalAgentRequest(operation: .create, name: trimmed, columns: columns, rows: rows))
+        LocalAgentRequest(
+          operation: .create, name: trimmed, columns: columns, rows: rows, cwd: cwd,
+          shared: shared ? true : nil))
       guard let session = frame.session else { throw LocalAgentClientError.invalidResponse }
+      try LocalWire.validateSession(session)
+      return session
+    }
+
+    /// Shares a session with paired devices, or stops sharing it. Stopping
+    /// disconnects remote devices; the session keeps running. Returns the
+    /// session with its sharing state.
+    public func share(sessionID: String, shared: Bool) async throws -> LocalSessionInfo {
+      try LocalWire.validateID(sessionID)
+      let frame = try await rpc(
+        LocalAgentRequest(operation: .share, sessionID: sessionID, shared: shared))
+      guard let session = frame.session, session.id == sessionID, session.sharing?.shared == shared
+      else { throw LocalAgentClientError.invalidResponse }
       try LocalWire.validateSession(session)
       return session
     }
@@ -64,17 +86,22 @@
       _ = try await rpc(LocalAgentRequest(operation: .close, sessionID: sessionID))
     }
 
+    /// Attaches to a session. Only the relay endpoint passes `peer`, which
+    /// limits the attach to shared sessions.
     public func attach(
-      sessionID: String, columns: Int = 80, rows: Int = 24, mode: LocalAttachmentMode = .control
+      sessionID: String, columns: Int = 80, rows: Int = 24, mode: LocalAttachmentMode = .control,
+      peer: LocalRemotePeer? = nil
     ) async throws -> LocalTerminalAttachment {
       try LocalWire.validateID(sessionID)
+      try peer.map(LocalWire.validatePeer)
       guard LocalWire.validSize(columns: columns, rows: rows) else {
         throw LocalAgentClientError.rejected(.invalidRequest)
       }
       let connection = try await LocalSocketConnection.open(socketURL: socketURL)
       do {
         let request = LocalAgentRequest(
-          operation: .attach, sessionID: sessionID, columns: columns, rows: rows, mode: mode)
+          operation: .attach, sessionID: sessionID, columns: columns, rows: rows, mode: mode,
+          peer: peer)
         let frame = try await connection.request(request)
         guard let session = frame.session, session.id == sessionID, frame.mode == mode else {
           throw LocalAgentClientError.invalidResponse
@@ -167,6 +194,29 @@
       else {
         throw LocalAgentClientError.invalidResponse
       }
+      if let sharing = session.sharing {
+        guard sharing.attachments.count <= 32,
+          sharing.attachments.filter({ $0.mode == .control }).count <= 1
+        else { throw LocalAgentClientError.invalidResponse }
+        for attachment in sharing.attachments {
+          do { try attachment.device.map(validatePeer) } catch {
+            throw LocalAgentClientError.invalidResponse
+          }
+        }
+      }
+    }
+
+    static func validatePeer(_ peer: LocalRemotePeer) throws {
+      try validateID(peer.deviceID)
+      guard validName(peer.name) else { throw LocalAgentClientError.rejected(.invalidRequest) }
+    }
+
+    /// An absolute, normalized path without control characters. The service
+    /// checks that it is an accessible directory.
+    static func validDirectory(_ path: String) -> Bool {
+      path.hasPrefix("/") && path.utf8.count <= 1024
+        && !path.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
+        && !path.split(separator: "/").contains(where: { $0 == ".." || $0 == "." })
     }
 
     static func encode(_ request: LocalAgentRequest) throws -> Data {

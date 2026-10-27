@@ -10,6 +10,7 @@
 **Mac background service** (`apps/mac-agent`). Runs as the logged-in user, never as root. It serves a private Unix socket and hosts each session as a shell in its own tmux server, with an empty config and a private socket. Each viewer is a normal tmux client on a real PTY. New connections get a full tmux redraw, never a text snapshot.
 
 - Closing a window only detaches. Ending a session is an explicit, confirmed action.
+- The Mac app and the `witerm` command are clients of the same service, so sessions, sharing, and control are one state.
 - The service can stop and restart without killing shells.
 - Sleep, logout, and shutdown are different from a disconnect: tasks do not run during sleep, and shutdown does not restore processes.
 
@@ -27,6 +28,7 @@
 - Pairing requires a Mac invitation, a fingerprint check on iOS, and explicit approval on the Mac (view-only or control).
 - Terminal traffic is end-to-end encrypted with Noise XX and bound to both paired identities. The server routes ciphertext and cannot read or forge it.
 - **The Mac is the final authority.** It rechecks its local grant on every connection and request, and while idle. A local revocation closes live channels even if the server still lists the grant.
+- **Sessions are private until shared.** The Mac shows paired devices only shared sessions, and sharing never raises a device's access.
 - One controller per session. Other devices must explicitly choose view-only, and nobody can take control by force.
 - A full buffer closes the connection so the client can reattach and redraw. Terminal bytes are never silently dropped.
 
@@ -38,6 +40,7 @@
 | Device identity, pairing, revocation, rate limits | Done |
 | Mac local sessions that survive app exit, service restart, and sleep | Done |
 | Encrypted relay: view, control, handoff, revocation | Done |
+| Per-session sharing and the `witerm` command | Done |
 | Direct SSH: host keys, Ed25519 and password auth, jump hosts, SFTP, forwarding | Done |
 | Remote session create or close, forced takeover, accounts | Not planned yet |
 | tmux Control Mode, multi-window mapping, camera pairing, deep links | Future |

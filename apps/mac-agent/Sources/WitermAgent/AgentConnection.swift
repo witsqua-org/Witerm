@@ -8,6 +8,8 @@ final class AgentConnection: @unchecked Sendable {
     // Attachment state is exclusively owned by AgentBroker's serial queue.
     var sessionID: String?
     var mode: LocalAttachmentMode?
+    /// The paired device an attachment acts for; nil for this Mac.
+    var peer: LocalRemotePeer?
     var child: PTYChild?
     private let condition = NSCondition()
     private var outgoing: [Data] = []

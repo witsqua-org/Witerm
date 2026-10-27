@@ -40,6 +40,9 @@ struct RemoteTerminalIssue {
             case .sessionBusy:
                 title = String(localized: "Session Is Being Controlled", bundle: .main)
                 recovery = String(localized: "View only, or reconnect after the other device disconnects.", bundle: .main)
+            case .sessionUnavailable:
+                title = String(localized: "Session Unavailable", bundle: .main)
+                recovery = String(localized: "It ended or is no longer shared on the Mac. Refresh the list.", bundle: .main)
             }
         } else if let error = error as? LocalAgentClientError {
             switch error {

@@ -1,6 +1,6 @@
 # Mac Local Terminal
 
-The Mac app runs real shells through a background service. Sessions keep running when you close the window, quit the app, or restart the service, and you can reattach to the same shell later. iOS reaches these sessions through the [encrypted relay](relay.md).
+The Mac app runs real shells through a background service. Sessions keep running when you close the window, quit the app, or restart the service, and you can reattach to the same shell later. The [`witerm` command](cli.md) uses the same service, and paired iOS devices reach the sessions you share through the [encrypted relay](relay.md).
 
 ## Setup
 
@@ -15,11 +15,13 @@ xcodebuild -project apps/apple/Witerm.xcodeproj -scheme WitermMac \
 
 **First build.** Approve `SwiftTermBuildInfoPlugin` when Xcode asks (it only generates version info) and install Apple's Metal Toolchain. Don't turn off plugin validation globally.
 
-**First launch.** Open the app and start the local service from the main window or Settings → General. If macOS asks for approval, the app links to Login Items & Extensions. Sessions appear under **This Mac**.
+**First launch.** Open the app and start the local service from the main window or Settings → General. If macOS asks for approval, the app links to Login Items & Extensions. Sessions appear under **This Mac**, including those started with `witerm new`; the list refreshes on its own every couple of seconds.
+
+**Command line.** Settings → Command Line installs `witerm` as a link into the app ([guide](cli.md)).
 
 ## How it's packaged
 
-The background service ships inside the app as `Contents/Library/LaunchServices/WitermAgent.app`. It is registered through SMAppService with `Contents/Library/LaunchAgents/com.witerm.agent.plist`.
+The background service ships inside the app as `Contents/Library/LaunchServices/WitermAgent.app`. It is registered through SMAppService with `Contents/Library/LaunchAgents/com.witerm.agent.plist`. The `witerm` command is a signed, Hardened Runtime tool at `Contents/Helpers/witerm`. It needs no entitlements: it reads the App Group from the app's `Info.plist` and connects to the service's socket as the same user.
 
 - **No sandbox.** A full shell needs it, and Apple doesn't let a sandboxed app register an unsandboxed LaunchAgent ([explanation](https://developer.apple.com/forums/thread/802443)). Both the app and the service keep signing and Hardened Runtime and use `Config/WitermDirect.entitlements`. `Config/Witerm.entitlements` is only for sandbox experiments. iOS stays sandboxed.
 - **Shared App Group.** The app and the service share `group.com.witerm.$(DEVELOPMENT_TEAM)`, and both provisioning profiles must authorize it. The service uses the app's original Keychain access group, so existing identities keep working. Your team lives only in the ignored `apps/apple/Config/Signing.local.xcconfig`.
@@ -33,6 +35,7 @@ Production Developer ID signing and notarization have not been done yet.
 - Closing a terminal view only detaches it. **End Session** asks for confirmation and kills the shell's tasks.
 - Stopping the service disconnects viewers but keeps the shells running. Continuity is not promised across logout, shutdown, or restart. Sleep is covered in [Terminal experience](terminal-experience.md).
 - One controller per session. Other viewers are read-only, and there's no forced takeover.
+- Sessions are private until shared. A shared session is reachable by paired devices; unsharing disconnects them and keeps the shell.
 - Terminal output stays in local memory and sockets. It is never stored or sent to the cloud. tmux keeps its usual scrollback, and your shell may keep history as configured.
 - Clipboard escape sequences are blocked, and only links you click (http/https) open.
 

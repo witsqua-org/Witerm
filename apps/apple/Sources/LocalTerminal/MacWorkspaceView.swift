@@ -78,7 +78,9 @@ struct MacWorkspaceView: View {
         .onChange(of: service.state) { _, state in
             if state == .ready, let client = service.client {
                 terminal.refresh(using: client)
+                terminal.watch(using: client)
             } else {
+                terminal.stopWatching()
                 terminal.serviceUnavailable()
             }
         }
@@ -103,7 +105,7 @@ struct MacWorkspaceView: View {
                 selection = .devices(ids.first)
             }
         }
-        .onDisappear { ssh.disconnectAll() }
+        .onDisappear { ssh.disconnectAll(); terminal.stopWatching() }
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.willSleepNotification)) { _ in
             terminal.detach()
         }
@@ -118,7 +120,10 @@ struct MacWorkspaceView: View {
 
     private func refresh() async {
         await service.refresh()
-        if service.state == .ready, let client = service.client { terminal.refresh(using: client) }
+        if service.state == .ready, let client = service.client {
+            terminal.refresh(using: client)
+            terminal.watch(using: client)
+        }
         await ssh.load()
     }
 
@@ -199,20 +204,36 @@ struct MacWorkspaceView: View {
         if service.state == .ready, terminal.tmuxAvailable {
             ForEach(terminal.sessions) { session in
                 let attached = terminal.selectedID == session.id && terminal.attachment != nil
+                let shared = session.sharing?.shared == true
                 Label {
-                    Text(session.name).lineLimit(1)
+                    HStack(spacing: 6) {
+                        Text(session.name).lineLimit(1)
+                        if shared {
+                            Image(systemName: "antenna.radiowaves.left.and.right")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .help(String(localized: "Shared with paired devices", bundle: .main))
+                                .accessibilityHidden(true)
+                        }
+                    }
                 } icon: {
                     Image(systemName: attached ? "terminal.fill" : "terminal")
                         .foregroundStyle(attached ? WitermTheme.positive : .secondary)
                 }
                 .tag(MacDestination.local(session.id))
                 .accessibilityLabel(session.name)
-                .accessibilityValue(attached ? String(localized: "Connected", bundle: .main) : "")
+                .accessibilityValue([attached ? String(localized: "Connected", bundle: .main) : nil,
+                                     shared ? String(localized: "Shared", bundle: .main) : nil]
+                    .compactMap { $0 }.joined(separator: ", "))
                 .accessibilityIdentifier("localSession-\(session.id)")
                 .contextMenu {
                     if let client = service.client {
                         Button(String(localized: "Connect", bundle: .main)) { terminal.attach(session, using: client, mode: .control) }
                         Button(String(localized: "View Only", bundle: .main)) { terminal.attach(session, using: client, mode: .view) }
+                        Divider()
+                        Button(shared ? String(localized: "Stop Sharing", bundle: .main) : String(localized: "Share with Paired Devices", bundle: .main)) {
+                            terminal.setShared(session, !shared, using: client)
+                        }
                         Divider()
                         Button(String(localized: "End Session", bundle: .main), role: .destructive) { endingSession = session }
                     }

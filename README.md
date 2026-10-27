@@ -4,7 +4,8 @@ Witerm is an SSH client and Mac terminal continuity app for macOS, iPhone, and i
 
 - **Direct SSH** from Mac or iOS, with host-key verification, jump hosts, SFTP, and port forwarding. No server needed.
 - **Mac terminals that outlive the app.** A background service keeps shells running in a private tmux server after the window or app closes.
-- **Continue on iPhone.** Paired iOS devices view or control those Mac sessions through an end-to-end encrypted relay. The relay server never sees terminal contents.
+- **Continue on iPhone.** Paired iOS devices view or control the Mac sessions you share, through an end-to-end encrypted relay. The relay server never sees terminal contents.
+- **Command line.** `witerm new --share` starts a shared session in the current folder; the app and the command use the same sessions.
 
 The apps follow the system language (English, Simplified Chinese) and light/dark appearance.
 
@@ -13,7 +14,7 @@ The apps follow the system language (English, Simplified Chinese) and light/dark
 | Part | Path | Built with |
 |---|---|---|
 | Mac and iOS apps | `apps/apple/` | SwiftUI, SwiftTerm 1.19.0 |
-| Mac background service | `apps/mac-agent/` | Swift 6, tmux, real PTYs |
+| Mac background service and `witerm` command | `apps/mac-agent/` | Swift 6, tmux, real PTYs |
 | Shared client library | `packages/WitermCore/` | Pairing, relay crypto, local service client |
 | SSH engine | `packages/WitermSSH/` | Pinned Citadel source in `vendor/Citadel/` |
 | Pairing and relay server | `server/` | Go 1.26, PostgreSQL |
@@ -66,10 +67,12 @@ The Mac app needs `tmux` (`brew install tmux`) and a normally signed build with 
   2. On the Mac, create an invitation under Paired Devices.
   3. On iOS, paste it, check the fingerprint, and send the request.
   4. On the Mac, approve view-only or control access, then turn on **Allow Remote Access**.
+  5. Share a session: **Share** in its terminal header, or `witerm share`.
 
-  The Mac now appears in the iOS Devices tab.
+  The Mac and its shared sessions now appear in the iOS Devices tab.
+- **Command line**: Settings → Command Line → Install, then run `witerm new` in any folder.
 
-Each app can use up to 8 servers at once. Guides: [Direct SSH](docs/ssh.md), [Mac local terminal](docs/local-terminal.md), [Device pairing](docs/pairing.md), [Encrypted relay](docs/relay.md).
+Each app can use up to 8 servers at once. Guides: [Direct SSH](docs/ssh.md), [Mac local terminal](docs/local-terminal.md), [Command line](docs/cli.md), [Device pairing](docs/pairing.md), [Encrypted relay](docs/relay.md).
 
 ## Development
 
@@ -109,6 +112,7 @@ Never edit an applied migration; add a new numbered one. Contributor rules are i
 - [Architecture](docs/architecture.md): components, trust model, and status
 - [Direct SSH](docs/ssh.md): host keys, jump hosts, SFTP, and forwarding
 - [Mac local terminal](docs/local-terminal.md): background service, sessions, and signing
+- [Command line](docs/cli.md): `witerm`, sharing, and scripting
 - [Device pairing](docs/pairing.md): identities, invitations, and grants
 - [Encrypted relay](docs/relay.md): remote sessions, privacy, and deployment
 - [Terminal experience](docs/terminal-experience.md): grid sizing, accessibility, sleep, and native tests

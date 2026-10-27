@@ -7,11 +7,15 @@ final class TmuxEngine {
     let state: PrivateState
     let configuration: AgentConfiguration
     private var records: [String: LocalSessionInfo]
+    /// Sessions paired devices may list and attach to.
+    private(set) var shared: Set<String>
 
     init(state: PrivateState, configuration: AgentConfiguration) throws {
         self.state = state
         self.configuration = configuration
         records = try state.loadMetadata()
+        // An unreadable sharing file shares nothing rather than stopping the service.
+        shared = ((try? state.loadSharing()) ?? []).intersection(records.keys)
     }
 
     var available: Bool { configuration.tmuxPath != nil }
@@ -47,6 +51,8 @@ final class TmuxEngine {
         }
         let kept = records.filter { live.contains(internalName($0.key)) }
         if kept.count != records.count { try state.saveMetadata(kept); records = kept }
+        let stillShared = shared.intersection(records.keys)
+        if stillShared != shared { shared = stillShared; try state.saveSharing(shared) }
         return records.values.sorted { $0.createdAt == $1.createdAt ? $0.id < $1.id : $0.createdAt < $1.createdAt }
     }
 
@@ -55,13 +61,17 @@ final class TmuxEngine {
         return record
     }
 
-    func create(name: String, columns: Int, rows: Int) throws -> LocalSessionInfo {
+    func create(name: String, columns: Int, rows: Int, cwd: String? = nil, shared share: Bool = false) throws -> LocalSessionInfo {
         guard try sessions().count < 16 else { throw AgentFailure() }
+        if let cwd { try Self.validateDirectory(cwd) }
         let id = UUID().uuidString.lowercased()
         let internalID = internalName(id)
         // More than one shell argument asks tmux to exec argv directly. The
         // display name is metadata only and is never interpreted by tmux.
-        try command(["new-session", "-d", "-s", internalID, "-x", String(columns), "-y", String(rows), "--", configuration.shellPath, configuration.loginShell ? "-l" : "-i"])
+        // WITERM_SESSION_ID lets `witerm share` know which session it runs in.
+        let directory = cwd.map { ["-c", $0] } ?? []
+        try command(["new-session", "-d", "-s", internalID, "-x", String(columns), "-y", String(rows)]
+            + directory + ["-e", "WITERM_SESSION_ID=\(id)", "--", configuration.shellPath, configuration.loginShell ? "-l" : "-i"])
         do {
             for (key, value) in [
                 ("status", "off"), ("prefix", "None"), ("prefix2", "None"),
@@ -76,9 +86,11 @@ final class TmuxEngine {
             let record = LocalSessionInfo(id: id, name: name, createdAt: Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970)), columns: columns, rows: rows)
             records[id] = record
             try state.saveMetadata(records)
+            if share { try setShared(id, true) }
             return record
         } catch {
             records.removeValue(forKey: id)
+            shared.remove(id)
             _ = try? command(["kill-session", "-t", internalID])
             throw AgentFailure()
         }
@@ -153,6 +165,26 @@ final class TmuxEngine {
         try command(["kill-session", "-t", internalName(id)])
         records.removeValue(forKey: id)
         try state.saveMetadata(records)
+        if shared.remove(id) != nil { try state.saveSharing(shared) }
+    }
+
+    func setShared(_ id: String, _ value: Bool) throws {
+        _ = try session(id)
+        var next = shared
+        if value { next.insert(id) } else { next.remove(id) }
+        guard next != shared else { return }
+        try state.saveSharing(next)
+        shared = next
+    }
+
+    /// The start directory must be an existing directory this user can enter.
+    /// tmux silently falls back to another directory when it cannot use one.
+    static func validateDirectory(_ path: String) throws {
+        guard path.hasPrefix("/"), path.utf8.count <= 1024,
+              !path.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else { throw AgentFailure(.invalidRequest) }
+        var info = stat()
+        guard stat(path, &info) == 0 else { throw AgentFailure(.notFound) }
+        guard info.st_mode & S_IFMT == S_IFDIR, access(path, X_OK | R_OK) == 0 else { throw AgentFailure(.invalidRequest) }
     }
 
     func attach(_ id: String, columns: Int, rows: Int, mode: LocalAttachmentMode) throws -> PTYChild {

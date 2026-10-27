@@ -7,15 +7,17 @@ final class AgentBroker: @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.witerm.agent.state")
     private let state: PrivateState
     private let engine: TmuxEngine
+    private let relays: RelayStatusBoard?
     private var listener: Int32 = -1
     private var active = false
     private var connections: [UUID: AgentConnection] = [:]
     private var controllers: [String: UUID] = [:]
     private var socketIdentity: (dev_t, ino_t)?
 
-    init(configuration: AgentConfiguration) throws {
+    init(configuration: AgentConfiguration, relays: RelayStatusBoard? = nil) throws {
         state = try PrivateState(directory: configuration.stateDirectory)
         engine = try TmuxEngine(state: state, configuration: configuration)
+        self.relays = relays
     }
 
     func start() throws {
@@ -90,6 +92,7 @@ final class AgentBroker: @unchecked Sendable {
             connection.child = nil
             connection.mode = nil
             connection.sessionID = nil
+            connection.peer = nil
             if final { connections.removeValue(forKey: connection.token) }
         }
     }
@@ -122,10 +125,12 @@ final class AgentBroker: @unchecked Sendable {
     private func validFields(_ raw: [String: Any], operation: LocalAgentOperation) -> Bool {
         var allowed: Set<String> = ["version", "id", "operation"]
         switch operation {
-        case .status, .list, .detach: break
-        case .create: allowed.formUnion(["name", "columns", "rows"])
+        case .status, .detach: break
+        case .list: allowed.insert("peer")
+        case .create: allowed.formUnion(["name", "columns", "rows", "cwd", "shared"])
         case .close: allowed.insert("session_id")
-        case .attach: allowed.formUnion(["session_id", "columns", "rows", "mode"])
+        case .share: allowed.formUnion(["session_id", "shared"])
+        case .attach: allowed.formUnion(["session_id", "columns", "rows", "mode", "peer"])
         case .input: allowed.insert("data")
         case .resize: allowed.formUnion(["columns", "rows"])
         }
@@ -143,14 +148,39 @@ final class AgentBroker: @unchecked Sendable {
         func sessionID() throws -> String {
             guard let id = request.sessionID, validSessionID(id) else { throw AgentFailure(.invalidRequest) }; return id
         }
+        func peer() throws -> LocalRemotePeer? {
+            guard let peer = request.peer else { return nil }
+            guard validSessionID(peer.deviceID), (1...64).contains(peer.name.unicodeScalars.count),
+                  peer.name.rangeOfCharacter(from: .controlCharacters) == nil else { throw AgentFailure(.invalidRequest) }
+            return peer
+        }
         switch request.operation {
-        case .status: reply(status: LocalAgentStatus(tmuxAvailable: engine.available))
-        case .list: reply(sessions: try engine.sessions())
+        case .status: reply(status: LocalAgentStatus(tmuxAvailable: engine.available, relays: relays?.snapshot() ?? []))
+        case .list:
+            if try peer() != nil {
+                // A paired device sees only shared sessions, without who else is attached.
+                reply(sessions: try engine.sessions().filter { engine.shared.contains($0.id) })
+            } else {
+                reply(sessions: try engine.sessions().map { withSharing($0) })
+            }
         case .create:
             guard connection.child == nil, let name = request.name, name == name.trimmingCharacters(in: .whitespacesAndNewlines),
                   (1...64).contains(name.unicodeScalars.count), name.rangeOfCharacter(from: .controlCharacters) == nil else { throw AgentFailure(.invalidRequest) }
             let (columns, rows) = try dimensions()
-            reply(session: try engine.create(name: name, columns: columns, rows: rows))
+            let session = try engine.create(name: name, columns: columns, rows: rows, cwd: request.cwd, shared: request.shared == true)
+            reply(session: withSharing(session))
+        case .share:
+            guard connection.child == nil, let shared = request.shared else { throw AgentFailure(.invalidRequest) }
+            let id = try sessionID()
+            try engine.setShared(id, shared)
+            if !shared {
+                // Stopping sharing disconnects paired devices; the shell keeps running.
+                for attached in connections.values where attached.sessionID == id && attached.peer != nil {
+                    attached.finish(afterFlush: true, terminalError: .notFound, emitClosed: true)
+                    attached.child?.stop()
+                }
+            }
+            reply(session: withSharing(try engine.session(id)))
         case .close:
             let id = try sessionID()
             try engine.close(id)
@@ -162,6 +192,9 @@ final class AgentBroker: @unchecked Sendable {
             guard connection.child == nil, let mode = request.mode else { throw AgentFailure(.invalidRequest) }
             let id = try sessionID()
             let (columns, rows) = try dimensions()
+            let remote = try peer()
+            // An unshared session does not exist for a paired device.
+            if remote != nil, !engine.shared.contains(id) { throw AgentFailure(.notFound) }
             if mode == .control, controllers[id] != nil { throw AgentFailure(.sessionBusy) }
             let previous = try engine.verifiedSession(id)
             let changed = mode == .control && (previous.columns != columns || previous.rows != rows)
@@ -169,7 +202,7 @@ final class AgentBroker: @unchecked Sendable {
             // A viewer observes the controller's current window, not its stale
             // list/request grid. Its PTY must render that same authoritative size.
             let child = try engine.attach(id, columns: info.columns, rows: info.rows, mode: mode)
-            connection.child = child; connection.sessionID = id; connection.mode = mode
+            connection.child = child; connection.sessionID = id; connection.mode = mode; connection.peer = remote
             if mode == .control { controllers[id] = connection.token }
             // FIFO delivery guarantees the response precedes the first VT event.
             reply(session: info, mode: mode)
@@ -200,10 +233,22 @@ final class AgentBroker: @unchecked Sendable {
             connection.child = nil
             connection.mode = nil
             connection.sessionID = nil
+            connection.peer = nil
             reply()
             connection.finish(afterFlush: true)
             child.stop()
         }
+    }
+
+    /// The session with whether it is shared and who is attached to it.
+    private func withSharing(_ session: LocalSessionInfo) -> LocalSessionInfo {
+        let attachments = connections.values
+            .filter { $0.sessionID == session.id && $0.child != nil && $0.mode != nil }
+            .sorted { $0.token.uuidString < $1.token.uuidString }
+            .map { LocalAttachmentInfo(mode: $0.mode!, device: $0.peer) }
+        return LocalSessionInfo(id: session.id, name: session.name, createdAt: session.createdAt,
+                                columns: session.columns, rows: session.rows,
+                                sharing: LocalSessionSharing(shared: engine.shared.contains(session.id), attachments: attachments))
     }
 
     private func resizeSession(_ previous: LocalSessionInfo, columns: Int, rows: Int) throws -> LocalSessionInfo {

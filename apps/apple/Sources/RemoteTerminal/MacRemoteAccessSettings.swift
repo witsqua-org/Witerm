@@ -77,7 +77,7 @@ struct MacRemoteAccessCard: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(String(localized: "Allow Remote Access", bundle: .main))
                         .font(.headline)
-                    Text(String(localized: "Paired iPhone and iPad devices can connect to existing terminal sessions on this Mac.", bundle: .main))
+                    Text(String(localized: "Paired iPhone and iPad devices can connect to the sessions you share on this Mac.", bundle: .main))
                         .font(.subheadline)
                         .foregroundStyle(WitermTheme.secondary)
                         .fixedSize(horizontal: false, vertical: true)

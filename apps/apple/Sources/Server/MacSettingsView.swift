@@ -13,6 +13,9 @@ struct MacSettingsView: View {
                 .formStyle(.grouped)
                 .frame(width: 560, height: 580)
                 .tabItem { Label(String(localized: "Terminal", bundle: .main), systemImage: "terminal") }
+            CommandLineToolSettings()
+                .frame(width: 560, height: 560)
+                .tabItem { Label(String(localized: "Command Line", bundle: .main), systemImage: "apple.terminal") }
         }
         .witermTint()
     }
