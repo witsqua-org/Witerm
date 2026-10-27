@@ -48,6 +48,15 @@ struct LocalTerminalDetail: View {
                 statusImage: model.mode == .view ? "eye" : "keyboard",
                 live: true
             ) {
+                let shared = session.sharing?.shared == true
+                Button(shared ? String(localized: "Stop Sharing", bundle: .main) : String(localized: "Share", bundle: .main),
+                       systemImage: shared ? "antenna.radiowaves.left.and.right.slash" : "antenna.radiowaves.left.and.right") {
+                    model.setShared(session, !shared, using: client)
+                }
+                .touchTarget()
+                .accessibilityIdentifier("shareLocalSession")
+                .help(shared ? String(localized: "Stop sharing; paired devices disconnect and the session keeps running", bundle: .main)
+                             : String(localized: "Let paired devices open this session", bundle: .main))
                 Button(String(localized: "Disconnect", bundle: .main), systemImage: "eject", action: model.detach)
                     .touchTarget()
                     .accessibilityIdentifier("detachLocalTerminal")
@@ -58,6 +67,10 @@ struct LocalTerminalDetail: View {
                     .help(String(localized: "End Session", bundle: .main))
             }
             .buttonStyle(.borderless)
+            if let sharing = session.sharing, sharing.shared {
+                SessionSharingBar(sharing: sharing, relays: model.relays)
+                Divider()
+            }
             NativeTerminalView(
                 attachment: attachment, mode: model.mode,
                 fontSize: CGFloat(TerminalFontSize.clamped(terminalFontSize)),
@@ -113,12 +126,15 @@ struct LocalOverview: View {
                     } description: {
                         Text(model.sessions.isEmpty ? String(localized: "Create a session to start working on this Mac.", bundle: .main) : String(localized: "Select a session on the left to connect.", bundle: .main))
                     } actions: {
-                        HStack(spacing: 12) {
-                            PrimaryButton(String(localized: "New Session", bundle: .main), action: newSession)
-                                .disabled(!canCreate)
-                            Button(String(localized: "New SSH Connection", bundle: .main), action: newSSHConnection)
-                                .buttonStyle(.bordered)
-                                .witermControl()
+                        VStack(spacing: 20) {
+                            HStack(spacing: 12) {
+                                PrimaryButton(String(localized: "New Session", bundle: .main), action: newSession)
+                                    .disabled(!canCreate)
+                                Button(String(localized: "New SSH Connection", bundle: .main), action: newSSHConnection)
+                                    .buttonStyle(.bordered)
+                                    .witermControl()
+                            }
+                            if model.sessions.isEmpty { StartFromTerminalHint() }
                         }
                     }
                 }
@@ -129,6 +145,89 @@ struct LocalOverview: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(WitermTheme.canvas)
         .navigationTitle("Witerm")
+    }
+}
+
+/// Whether paired devices can reach this session right now, and who is on it.
+private struct SessionSharingBar: View {
+    let sharing: LocalSessionSharing
+    let relays: [LocalRelayStatus]
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: symbol)
+                .foregroundStyle(tint)
+                .accessibilityHidden(true)
+            // Two lines at most: the split view measures minimum heights at
+            // narrow widths, where unbounded wrapping overflows the window.
+            Text(summary)
+                .font(.callout)
+                .foregroundStyle(WitermTheme.secondary)
+                .lineLimit(2)
+                .truncationMode(.tail)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 7)
+        .background(WitermTheme.statusFill)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("sessionSharingStatus")
+    }
+
+    private var remoteDevices: [LocalAttachmentInfo] { sharing.attachments.filter { $0.device != nil } }
+    private var ready: Bool { relays.contains { $0.state == .ready } }
+
+    private var summary: String {
+        if !remoteDevices.isEmpty {
+            let names = remoteDevices.map { attachment in
+                let name = attachment.device?.name ?? ""
+                return attachment.mode == .control
+                    ? String(localized: "\(name) has control", bundle: .main)
+                    : String(localized: "\(name) is viewing", bundle: .main)
+            }
+            return String(localized: "Shared · \(names.joined(separator: ", "))", bundle: .main)
+        }
+        if relays.isEmpty {
+            return String(localized: "Shared, but remote access is off. Turn on Allow Remote Access in Paired Devices.", bundle: .main)
+        }
+        return ready
+            ? String(localized: "Shared · Paired devices can open it", bundle: .main)
+            : String(localized: "Shared · Waiting for the server to accept this Mac", bundle: .main)
+    }
+
+    private var symbol: String {
+        if relays.isEmpty { return "antenna.radiowaves.left.and.right.slash" }
+        return ready || !remoteDevices.isEmpty ? "antenna.radiowaves.left.and.right" : "hourglass"
+    }
+
+    private var tint: Color {
+        if relays.isEmpty { return WitermTheme.warning }
+        return ready || !remoteDevices.isEmpty ? WitermTheme.positive : .secondary
+    }
+}
+
+/// A light pointer to the `witerm` command for starting sessions from Terminal.
+private struct StartFromTerminalHint: View {
+    private let tool = CommandLineToolModel.shared
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Text(String(localized: "Or start one from Terminal in any folder:", bundle: .main))
+                .font(.subheadline)
+                .foregroundStyle(WitermTheme.secondary)
+            if tool.state == .installed {
+                CopyableCommand("witerm new")
+                    .frame(maxWidth: 260)
+            } else {
+                SettingsLink {
+                    Text(String(localized: "Install the witerm Command…", bundle: .main))
+                }
+                .accessibilityIdentifier("installCommandLineHint")
+            }
+        }
+        .onAppear(perform: tool.refresh)
+        // Picks up an install made outside the app, such as a manual link.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in tool.refresh() }
     }
 }
 

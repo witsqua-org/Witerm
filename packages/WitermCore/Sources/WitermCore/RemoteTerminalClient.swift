@@ -114,6 +114,7 @@ enum RemoteWire {
     switch code {
     case .readOnly: return .readOnly
     case .sessionBusy: return .sessionBusy
+    case .notFound: return .sessionUnavailable
     case .backpressure: return .backpressure
     case .invalidRequest, .unsupportedVersion: return .invalidMessage
     default: return .unavailable

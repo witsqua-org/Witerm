@@ -82,6 +82,8 @@ Encrypted records carry the [local-agent-v1](local-agent-v1.md) JSON requests an
 
 **Operations.**
 - Only `status`, `list`, `attach`, `input`, `resize`, and `detach` are accepted remotely.
+- The Mac answers `list` and `attach` only for sessions shared on the Mac. Others don't appear and attach as `not_found` (`sessionUnavailable` in the Swift client). Stopping sharing closes the device's attachment the same way.
+- A remote `status` reports only whether tmux is available, never the Mac's servers.
 - The Mac rejects input, resize, and control attaches for `view` grants, even if the server is malicious.
 - The Mac's local service decides who controls a session.
 

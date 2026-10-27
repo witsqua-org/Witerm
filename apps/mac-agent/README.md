@@ -1,6 +1,6 @@
 # Witerm Mac Agent
 
-The background service behind the Mac's local terminals. It hosts shells in a private tmux server, serves them over a Unix socket, and runs the Mac end of the [encrypted relay](../../docs/relay.md). The wire protocol is [local-agent-v1](../../protocol/local-agent-v1.md).
+The background service behind the Mac's local terminals, and the `witerm` command. The service hosts shells in a private tmux server, serves them over a Unix socket, and runs the Mac end of the [encrypted relay](../../docs/relay.md). `witerm` ([guide](../../docs/cli.md)) is another client of the same socket. The wire protocol is [local-agent-v1](../../protocol/local-agent-v1.md).
 
 ## Build and run
 
@@ -14,7 +14,7 @@ state="$(mktemp -d /private/tmp/witerm-dev.XXXXXX)"
 swift run --package-path apps/mac-agent witerm-agent --state-directory "$state" --shell-path /bin/sh
 ```
 
-`--state-directory` needs an absolute path that you own, with mode 0700, that isn't a symlink. The installed app starts the agent through SMAppService with `--app-group <group>` instead. RPC can't change the tmux path or shell.
+`--state-directory` needs an absolute path that you own, with mode 0700, that isn't a symlink. Point the command at it with `WITERM_AGENT_SOCKET="$state/agent.sock" swift run --package-path apps/mac-agent witerm sessions`. The installed app starts the agent through SMAppService with `--app-group <group>` instead. RPC can't change the tmux path or shell.
 
 ## Safety
 

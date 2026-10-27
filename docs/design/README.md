@@ -51,11 +51,11 @@ So you can always see which machine receives your typing. The local Mac stays un
 
 **Mac**: one sidebar with three sections. The detail pane shows the selected item.
 
-- **This Mac**: local sessions. Selecting one attaches with control; the context menu offers View Only and End Session.
+- **This Mac**: local sessions, including those started with `witerm`. Selecting one attaches with control; the context menu offers View Only, Share or Stop Sharing, and End Session. Shared sessions show an antenna. The terminal header has Share, and a bar under it says whether paired devices can reach the session and who is connected.
 - **SSH Hosts**: saved hosts. The detail pane shows the route, Connect, Edit, and More (Host Keys, Delete), and becomes the terminal once connected. Connected hosts show a filled icon.
 - **Paired Devices**: Allow Remote Access and pairing, with one row per saved server.
 
-A footer opens Settings (⌘,) and summarizes server health (for example "3 Servers · All Reachable"). File → New Terminal Session (⌘N) and New SSH Connection (⇧⌘N), and View → Refresh (⌘R), are in the menus.
+An empty This Mac points to `witerm new`. Settings has General, Terminal, and Command Line (install the command, copy examples). A footer opens Settings (⌘,) and summarizes server health (for example "3 Servers · All Reachable"). File → New Terminal Session (⌘N) and New SSH Connection (⇧⌘N), and View → Refresh (⌘R), are in the menus.
 
 **iOS and iPadOS**: three tabs.
 

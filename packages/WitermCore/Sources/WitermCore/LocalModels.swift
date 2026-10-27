@@ -1,7 +1,7 @@
 import Foundation
 
 public enum LocalAgentOperation: String, Codable, Sendable {
-  case status, list, create, close, attach, input, resize, detach
+  case status, list, create, close, attach, input, resize, detach, share
 }
 
 public enum LocalAttachmentMode: String, Codable, Sendable { case control, view }
@@ -28,32 +28,100 @@ public struct LocalSessionInfo: Codable, Sendable, Equatable, Identifiable {
   public let createdAt: Date
   public let columns: Int
   public let rows: Int
+  /// Present only in a local `list` response; never sent to a remote device.
+  public let sharing: LocalSessionSharing?
 
-  public init(id: String, name: String, createdAt: Date, columns: Int, rows: Int) {
+  public init(
+    id: String, name: String, createdAt: Date, columns: Int, rows: Int,
+    sharing: LocalSessionSharing? = nil
+  ) {
     self.id = id
     self.name = name
     self.createdAt = createdAt
     self.columns = columns
     self.rows = rows
+    self.sharing = sharing
+  }
+
+  /// The same session without local-only details.
+  public var withoutSharing: LocalSessionInfo {
+    LocalSessionInfo(id: id, name: name, createdAt: createdAt, columns: columns, rows: rows)
   }
 
   enum CodingKeys: String, CodingKey {
-    case id, name, columns, rows
+    case id, name, columns, rows, sharing
     case createdAt = "created_at"
+  }
+}
+
+/// Whether paired devices may list and attach to a session, and who is attached.
+public struct LocalSessionSharing: Codable, Sendable, Equatable {
+  public let shared: Bool
+  public let attachments: [LocalAttachmentInfo]
+
+  public init(shared: Bool, attachments: [LocalAttachmentInfo]) {
+    self.shared = shared
+    self.attachments = attachments
+  }
+
+  public var controller: LocalAttachmentInfo? { attachments.first { $0.mode == .control } }
+}
+
+/// One live attachment. A nil device means this Mac.
+public struct LocalAttachmentInfo: Codable, Sendable, Equatable {
+  public let mode: LocalAttachmentMode
+  public let device: LocalRemotePeer?
+
+  public init(mode: LocalAttachmentMode, device: LocalRemotePeer?) {
+    self.mode = mode
+    self.device = device
+  }
+}
+
+/// The paired device a relayed request acts for. Only the Mac's relay
+/// endpoint sets it; remote devices can never supply it.
+public struct LocalRemotePeer: Codable, Sendable, Equatable {
+  public let deviceID: String
+  public let name: String
+
+  public init(deviceID: String, name: String) {
+    self.deviceID = deviceID
+    self.name = name
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case name
+    case deviceID = "device_id"
+  }
+}
+
+/// Remote access through one server, as the Mac's relay endpoint sees it.
+public struct LocalRelayStatus: Codable, Sendable, Equatable {
+  public enum State: String, Codable, Sendable { case connecting, ready }
+  public let server: String
+  public let state: State
+
+  public init(server: String, state: State) {
+    self.server = server
+    self.state = state
   }
 }
 
 public struct LocalAgentStatus: Codable, Sendable, Equatable {
   public let version: Int
   public let tmuxAvailable: Bool
+  /// One entry per server with remote access turned on; empty when it is off.
+  /// Present only in a local `status` response.
+  public let relays: [LocalRelayStatus]?
 
-  public init(version: Int = 1, tmuxAvailable: Bool) {
+  public init(version: Int = 1, tmuxAvailable: Bool, relays: [LocalRelayStatus]? = nil) {
     self.version = version
     self.tmuxAvailable = tmuxAvailable
+    self.relays = relays
   }
 
   enum CodingKeys: String, CodingKey {
-    case version
+    case version, relays
     case tmuxAvailable = "tmux_available"
   }
 }
@@ -68,11 +136,18 @@ public struct LocalAgentRequest: Codable, Sendable, Equatable {
   public let rows: Int?
   public let mode: LocalAttachmentMode?
   public let data: Data?
+  /// `create` only: the absolute directory the shell starts in.
+  public let cwd: String?
+  /// `create` and `share`: whether paired devices may reach the session.
+  public let shared: Bool?
+  /// `list` and `attach` from the Mac's relay endpoint only.
+  public let peer: LocalRemotePeer?
 
   public init(
     version: Int = 1, id: String = UUID().uuidString.lowercased(), operation: LocalAgentOperation,
     sessionID: String? = nil, name: String? = nil, columns: Int? = nil, rows: Int? = nil,
-    mode: LocalAttachmentMode? = nil, data: Data? = nil
+    mode: LocalAttachmentMode? = nil, data: Data? = nil, cwd: String? = nil,
+    shared: Bool? = nil, peer: LocalRemotePeer? = nil
   ) {
     self.version = version
     self.id = id
@@ -83,10 +158,13 @@ public struct LocalAgentRequest: Codable, Sendable, Equatable {
     self.rows = rows
     self.mode = mode
     self.data = data
+    self.cwd = cwd
+    self.shared = shared
+    self.peer = peer
   }
 
   enum CodingKeys: String, CodingKey {
-    case version, id, operation, name, columns, rows, mode, data
+    case version, id, operation, name, columns, rows, mode, data, cwd, shared, peer
     case sessionID = "session_id"
   }
 }

@@ -1,6 +1,22 @@
 import Foundation
 import WitermCore
 
+/// What remote access currently looks like, for the broker's `status` reply.
+/// Ready means the server accepted this Mac's relay connection.
+final class RelayStatusBoard: @unchecked Sendable {
+    private let lock = NSLock()
+    private var states: [String: LocalRelayStatus.State] = [:]
+
+    func set(_ server: String, _ state: LocalRelayStatus.State?) {
+        lock.withLock { states[server] = state }
+    }
+
+    func snapshot() -> [LocalRelayStatus] {
+        lock.withLock { states.map { LocalRelayStatus(server: $0.key, state: $0.value) } }
+            .sorted { $0.server < $1.server }
+    }
+}
+
 /// Owns network connections only. tmux and its shells belong to the local broker.
 /// Keeps one relay listener per enabled server; each server's listener,
 /// tunnels and bridges start and stop independently of the others.
@@ -19,6 +35,7 @@ actor RelayHostCoordinator {
 
     private let settings: RelayHostConfigurationStore
     private let socketURL: URL
+    private let board: RelayStatusBoard
     private let pairingOverride: PairingClient?
     /// Test-supplied clients keyed by normalized server address.
     private let pairingOverrides: [String: PairingClient]
@@ -29,7 +46,9 @@ actor RelayHostCoordinator {
     private var generation = 0
     private var sleeping = false
 
-    init(stateDirectory: URL, pairing: PairingClient? = nil, pairings: [String: PairingClient] = [:]) {
+    init(stateDirectory: URL, pairing: PairingClient? = nil, pairings: [String: PairingClient] = [:],
+         board: RelayStatusBoard = RelayStatusBoard()) {
+        self.board = board
         pairingOverride = pairing
         pairingOverrides = pairings
         settings = RelayHostConfigurationStore(stateDirectory: stateDirectory)
@@ -82,6 +101,7 @@ actor RelayHostCoordinator {
             generation += 1
             let expected = generation
             links[server] = Link(configuration: configuration, generation: expected)
+            board.set(server, .connecting)
             links[server]?.task = Task { [weak self] in
                 await self?.listen(server: server, configuration: configuration, expected: expected)
             }
@@ -94,6 +114,7 @@ actor RelayHostCoordinator {
 
     private func stopLink(_ server: String) async {
         guard let link = links.removeValue(forKey: server) else { return }
+        board.set(server, nil)
         link.task?.cancel()
         for task in link.tunnels.values { task.cancel() }
         await link.listener?.disconnect()
@@ -111,6 +132,7 @@ actor RelayHostCoordinator {
         let old = link.listener, tunnels = link.tunnels, bridges = link.bridges
         link.listener = nil; link.tunnels = [:]; link.bridges = [:]
         links[server] = link
+        board.set(server, .connecting)
         for task in tunnels.values { task.cancel() }
         await old?.disconnect()
         for bridge in bridges.values { await bridge.close() }
@@ -129,6 +151,7 @@ actor RelayHostCoordinator {
                     await connection.disconnect(); return
                 }
                 links[server]?.listener = connection
+                board.set(server, .ready)
                 for try await offer in connection.offers {
                     try Task.checkCancellation()
                     guard isCurrent(server, expected) else { break }
@@ -200,7 +223,7 @@ enum RelayTerminalPolicy {
         case .detach:
             guard attached else { throw AgentFailure(.invalidRequest) }
             allowed = ["version", "id", "operation"]
-        case .create, .close: throw AgentFailure(.invalidRequest)
+        case .create, .close, .share: throw AgentFailure(.invalidRequest)
         }
         guard Set(object.keys).isSubset(of: allowed) else { throw AgentFailure(.invalidRequest) }
         return request
@@ -261,13 +284,16 @@ actor RelayTerminalBridge {
                 switch request.operation {
                 case .status:
                     let status = try await local.status()
-                    try await reply(request, status: status); await awaitPeerClose(); return
+                    // Remote devices learn only whether tmux exists, not this Mac's servers.
+                    try await reply(request, status: LocalAgentStatus(tmuxAvailable: status.tmuxAvailable))
+                    await awaitPeerClose(); return
                 case .list:
-                    let sessions = try await local.sessions()
+                    let sessions = try await local.sessions(peer: peer(grant))
                     try await reply(request, sessions: sessions); await awaitPeerClose(); return
                 case .attach:
                     trace("local-attach-start")
-                    let connection = try await local.attach(sessionID: request.sessionID!, columns: request.columns!, rows: request.rows!, mode: request.mode!)
+                    let connection = try await local.attach(sessionID: request.sessionID!, columns: request.columns!, rows: request.rows!,
+                                                            mode: request.mode!, peer: peer(grant))
                     guard !closed else { await connection.disconnect(); return }
                     attachment = connection
                     trace("local-attach-ready")
@@ -284,6 +310,12 @@ actor RelayTerminalBridge {
                 return
             }
         }
+    }
+
+    /// The paired device this channel acts for. The broker shows it only
+    /// shared sessions.
+    private func peer(_ grant: DeviceGrant) -> LocalRemotePeer {
+        LocalRemotePeer(deviceID: grant.client.id, name: grant.client.name)
     }
 
     private func initialRequest() async throws -> Data {

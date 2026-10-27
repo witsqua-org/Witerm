@@ -12,6 +12,15 @@ All of this ran on a development Mac with Xcode 27, an iPhone 18 Pro iOS 27 simu
 - **Mac service, with real tmux.** Input, `stty size`, exclusive control, read-only limits, alternate-screen redraw, reconnect, and service restart.
   - Resizes are confirmed against the shell's real size, including when tmux delays or drops a pane resize.
 - **Live relay against the real server.** Listing, control and view, handoff right after detach, local revocation, weak networks, and one Mac serving two servers at once.
+- **Sharing.** Unshared sessions stay invisible and can't be attached remotely, even with a valid grant. Stopping sharing disconnects paired devices but keeps the shell and local viewers. Sharing survives a service restart, and remote `status` doesn't reveal the Mac's servers.
+- **Command line.** The real `witerm` binary was run against a private broker, checking exit codes, JSON output, and that remote access is never reported ready while it's off. An attach through a real pseudo-terminal checked typing, resizing, `~.` detach, terminal restoration, and immediate control release. The `witerm` embedded in the signed app reached the installed service's socket without entitlements or a permission prompt.
+- **Signed Mac app with sharing and the command line.** On the installed bundle:
+  - Settings turned the service off and on, and test sessions survived it.
+  - Settings → Command Line installed and removed the link, and the empty state's hint followed.
+  - Sessions started with `witerm`, including one started while the app was open, appeared on their own.
+  - Share and Stop Sharing worked from the header and the context menu, with the status bar matching.
+  - The installed `witerm` attached interactively to the registered service.
+  - This run found and fixed a layout overflow: unbounded wrapping text pushed the terminal header out of the window.
 - **Persistence of the installed, signed service.** The same shell, shell variables, and child process survived each of these:
   - quitting the app
   - a launchd restart

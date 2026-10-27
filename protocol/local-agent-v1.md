@@ -1,6 +1,6 @@
 # Local Agent v1
 
-The Mac background service (`witerm-agent`) hosts shells in a private tmux server and serves them over a Unix socket. The Mac app is one client; the [relay](relay-v1.md) forwards a subset of the same messages to iOS.
+The Mac background service (`witerm-agent`) hosts shells in a private tmux server and serves them over a Unix socket. The Mac app and the `witerm` command are local clients. The [relay](relay-v1.md) forwards a subset of the same messages to iOS, and those reach only shared sessions.
 
 ## Process and files
 
@@ -41,15 +41,16 @@ The Mac background service (`witerm-agent`) hosts shells in a private tmux serve
 
 One UTF-8 JSON object per line, `version` 1. Byte fields are standard Base64, dates are RFC 3339 UTC, and IDs are lowercase UUIDs. Unknown versions, unknown operations, missing fields, and oversized lines are rejected.
 
-**Requests** have `version`, `id` (a UUID echoed in the response), `operation`, and optionally `session_id`, `name`, `columns`, `rows`, `mode`, and `data`.
+**Requests** have `version`, `id` (a UUID echoed in the response), `operation`, and optionally `session_id`, `name`, `columns`, `rows`, `mode`, `data`, `cwd`, `shared`, and `peer`.
 
 | Operation | Fields | Reply |
 |---|---|---|
 | `status` | | `status` |
-| `list` | | `sessions` (always an array) |
-| `create` | `name` (1–64 scalars, no controls), `columns` 20–500, `rows` 5–200 | `session` |
+| `list` | optional `peer` | `sessions` (always an array) |
+| `create` | `name` (1–64 scalars, no controls), `columns` 20–500, `rows` 5–200; optional `cwd`, `shared` | `session` with `sharing` |
 | `close` | `session_id` | ok; ends only sessions this service created |
-| `attach` | `session_id`, `columns`, `rows`, `mode` (`control` or `view`) | `session` and `mode`, then events |
+| `share` | `session_id`, `shared` | `session` with `sharing` |
+| `attach` | `session_id`, `columns`, `rows`, `mode` (`control` or `view`); optional `peer` | `session` and `mode`, then events |
 | `input` | `data` (on an attached connection, controller only) | ok |
 | `resize` | `columns`, `rows` (controller only) | ok, once the shell sees the new size |
 | `detach` | | ok, after control is released; the connection then closes |
@@ -58,14 +59,28 @@ One UTF-8 JSON object per line, `version` 1. Byte fields are standard Base64, da
 
 **Frames** have `version`, `kind` (`response`, `geometry`, `output`, or `closed`), and optionally `id`, `ok`, `error`, `status`, `sessions`, `session`, `mode`, and `data`.
 
-- `status` is `{version, tmux_available}`. Without tmux, `status` still answers and everything else returns `dependency_missing`.
-- `session` is `{id, name, created_at, columns, rows}`.
+- `status` is `{version, tmux_available, relays}`. `relays` has one `{server, state}` per server with remote access on, where `state` is `connecting` or `ready` (the server accepted this Mac); it is empty when remote access is off. Without tmux, `status` still answers and everything else returns `dependency_missing`.
+- `session` is `{id, name, created_at, columns, rows}`. Local `list`, `create`, and `share` replies add `sharing`: `{shared, attachments: [{mode, device}]}`, where `device` is `{device_id, name}` for a paired device and absent for this Mac.
 - The `attach` response always comes before the first output event.
 - A session ending sends `closed`. A lost connection surfaces as a client error.
 
 **Errors.** One of `invalid_request`, `unsupported_version`, `not_found`, `session_busy`, `read_only`, `dependency_missing`, `unavailable`, or `backpressure`. Raw process errors never appear.
 
 **Not allowed.** There are no fields for executables, working directories, environment, or shell commands.
+
+## Sharing
+
+A session is private until shared. Sharing is stored with the session (`sharing.json`, 0600) and survives restarts. Sessions created before sharing existed start private.
+
+- **`peer`.** Only the Mac's relay endpoint sends it, naming the paired device it acts for. Remote devices can't set it: the relay accepts only the remote operations and fields in [relay-v1](relay-v1.md).
+- **With `peer`:**
+  - `list` returns only shared sessions, without `sharing`.
+  - `attach` to an unshared session returns `not_found`.
+- **Stopping sharing** closes that session's paired-device attachments with a `closed` frame carrying `not_found`. Local attachments and the shell keep running.
+- **Creating locally.**
+  - `cwd` sets the shell's absolute start directory. It must exist and be a readable directory: a missing one is `not_found`; a relative path, a non-directory, or `.`/`..` segments are `invalid_request`.
+  - The shell gets `WITERM_SESSION_ID` in its environment. No other environment is copied from the caller.
+- **Never remote.** `create`, `close`, `share`, `cwd`, and `peer` can't arrive through the relay.
 
 ## Geometry
 

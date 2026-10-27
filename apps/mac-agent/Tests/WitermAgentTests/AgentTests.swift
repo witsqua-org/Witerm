@@ -369,6 +369,137 @@ final class AgentTests: XCTestCase {
         throw AgentFailure()
     }
 
+    func testSharingLimitsPairedDevicesAndSurvivesRestart() async throws {
+        guard FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/tmux") else { throw XCTSkip("tmux is required") }
+        let url = try directory()
+        let configuration = try AgentConfiguration(stateDirectory: url, shellPath: "/bin/sh")
+        let board = RelayStatusBoard()
+        board.set("https://relay.example", .ready)
+        var broker: AgentBroker? = try AgentBroker(configuration: configuration, relays: board)
+        try broker?.start()
+        defer {
+            broker?.stop()
+            _ = try? CommandRunner(executable: "/opt/homebrew/bin/tmux", environment: configuration.environment)
+                .run(["-S", url.appendingPathComponent("tmux.sock").path, "kill-server"])
+        }
+        let client = LocalAgentClient(socketURL: url.appendingPathComponent("agent.sock"))
+        let status = try await client.status()
+        XCTAssertEqual(status.relays, [LocalRelayStatus(server: "https://relay.example", state: .ready)])
+        let shared = try await client.create(name: "Shared", shared: true)
+        let hidden = try await client.create(name: "Private")
+        XCTAssertEqual(shared.sharing?.shared, true)
+        XCTAssertEqual(hidden.sharing?.shared, false)
+
+        // A paired device sees only shared sessions, without local details.
+        let phone = LocalRemotePeer(deviceID: UUID().uuidString.lowercased(), name: "Phone")
+        let remoteList = try await client.sessions(peer: phone)
+        XCTAssertEqual(remoteList.map(\.id), [shared.id])
+        XCTAssertNil(remoteList.first?.sharing)
+        do {
+            let leaked = try await client.attach(sessionID: hidden.id, mode: .view, peer: phone)
+            await leaked.disconnect()
+            XCTFail("A paired device attached to an unshared session")
+        } catch LocalAgentClientError.rejected(.notFound) { }
+
+        // The local list names who is attached and who controls.
+        let remote = try await client.attach(sessionID: shared.id, mode: .view, peer: phone)
+        let remoteEvents = remote.events
+        let remoteCapture = TerminalGeometryCapture()
+        let remoteReader = Task.detached {
+            do { for try await event in remoteEvents { try await remoteCapture.append(event) } }
+            catch { await remoteCapture.finish(error: error); return }
+            await remoteCapture.finish()
+        }
+        defer { remoteReader.cancel() }
+        let local = try await client.attach(sessionID: shared.id)
+        let localEvents = local.events
+        let localCapture = TerminalGeometryCapture()
+        let localReader = Task.detached {
+            do { for try await event in localEvents { try await localCapture.append(event) } }
+            catch { await localCapture.finish(error: error); return }
+            await localCapture.finish()
+        }
+        defer { localReader.cancel() }
+        let listed = try await client.sessions().first { $0.id == shared.id }
+        XCTAssertEqual(listed?.sharing?.attachments.count, 2)
+        XCTAssertEqual(listed?.sharing?.controller, LocalAttachmentInfo(mode: .control, device: nil))
+        XCTAssertTrue(listed?.sharing?.attachments.contains(LocalAttachmentInfo(mode: .view, device: phone)) == true)
+
+        // Stopping sharing disconnects the paired device, not this Mac.
+        let stopped = try await client.share(sessionID: shared.id, shared: false)
+        XCTAssertEqual(stopped.sharing?.shared, false)
+        for _ in 0..<100 where !(await remoteCapture.finished) { try await Task.sleep(for: .milliseconds(20)) }
+        let remoteEnded = await remoteCapture.finished, localEnded = await localCapture.finished
+        XCTAssertTrue(remoteEnded, "The paired device stayed attached after sharing stopped")
+        XCTAssertFalse(localEnded, "Stopping sharing disconnected this Mac")
+        let afterStop = try await client.sessions(peer: phone)
+        XCTAssertTrue(afterStop.isEmpty)
+        try await local.send(Data("echo still-here\n".utf8))
+        try await local.detach()
+
+        // Sharing is stored with the session and survives a service restart.
+        _ = try await client.share(sessionID: hidden.id, shared: true)
+        broker?.stop()
+        broker = nil
+        // The stopped broker releases its exclusive lock once its accept loop exits.
+        for _ in 0..<100 where broker == nil {
+            broker = try? AgentBroker(configuration: configuration)
+            if broker == nil { try await Task.sleep(for: .milliseconds(20)) }
+        }
+        try XCTUnwrap(broker).start()
+        let restarted = try await client.sessions()
+        XCTAssertEqual(restarted.first { $0.id == hidden.id }?.sharing?.shared, true)
+        XCTAssertEqual(restarted.first { $0.id == shared.id }?.sharing?.shared, false)
+        let noRelays = try await client.status()
+        XCTAssertEqual(noRelays.relays, [])
+        try await client.close(sessionID: shared.id)
+        try await client.close(sessionID: hidden.id)
+    }
+
+    func testCreateStartsInDirectoryAndNamesItsSession() async throws {
+        guard FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/tmux") else { throw XCTSkip("tmux is required") }
+        let url = try directory()
+        let configuration = try AgentConfiguration(stateDirectory: url, shellPath: "/bin/sh")
+        let broker = try AgentBroker(configuration: configuration)
+        try broker.start()
+        defer {
+            broker.stop()
+            _ = try? CommandRunner(executable: "/opt/homebrew/bin/tmux", environment: configuration.environment)
+                .run(["-S", url.appendingPathComponent("tmux.sock").path, "kill-server"])
+        }
+        let client = LocalAgentClient(socketURL: url.appendingPathComponent("agent.sock"))
+        let workspace = url.appendingPathComponent("work space", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: false)
+        let file = url.appendingPathComponent("plain-file")
+        try Data().write(to: file)
+        for (path, expected) in [(url.appendingPathComponent("missing").path, LocalAgentErrorCode.notFound),
+                                 (file.path, .invalidRequest)] {
+            do { _ = try await client.create(name: "Bad", cwd: path); XCTFail("Accepted start directory \(path)") }
+            catch LocalAgentClientError.rejected(let code) { XCTAssertEqual(code, expected) }
+        }
+        for path in ["relative/dir", url.path + "/../x"] {
+            do { _ = try await client.create(name: "Bad", cwd: path); XCTFail("Accepted start directory \(path)") }
+            catch LocalAgentClientError.rejected(.invalidRequest) { }
+        }
+        let session = try await client.create(name: "In directory", cwd: workspace.path)
+        let attachment = try await client.attach(sessionID: session.id)
+        let events = attachment.events
+        let output = TerminalGeometryCapture()
+        let reader = Task.detached {
+            do { for try await event in events { try await output.append(event) } } catch { }
+            await output.finish()
+        }
+        defer { reader.cancel() }
+        try await attachment.send(Data("printf 'WHERE_''%s|%s\\n' \"$(pwd -P)\" \"$WITERM_SESSION_ID\"\n".utf8))
+        // Foundation's symlink resolution drops /private; the shell's does not.
+        let real = try XCTUnwrap(realpath(workspace.path, nil).map { defer { free($0) }; return String(cString: $0) })
+        for _ in 0..<200 where !(await output.contains("|\(session.id)")) { try await Task.sleep(for: .milliseconds(25)) }
+        let matched = await output.contains("WHERE_\(real)|\(session.id)")
+        XCTAssertTrue(matched, "The shell did not start in the requested directory with its session ID")
+        try await attachment.detach()
+        try await client.close(sessionID: session.id)
+    }
+
     func testDetachAcknowledgementAllowsImmediateControllerHandoff() async throws {
         guard FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/tmux") else { throw XCTSkip("tmux is required") }
         let url = try directory()

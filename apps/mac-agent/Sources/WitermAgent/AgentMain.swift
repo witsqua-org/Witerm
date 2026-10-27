@@ -27,8 +27,10 @@ enum AgentMain {
             } else { throw AgentFailure() }
             _ = umask(0o077)
             signal(SIGPIPE, SIG_IGN)
-            let relay = RelayHostCoordinator(stateDirectory: directory)
-            let broker = try AgentBroker(configuration: AgentConfiguration(stateDirectory: directory, tmuxPath: values["--tmux-path"], shellPath: values["--shell-path"]))
+            let board = RelayStatusBoard()
+            let relay = RelayHostCoordinator(stateDirectory: directory, board: board)
+            let broker = try AgentBroker(configuration: AgentConfiguration(stateDirectory: directory, tmuxPath: values["--tmux-path"], shellPath: values["--shell-path"]),
+                                         relays: board)
             signal(SIGTERM, SIG_IGN); signal(SIGINT, SIG_IGN)
             let term = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
             let interrupt = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
