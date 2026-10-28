@@ -134,11 +134,13 @@ private struct ServerEditor: ViewModifier {
         content.sheet(item: $request) { request in
             switch request {
             case .add:
-                ServerAddressSheet(title: String(localized: "Add Server", bundle: .main), address: "") { address in
+                ServerAddressSheet(title: String(localized: "Add Continuation Server", bundle: .main),
+                                   actionTitle: String(localized: "Add and Check", bundle: .main), address: "") { address in
                     do throws(ServerList.Failure) { try servers.add(address); return nil } catch { return error.message }
                 }
             case .edit(let server):
-                ServerAddressSheet(title: String(localized: "Edit Server", bundle: .main), address: server.address) { address in
+                ServerAddressSheet(title: String(localized: "Edit Continuation Server", bundle: .main),
+                                   actionTitle: String(localized: "Save and Check", bundle: .main), address: server.address) { address in
                     do throws(ServerList.Failure) { try servers.validate(address, replacing: server) } catch { return error.message }
                     #if os(macOS)
                     if ServerAddressKey(address) != ServerAddressKey(server.address) {

@@ -18,6 +18,10 @@ public enum ServerClientError: Error, Sendable {
     case invalidAddress
     case unavailable
     case incompatibleServer
+    /// Something answered, but not a Witerm server (a web page, a proxy's 404).
+    case notWiterm
+    /// A Witerm server that answered but reports it isn't ready.
+    case notReady
 }
 
 public actor ServerClient {
@@ -52,13 +56,11 @@ public actor ServerClient {
     public func checkConnection(address: String) async throws -> ServerInfo {
         let base = try Self.validatedURL(for: address)
         let (data, status) = try await fetch(base.appendingPathComponent("v1/info"), limit: Self.infoLimit)
-        guard status == 200 else { throw ServerClientError.unavailable }
-        let info = try JSONDecoder().decode(ServerInfo.self, from: data)
-        guard info.service == "witerm", info.protocolVersion == 1 else {
-            throw ServerClientError.incompatibleServer
-        }
+        guard status == 200, let info = try? JSONDecoder().decode(ServerInfo.self, from: data),
+              info.service == "witerm" else { throw ServerClientError.notWiterm }
+        guard info.protocolVersion == 1 else { throw ServerClientError.incompatibleServer }
         let (_, readiness) = try await fetch(base.appendingPathComponent("readyz"), limit: Self.readinessLimit)
-        guard readiness == 200 else { throw ServerClientError.unavailable }
+        guard readiness == 200 else { throw ServerClientError.notReady }
         return info
     }
 

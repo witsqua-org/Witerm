@@ -10,8 +10,12 @@ final class ServerList {
     private static let storageKey = "witerm.serverAddresses"
     /// The single address saved by earlier versions; read once, then replaced.
     private static let legacyKey = "witerm.serverAddress"
+    /// The address of the server new pairings and invitations go through.
+    private static let selectedKey = "witerm.continuationServer"
 
     private(set) var servers: [ConnectionModel]
+    /// The chosen server, by address, so editing its spelling keeps the choice.
+    private var selectedAddress: String?
 
     enum Failure: Error, Equatable {
         case duplicate, full
@@ -38,6 +42,7 @@ final class ServerList {
             .filter { !$0.isEmpty }
             .prefix(Self.limit)
             .map(ConnectionModel.init(address:))
+        selectedAddress = defaults.string(forKey: Self.selectedKey)
     }
 
     var isFull: Bool { servers.count >= Self.limit }
@@ -47,6 +52,21 @@ final class ServerList {
         servers.first { $0.id == id }
     }
 
+    /// The one server every pairing and invitation screen uses, so a code is
+    /// never made for a server other than the one shown. Falls back to the
+    /// first server that offers continuation, then the first saved.
+    var selected: ConnectionModel? {
+        let key = selectedAddress.map(ServerAddressKey.init)
+        return servers.first { key != nil && ServerAddressKey($0.address) == key }
+            ?? servers.first { $0.supportsRelay && $0.supportsPairing }
+            ?? servers.first
+    }
+
+    func select(_ server: ConnectionModel) {
+        selectedAddress = server.address
+        UserDefaults.standard.set(server.address, forKey: Self.selectedKey)
+    }
+
     /// Adds and checks a server. The address must already be validated.
     @discardableResult
     func add(_ address: String) throws(Failure) -> ConnectionModel {
@@ -54,6 +74,8 @@ final class ServerList {
         let server = ConnectionModel(address: address)
         servers.append(server)
         save()
+        // Someone adding a server means to use it.
+        select(server)
         server.check()
         return server
     }
@@ -68,8 +90,10 @@ final class ServerList {
         try validate(address, replacing: server)
         // Saving the same address again re-checks it.
         guard address != server.address else { server.check(); return }
+        let wasSelected = selected?.id == server.id
         server.update(address: address)
         save()
+        if wasSelected { select(server) }
     }
 
     /// On Mac, remove the server's remote access first.
