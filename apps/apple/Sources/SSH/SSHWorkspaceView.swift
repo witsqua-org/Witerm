@@ -7,6 +7,8 @@ struct SSHEditorRequest: Identifiable {
     let profile: SSHProfile?
     let credentials: [UUID: SSHCredential]
     let purpose: SSHFormPurpose
+    /// `user@host:port` to start a new host from.
+    var address: String? = nil
 }
 
 /// Sheet and alert state for the SSH workspace, shared by the Mac sidebar and
@@ -40,17 +42,19 @@ final class SSHWorkspaceUI {
     #endif
     private(set) var visible = false
     @ObservationIgnored private var request = UUID()
-    @ObservationIgnored private var newRequested = false
+    @ObservationIgnored private var newRequested: String?? = nil
 
     /// For commands issued from another tab: presents once the workspace appears.
-    func presentNewWhenVisible() {
-        if visible { presentNew() } else { newRequested = true }
+    func presentNewWhenVisible(address: String? = nil) {
+        if visible { presentNew(address: address) } else { newRequested = .some(address) }
     }
 
-    func presentNew() {
+    func presentNew() { presentNew(address: nil) }
+
+    func presentNew(address: String?) {
         guard visible else { return }
         request = UUID()
-        editorRequest = SSHEditorRequest(profile: nil, credentials: [:], purpose: .new)
+        editorRequest = SSHEditorRequest(profile: nil, credentials: [:], purpose: .new, address: address)
     }
 
     /// Connects at once when every hop has credentials the person explicitly
@@ -84,7 +88,7 @@ final class SSHWorkspaceUI {
 
     func appeared() {
         visible = true
-        if newRequested { newRequested = false; presentNew() }
+        if let address = newRequested { newRequested = nil; presentNew(address: address) }
     }
 
     func disappeared() {
@@ -114,6 +118,7 @@ struct SSHPresentations: ViewModifier {
                 }
             }) { request in
                 SSHProfileForm(profile: request.profile, credentials: request.credentials, purpose: request.purpose,
+                               address: request.address,
                                onSave: { profile, auth, remember in
                     guard ui.visible, ui.editorRequest?.id == request.id else { throw CancellationError() }
                     try await model.saveProfile(profile, credentials: auth, remember: remember)

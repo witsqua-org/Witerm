@@ -32,15 +32,23 @@ struct ConnectionIssue: Equatable {
     let title: String
     let recovery: String
 
-    init(error: Error) {
+    /// `host` names the server in the recovery text, so you know which one failed.
+    init(error: Error, host: String? = nil) {
+        let server = host ?? String(localized: "The server", bundle: .main)
         if let error = error as? ServerClientError {
             switch error {
             case .invalidAddress:
                 title = String(localized: "Invalid Address Format", bundle: .main)
-                recovery = String(localized: "Enter a complete HTTP or HTTPS address in Server Settings.", bundle: .main)
+                recovery = String(localized: "Enter the server’s host name, such as witerm.example.com.", bundle: .main)
             case .incompatibleServer:
                 title = String(localized: "Incompatible Server Version", bundle: .main)
-                recovery = String(localized: "Check that this is a Witerm server, then update the app or server.", bundle: .main)
+                recovery = String(localized: "\(server) runs a Witerm version this app can’t use. Update the server or the app.", bundle: .main)
+            case .notWiterm:
+                title = String(localized: "Not a Continuation Server", bundle: .main)
+                recovery = String(localized: "\(server) answered, but it isn’t a Witerm continuation server. If Witerm runs behind a reverse proxy such as nginx, check that the proxy forwards /v1/ and /readyz.", bundle: .main)
+            case .notReady:
+                title = String(localized: "Server Not Ready", bundle: .main)
+                recovery = String(localized: "\(server) is running but not ready. Its database may be unavailable. Try again shortly.", bundle: .main)
             case .unavailable:
                 title = String(localized: "Server Unavailable", bundle: .main)
                 recovery = String(localized: "Check that the server is running, then try again.", bundle: .main)
@@ -52,16 +60,20 @@ struct ConnectionIssue: Equatable {
                 recovery = String(localized: "Connect to Wi-Fi or a cellular network, then try again.", bundle: .main)
             case .timedOut:
                 title = String(localized: "Server Timed Out", bundle: .main)
-                recovery = String(localized: "Check your network and server address, then try again.", bundle: .main)
+                recovery = String(localized: "\(server) didn’t answer. Check your network, or that the server is running.", bundle: .main)
             case .cannotFindHost, .dnsLookupFailed:
                 title = String(localized: "Server Not Found", bundle: .main)
-                recovery = String(localized: "Check the server’s domain name.", bundle: .main)
+                recovery = host.map { String(localized: "No server named \($0) was found. Check the spelling.", bundle: .main) }
+                    ?? String(localized: "Check the server’s domain name.", bundle: .main)
+            case .cannotConnectToHost:
+                title = String(localized: "Connection Refused", bundle: .main)
+                recovery = String(localized: "\(server) refused the connection. Check the port, and that Witerm is running there.", bundle: .main)
             case .appTransportSecurityRequiresSecureConnection:
                 title = String(localized: "Secure Connection Required", bundle: .main)
                 recovery = String(localized: "Change the server address to HTTPS.", bundle: .main)
             case .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate, .serverCertificateHasUnknownRoot:
                 title = String(localized: "Unable to Verify Secure Connection", bundle: .main)
-                recovery = String(localized: "Check the server’s HTTPS certificate and your device’s date and time.", bundle: .main)
+                recovery = String(localized: "\(server)’s certificate isn’t trusted. Check the certificate, or this device’s date and time.", bundle: .main)
             default:
                 title = String(localized: "Unable to Connect to Server", bundle: .main)
                 recovery = String(localized: "Check the address, network and server, then try again.", bundle: .main)
@@ -153,7 +165,7 @@ final class ConnectionModel: Identifiable {
                 self.successCount += 1
             } catch {
                 guard !Task.isCancelled, let self else { return }
-                self.phase = .failed(ConnectionIssue(error: error))
+                self.phase = .failed(ConnectionIssue(error: error, host: self.displayName))
                 self.failureCount += 1
             }
         }
