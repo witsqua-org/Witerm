@@ -4,7 +4,7 @@ The apps connect straight to SSH servers. Witerm Server, pairing, and Allow Remo
 
 ## Hosts
 
-Saved hosts are under **SSH Hosts** in the Mac sidebar. On iOS they're in **Terminals**, where connected hosts move to **Open** and show their folder, last line, and what's running, and in **Machines**, which manages them. Search matches names and addresses; favorites come first, then recently connected hosts. On a regular-width iPad, the list stays beside the terminal.
+Saved hosts are under **SSH Hosts** in the Mac sidebar. On iOS they're in **Terminals**, where connected hosts move to **Open** and show their folder, last line, and what's running, and in **Devices**, which manages them. Search matches names and addresses; favorites come first, then recently connected hosts. On a regular-width iPad, the list stays beside the terminal.
 
 **Adding a host.** File → New SSH Connection (⇧⌘N) on the Mac, or the add button on iOS. Type the address the way you would in a shell: `user@host`, `user@host:port`, `user@[fe80::1]:2222`, or an `ssh://` URL. The form shows what it understood as User, Host, and Port chips under the field. Then pick **Password** or **Private Key**: a **New Key** made on the device (copy its public key to the server) or an **Existing Key** file, OpenSSH Ed25519, plain or passphrase-protected.
 

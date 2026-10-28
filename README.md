@@ -4,7 +4,7 @@ An SSH client and Mac terminal continuity app for macOS, iPhone, and iPad.
 
 - **Direct SSH** from Mac or iOS: host-key verification, jump hosts, SFTP, port forwarding. No server needed.
 - **Mac terminals that outlive the app.** A background service keeps shells running in a private tmux server after you close the window or quit.
-- **Continue on iPhone.** Paired devices view or type in the Mac sessions you allow, alongside the Mac, over an end-to-end encrypted relay. Share a single session with a link, without pairing. The server never sees terminal contents.
+- **Continue on another device.** Paired devices view or type in the Mac sessions you allow, alongside the Mac, over an end-to-end encrypted relay. Share a single session with a link, without pairing. The server never sees terminal contents.
 - **Command line.** `witerm new --share` starts a shared session in the current folder. The app and the command see the same sessions.
 
 The apps follow the system language (English or Simplified Chinese) and light/dark appearance.
@@ -66,17 +66,18 @@ The Mac app needs `tmux` (`brew install tmux`). Keychain access needs a normally
 | Connect over SSH | Mac: File → New SSH Connection (⇧⌘N). iOS: the + button in Terminals. Verify each host's fingerprint on first connect. |
 | Open a Mac terminal | Start the local service from the main window, then create a session under **This Mac**. |
 | Use the command line | Settings → Command Line → Install, then run `witerm new` in any folder. |
-| Continue on iPhone | See below. |
-| Share one session without pairing | Session context menu → **Share with a Link…**; on iOS, Machines → **Open Shared Session…** |
+| Continue a session on another device | See below. |
+| Share one session without pairing | **Continue on Another Device…** → **Someone Else's Device**; on iOS, **Continue from Another Device** |
 
-**Continue on iPhone:**
+**Continue on another device:**
 
-1. On the Mac, choose **File → Pair iPhone or iPad…** (⌥⌘P, or the button under **This Mac** in the sidebar). Its QR code appears at once. **Continue on iPhone…** in a session's header walks through the same setup as a checklist.
-2. Use the same server on both devices and turn on remote access.
-3. On iOS, choose **Continue from My Mac** (first use) and scan or paste the Mac's invitation. Check the fingerprint and send the request.
-4. On the Mac, approve view-only or control access, and whether the device reaches all sessions or only those you share.
+1. On the Mac, select a session and choose **Continue on Another Device…** (its header, context menu, or File, ⌥⌘P). The sheet goes one step at a time and skips steps already done.
+2. **Server:** pick the continuation server and turn on remote access if asked. Settings → Devices uses the same server.
+3. **Device:** choose a paired device, or **Pair a New Device** to show a code.
+4. On iOS, choose **Continue from Another Device** (first use, or the Devices tab) and scan or paste the code. A new server is added only when you tap Request Access.
+5. On the Mac, compare the code and approve. By default the device can open only this session, and type.
 
-The Mac and the sessions it allows then appear in the iOS **Terminals** tab. The phone can type while the Mac stays attached. Each app can use up to 8 servers at once.
+The session then opens on the phone. Paired devices and the sessions they may open also appear in the iOS **Terminals** tab. The phone can type while the Mac stays attached. Each app can use up to 8 servers at once.
 
 ## Development
 
