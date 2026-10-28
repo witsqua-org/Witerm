@@ -40,7 +40,7 @@ struct OfflineBanner: View {
         #if os(macOS)
         String(localized: "SSH hosts and paired devices can't be reached. Terminals on this Mac keep running. Reconnect when the network returns; earlier input is never resent.", bundle: .main)
         #else
-        String(localized: "SSH hosts and your Mac can't be reached. Reconnect when the network returns; earlier input is never resent.", bundle: .main)
+        String(localized: "SSH hosts and your other devices can't be reached. Reconnect when the network returns; earlier input is never resent.", bundle: .main)
         #endif
     }
 }

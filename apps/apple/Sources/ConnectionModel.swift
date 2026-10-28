@@ -80,7 +80,7 @@ struct ConnectionIssue: Equatable {
             }
         } else {
             title = String(localized: "Unrecognized Server Response", bundle: .main)
-            recovery = String(localized: "Check that you entered a Witerm server address.", bundle: .main)
+            recovery = String(localized: "Check that you entered a continuation server address.", bundle: .main)
         }
     }
 }

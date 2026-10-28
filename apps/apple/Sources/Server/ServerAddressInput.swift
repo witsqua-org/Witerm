@@ -123,7 +123,7 @@ struct ServerAddressInput: Equatable {
         case .credentials?: String(localized: "Continuation servers don’t sign in this way.", bundle: .main)
         case .path(let path)?: String(localized: "Remove “\(path)”. Witerm adds the paths it needs.", bundle: .main)
         case .insecure?: String(localized: "Only a server on this device can use plain HTTP.", bundle: .main)
-        case .unsupportedScheme(let scheme)?: String(localized: "Witerm servers use HTTPS, not \(scheme).", bundle: .main)
+        case .unsupportedScheme(let scheme)?: String(localized: "Continuation servers use HTTPS, not \(scheme).", bundle: .main)
         case .invalid?: String(localized: "Enter a host name, such as witerm.example.com.", bundle: .main)
         }
     }

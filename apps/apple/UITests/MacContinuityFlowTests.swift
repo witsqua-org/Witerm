@@ -2,8 +2,9 @@ import XCTest
 
 /// Opt-in acceptance with a Mac through a real server, run together with the
 /// Mac's `PhoneContinuityFlowTests`. The two runs meet through files in
-/// WITERM_E2E_DIR. Pairs this device, opens the Mac's fresh session, types
-/// alongside the Mac, and exercises the terminal's touch gestures.
+/// WITERM_E2E_DIR. Continues the Mac's fresh session here (the session opens
+/// as soon as the Mac approves), types alongside the Mac, and exercises the
+/// terminal's touch gestures.
 @MainActor
 final class MacContinuityFlowTests: XCTestCase {
     private var folder: URL!
@@ -40,50 +41,36 @@ final class MacContinuityFlowTests: XCTestCase {
         folder = URL(fileURLWithPath: directory)
         macFolder = URL(fileURLWithPath: macDirectory)
         app = XCUIApplication()
-        app.launchArguments = ["-witerm.serverAddresses", "(\"\(server)\")", "-witerm.startTask", "mac",
+        app.launchArguments = ["-witerm.serverAddresses", "(\"\(server)\")",
                                "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
                                // A blinking caret never lets XCTest see the app idle.
                                "--witerm-ui-test-steady-terminal-cursor"]
         app.launch()
         addTeardownBlock { [app] in await MainActor.run { app?.terminate() } }
 
-        // Pair from Machines once the server answers.
-        app.tabBars.buttons["Machines"].tap()
-        let pair = app.buttons["devicePairing"].firstMatch
-        XCTAssertTrue(pair.waitForExistence(timeout: 30), "The server never offered pairing")
-        shot("01-machines")
+        // Continue from Another Device, in Devices.
+        app.tabBars.buttons["Devices"].tap()
+        let start = app.buttons["continueFromDevice"]
+        XCTAssertTrue(start.waitForExistence(timeout: 30))
+        shot("01-devices")
         let invitation = try XCTUnwrap(awaitSignal("invitation.txt", timeout: 240), "The Mac never published an invitation")
-        let session = try XCTUnwrap(awaitSignal("session.txt", timeout: 5))
-        pair.tap()
-        let field = any("pairingInvitationField")
+        _ = try XCTUnwrap(awaitSignal("session.txt", timeout: 5))
+        start.tap()
+        app.buttons["typeInvitation"].tap()
+        let field = any("sessionInvitationField")
         XCTAssertTrue(field.waitForExistence(timeout: 15))
-        field.tap()
         field.typeText(invitation)
         app.buttons["preparePairing"].tap()
+        // Typed, so the check screen shows the Mac's code.
         let join = app.buttons["joinPairing"]
         XCTAssertTrue(join.waitForExistence(timeout: 10))
-        shot("02-review")
+        shot("02-check")
         join.tap()
+        XCTAssertTrue(any("pairingActivity").waitForExistence(timeout: 10))
         shot("03-waiting")
         XCTAssertNotNil(awaitSignal("approved", timeout: 240), "The Mac never approved")
-        XCTAssertTrue(any("pairingOutcome").waitForExistence(timeout: 30))
-        shot("04-paired")
-        app.buttons["closePairing"].tap()
 
-        // Open the Mac in Terminals and its fresh session.
-        app.tabBars.buttons["Terminals"].tap()
-        let mac = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "remoteMac-")).firstMatch
-        XCTAssertTrue(mac.waitForExistence(timeout: 30))
-        shot("05-terminals")
-        mac.tap()
-        let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "remoteSession-", session)).firstMatch
-        XCTAssertTrue(row.waitForExistence(timeout: 30), "The session didn't appear")
-        shot("06-sessions")
-        // Pull to refresh keeps the list.
-        let top = app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
-        top.press(forDuration: 0.05, thenDragTo: app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75)))
-        XCTAssertTrue(row.waitForExistence(timeout: 20))
-        row.tap()
+        // Allowed one session, the phone opens it directly.
         let status = any("terminalInputStatus")
         XCTAssertTrue(status.waitForExistence(timeout: 30))
         let typing = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "Input Enabled"), object: status)
@@ -120,9 +107,10 @@ final class MacContinuityFlowTests: XCTestCase {
         shot("10-selection")
         app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.6)).tap()
 
-        // An edge swipe goes back to the sessions.
+        // An edge swipe goes back to the device's sessions.
         app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.5))
             .press(forDuration: 0.05, thenDragTo: app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)))
+        let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "remoteSession-")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 15), "The edge swipe didn't go back")
         shot("11-back")
         signal("phone-done")

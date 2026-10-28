@@ -2,11 +2,12 @@ import Foundation
 import XCTest
 
 /// Opt-in acceptance against the fixed, signed development app. Only the
-/// freshly created session is shared or ended; remote access is never enabled.
+/// freshly created session is ended; nothing is shared and remote access is
+/// never enabled.
 @MainActor
 @available(macOS 27.0, *)
-final class HandoffFlowTests: XCTestCase {
-    func testPreparationAndSharingOfFreshSession() throws {
+final class ContinueFlowTests: XCTestCase {
+    func testContinueSheetStartsAtTheFirstUnfinishedStep() throws {
         continueAfterFailure = false
         guard let path = ProcessInfo.processInfo.environment["WITERM_HCI_FIXED_APP"],
               let id = ProcessInfo.processInfo.environment["WITERM_HCI_SESSION_ID"],
@@ -32,7 +33,7 @@ final class HandoffFlowTests: XCTestCase {
         XCTAssertTrue(row.label.hasPrefix("HCI acceptance"))
         addTeardownBlock {
             await MainActor.run {
-                if app.buttons["Done"].exists { app.buttons["Done"].click() }
+                if app.buttons["continueCancel"].exists { app.buttons["continueCancel"].click() }
                 guard row.exists else { return }
                 row.rightClick()
                 app.menuItems["End Session"].click()
@@ -45,25 +46,24 @@ final class HandoffFlowTests: XCTestCase {
         }
 
         row.rightClick()
-        app.menuItems["Continue on iPhone…"].click()
-        let readiness = app.descendants(matching: .any)["handoffReadiness"].firstMatch
-        XCTAssertTrue(readiness.waitForExistence(timeout: 10))
-        XCTAssertTrue(((readiness.value as? String ?? "") + readiness.label).contains("Prepare This Session"))
-        let sharing = app.descendants(matching: .any)["handoffShareSession"].firstMatch
-        // Pairing controls may precede the sharing toggle in the scrolling sheet.
-        for _ in 0..<8 where !sharing.isHittable { app.sheets.scrollViews.firstMatch.swipeUp() }
-        XCTAssertTrue(sharing.isHittable)
-        sharing.click()
-        let shared = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == 1"), object: sharing)
-        wait(for: [shared], timeout: 10)
-        // Sharing alone must never imply that the phone can reach the Mac.
-        XCTAssertFalse(((readiness.value as? String ?? "") + readiness.label).contains("Ready to Open on iPhone"))
+        app.menuItems["Continue on Another Device…"].click()
+        let title = app.staticTexts["continueStepTitle"]
+        XCTAssertTrue(title.waitForExistence(timeout: 10))
+        // Remote access stays off in this run, so the sheet stops at the server
+        // step unless this Mac already allows it; it never skips ahead silently.
+        XCTAssertTrue(["Connect This Mac", "Choose a Device"].contains(title.label), title.label)
+        if title.label == "Choose a Device" {
+            XCTAssertTrue(app.descendants(matching: .any)["continueNewDevice"].firstMatch.exists)
+            XCTAssertTrue(app.descendants(matching: .any)["continueGuest"].firstMatch.exists)
+        }
         let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "handoff-preparation"
+        attachment.name = "continue-on-another-device"
         attachment.lifetime = .keepAlways
         add(attachment)
-        sharing.click()
-        let privateAgain = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == 0"), object: sharing)
-        wait(for: [privateAgain], timeout: 10)
+        app.buttons["continueCancel"].click()
+        let closed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: title)
+        wait(for: [closed], timeout: 5)
+        // Cancelling shares nothing.
+        XCTAssertFalse(app.descendants(matching: .any)["localSession-" + id].firstMatch.value as? String ?? "" == "Shared")
     }
 }

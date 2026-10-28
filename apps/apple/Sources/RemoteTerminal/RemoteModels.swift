@@ -66,7 +66,7 @@ struct MacDeviceDetails: View {
                 LabeledContent(String(localized: "Server", bundle: .main), value: server.address)
                 LabeledContent(String(localized: "Access Level", bundle: .main), value: grant.permission == .view
                                ? String(localized: "View Only", bundle: .main) : String(localized: "Can Type", bundle: .main))
-                LabeledContent(String(localized: "Device Fingerprint", bundle: .main)) {
+                LabeledContent(String(localized: "Device Code", bundle: .main)) {
                     Text(PairingFingerprint.display(publicKey: grant.host.publicKey))
                         .font(.body.monospaced()).textSelection(.enabled)
                 }
