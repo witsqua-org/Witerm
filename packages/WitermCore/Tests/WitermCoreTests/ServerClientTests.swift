@@ -54,6 +54,21 @@ final class ServerClientTests: XCTestCase {
         }
     }
 
+    func testDiagnosticsTellOtherServersFromWiterm() async throws {
+        for body in [Data("<html><body>Welcome to nginx!</body></html>".utf8),
+                     Data(#"{"service":"other","protocol_version":1,"capabilities":[]}"#.utf8)] {
+            do {
+                _ = try await stubbedClient(info: body, readiness: .init(body: Data())).checkConnection(address: "http://localhost:8080")
+                XCTFail("another server was accepted")
+            } catch ServerClientError.notWiterm {}
+        }
+        let newer = Data(#"{"service":"witerm","protocol_version":2,"capabilities":[]}"#.utf8)
+        do {
+            _ = try await stubbedClient(info: newer, readiness: .init(body: Data())).checkConnection(address: "http://localhost:8080")
+            XCTFail("an incompatible version was accepted")
+        } catch ServerClientError.incompatibleServer {}
+    }
+
     func testDiagnosticsBoundTheWholeResponseTime() async throws {
         let client = stubbedClient(info: info, readiness: .init(body: Data("o".utf8), finish: false), timeout: 1)
         let began = ContinuousClock.now

@@ -65,7 +65,7 @@ struct SSHProfileForm: View {
     @State private var importingKeyHost: UUID?
     @Environment(\.dynamicTypeSize) private var typeSize
 
-    init(profile: SSHProfile?, credentials: [UUID: SSHCredential], purpose: SSHFormPurpose,
+    init(profile: SSHProfile?, credentials: [UUID: SSHCredential], purpose: SSHFormPurpose, address: String? = nil,
          onSave: @escaping (SSHProfile, [UUID: SSHCredential], Set<UUID>) async throws -> Void,
          onConnect: @escaping (SSHProfile, [UUID: SSHCredential], Set<UUID>) -> Void) {
         self.profile = profile; self.onConnect = onConnect; self.purpose = purpose; self.onSave = onSave
@@ -75,7 +75,9 @@ struct SSHProfileForm: View {
         _profileID = State(initialValue: profile?.id ?? UUID())
         _name = State(initialValue: profile?.name ?? "")
         let host = profile?.host ?? SSHHost(hostname: "", username: "")
-        _target = State(initialValue: SSHHostDraft(host, credential: credentials[host.id]))
+        var draft = SSHHostDraft(host, credential: credentials[host.id])
+        if profile == nil, let address { draft.address = address }
+        _target = State(initialValue: draft)
         _jumps = State(initialValue: (profile?.jumpHosts ?? []).map {
             SSHHostDraft($0, credential: credentials[$0.id])
         })
