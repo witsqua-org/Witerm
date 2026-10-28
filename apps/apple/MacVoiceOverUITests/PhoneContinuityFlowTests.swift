@@ -4,9 +4,10 @@ import XCTest
 
 /// Opt-in acceptance with an iPhone (or simulator) through a real server,
 /// run together with `MacContinuityFlowTests` on the phone. The two runs
-/// meet through files in WITERM_E2E_DIR. Creates one fresh session, pairs
-/// the phone with control over all sessions, types alongside it, then ends
-/// the session and revokes that pairing. Nothing else is touched. The
+/// meet through files in WITERM_E2E_DIR. Creates one fresh session, continues
+/// it on the phone (pairing it for that session only, with typing), types
+/// alongside it, then ends the session and revokes that pairing. Nothing
+/// else is touched; remote access through the server must already be on. The
 /// sandboxed runner reads the phone's files from WITERM_E2E_DIR and writes
 /// its own to `witerm-e2e` in its temporary folder.
 @MainActor
@@ -32,9 +33,9 @@ final class PhoneContinuityFlowTests: XCTestCase {
         return nil
     }
 
-    /// Chooses the server in a sheet's picker, when it shows one.
+    /// Chooses the server in the continue sheet's picker, when it shows one.
     private func chooseServer(_ host: String) {
-        let picker = app.sheets.popUpButtons.firstMatch
+        let picker = app.sheets.popUpButtons["continuationServerPicker"].firstMatch
         guard picker.waitForExistence(timeout: 3) else { return }
         guard !(picker.value as? String ?? "").contains(host) else { return }
         picker.click()
@@ -75,7 +76,7 @@ final class PhoneContinuityFlowTests: XCTestCase {
             await MainActor.run {
                 guard let app else { return }
                 // A sheet left open by a failure would block the menu.
-                if app.buttons["closePairing"].exists { app.buttons["closePairing"].click() }
+                for button in ["continueCancel", "continueDone"] where app.buttons[button].exists { app.buttons[button].click() }
                 guard row.waitForExistence(timeout: 3) else { return }
                 row.rightClick()
                 app.menuItems["End Session"].click()
@@ -87,28 +88,47 @@ final class PhoneContinuityFlowTests: XCTestCase {
         row.click()
         shot("01-session")
 
-        // The pairing sheet opens straight to a QR code.
+        // Continue on Another Device: Server, Device, Approve, Open.
         app.typeKey("p", modifierFlags: [.command, .option])
-        chooseServer(host)
+        let title = app.staticTexts["continueStepTitle"]
+        XCTAssertTrue(title.waitForExistence(timeout: 15))
+        if title.label == "Connect This Mac" {
+            chooseServer(host)
+            let primary = app.buttons["continuePrimary"]
+            let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Continue"), object: primary)
+            if XCTWaiter.wait(for: [ready], timeout: 30) != .completed, title.label == "Connect This Mac" {
+                XCTFail("Turn on remote access through \(host) before this run: \(primary.label)")
+            }
+            if title.label == "Connect This Mac" { primary.click() }
+        }
+        let newDevice = app.descendants(matching: .any)["continueNewDevice"].firstMatch
+        XCTAssertTrue(newDevice.waitForExistence(timeout: 30), "The device step didn't appear")
+        newDevice.click()
+        app.buttons["continuePrimary"].click()
         let copy = app.buttons["copyPairingInvitation"]
-        XCTAssertTrue(copy.waitForExistence(timeout: 30), "The pairing sheet didn't show an invitation")
-        shot("02-pair-sheet")
+        XCTAssertTrue(copy.waitForExistence(timeout: 30), "The sheet didn't show a code")
+        XCTAssertTrue(app.sheets.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", host)).firstMatch.exists,
+                      "The code step didn't name its server")
+        shot("02-code")
         NSPasteboard.general.clearContents()
         copy.click()
         let invitation = try XCTUnwrap(NSPasteboard.general.string(forType: .string))
         XCTAssertTrue(invitation.hasPrefix("witerm://pair") && invitation.contains(host))
         signal("invitation.txt", invitation)
 
-        // Approve the phone with control over every session.
-        let approve = app.buttons["approvePairing"]
+        // Approve with the defaults: this session only, and typing.
+        let approve = app.buttons["continueApprove"]
         XCTAssertTrue(approve.waitForExistence(timeout: 240), "No pairing request arrived")
-        app.descendants(matching: .any)["pairingPermissionControl"].firstMatch.click()
         shot("03-request")
         approve.click()
-        XCTAssertTrue(app.descendants(matching: .any)["pairingOutcome"].firstMatch.waitForExistence(timeout: 30))
+        let done = app.buttons["continueDone"]
+        XCTAssertTrue(done.waitForExistence(timeout: 30))
         shot("04-approved")
-        app.buttons["closePairing"].click()
         signal("approved")
+        let connected = app.descendants(matching: .any)["continueConnected"].firstMatch
+        XCTAssertTrue(connected.waitForExistence(timeout: 300), "The sheet never saw the phone connect")
+        shot("04b-connected")
+        done.click()
 
         // Type alongside the phone in the same session.
         let phone = try XCTUnwrap(awaitSignal("phone-attached", timeout: 300), "The phone never attached")
@@ -127,16 +147,20 @@ final class PhoneContinuityFlowTests: XCTestCase {
         XCTAssertNotNil(awaitSignal("phone-done", timeout: 300), "The phone didn't finish")
         shot("06-after")
 
-        // Revoke only this test's pairing.
-        app.typeKey("p", modifierFlags: [.command, .option])
-        chooseServer(host)
-        let revoke = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "revokeGrant-", phone)).firstMatch
-        XCTAssertTrue(revoke.waitForExistence(timeout: 20))
+        // Revoke only this test's pairing, in Settings → Devices.
+        app.typeKey(",", modifierFlags: .command)
+        let devicesTab = app.toolbars.buttons["Devices"].firstMatch
+        XCTAssertTrue(devicesTab.waitForExistence(timeout: 10))
+        devicesTab.click()
+        let edit = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "editDevice-", phone)).firstMatch
+        XCTAssertTrue(edit.waitForExistence(timeout: 20))
+        edit.click()
+        let revoke = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "revokeGrant-")).firstMatch
+        XCTAssertTrue(revoke.waitForExistence(timeout: 10))
         revoke.click()
         let confirm = app.buttons["action-button-1"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 5))
         confirm.click()
         RunLoop.current.run(until: Date().addingTimeInterval(2))
-        app.buttons["closePairing"].click()
     }
 }

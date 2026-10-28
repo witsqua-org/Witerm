@@ -3,23 +3,20 @@ import SwiftUI
 import WitermCore
 import WitermSSH
 
-enum MachinesRoute: Hashable { case macSetup }
-
-/// Managing the machines terminals run on: paired Macs and pairing, and saved
-/// SSH hosts. Opening a machine's terminal happens in Terminals.
-struct MachinesView: View {
+/// Managing the devices terminals run on: devices paired through a
+/// continuation server, and saved SSH hosts. Continuing from another device
+/// starts here, and opening a device's terminal happens in Terminals.
+struct DevicesView: View {
     let ssh: SSHWorkspaceModel
     let ui: SSHWorkspaceUI
     let macs: RemoteModels
-    @Binding var path: [MachinesRoute]
     let openMac: (ConnectionModel, DeviceGrant) -> Void
     let openHost: (SSHProfile) -> Void
+    /// Opens Continue from Another Device.
+    let continueFromDevice: () -> Void
     @Environment(ServerList.self) private var servers
-    @State private var placeholder = ConnectionModel(address: "")
-    @State private var pairingServer: ConnectionModel?
     @State private var inspected: Inspected?
     @State private var search = ""
-    @State private var joiningSession = false
 
     private struct Inspected: Identifiable {
         let server: ConnectionModel
@@ -27,42 +24,65 @@ struct MachinesView: View {
         var id: String { grant.id }
     }
 
-    /// Mac access needs a server that offers remote terminals; until one is
-    /// checked, the Macs section leads to setup.
-    static func needsSetup(_ servers: ServerList) -> Bool {
-        servers.servers.isEmpty || (servers.servers.count == 1 && !servers.servers[0].supportsRelay)
-    }
-
     private var showsSearch: Bool { ssh.profiles.count >= TerminalsHome.filterThreshold }
 
+    /// Servers with paired devices or something to say about them.
+    private var deviceServers: [ConnectionModel] {
+        servers.servers.filter { server in
+            guard server.supportsRelay else { return server.statusTone == .warning }
+            let model = macs.existing(for: server)
+            return !(model?.grants.isEmpty ?? true) || model?.issue != nil || model?.busy != nil
+        }
+    }
+
     var body: some View {
-        NavigationStack(path: $path) {
+        NavigationStack {
             List {
-                if Self.needsSetup(servers) {
-                    Section(String(localized: "Macs", bundle: .main)) {
-                        NavigationLink(value: MachinesRoute.macSetup) {
-                            rowLabel(String(localized: "Set Up Mac Access", bundle: .main),
-                                     detail: String(localized: "Needs Witerm on the Mac and a Witerm server", bundle: .main),
-                                     symbol: "desktopcomputer")
+                Section {
+                    Button(action: continueFromDevice) {
+                        HStack(spacing: 14) {
+                            IconTile(systemImage: "laptopcomputer.and.iphone", tint: IdentityHue.sky)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(String(localized: "Continue from Another Device", bundle: .main))
+                                    .font(.headline).foregroundStyle(WitermTheme.ink)
+                                Text(String(localized: "Scan or paste an invitation", bundle: .main))
+                                    .font(.subheadline).foregroundStyle(WitermTheme.secondary)
+                            }
+                            Spacer(minLength: 8)
+                            Image(systemName: "chevron.right")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(WitermTheme.secondary)
+                                .accessibilityHidden(true)
                         }
-                        .accessibilityIdentifier("machinesMacSetup")
-                        openSharedSessionButton
+                        .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("continueFromDevice")
+                }
+                if deviceServers.isEmpty {
+                    Section(String(localized: "Paired Devices", bundle: .main)) {
+                        Text(String(localized: "Devices you continue from appear here.", bundle: .main))
+                            .font(.subheadline)
+                            .foregroundStyle(WitermTheme.secondary)
+                            .accessibilityIdentifier("remoteDevicesEmpty")
                     }
                 } else {
-                    ForEach(servers.servers) { server in
+                    ForEach(deviceServers) { server in
                         Section {
-                            macRows(server)
+                            deviceRows(server)
                         } header: {
                             if servers.servers.count > 1 {
                                 HStack(spacing: 8) {
-                                    Text(server.displayName).lineLimit(1).truncationMode(.middle)
+                                    Text(String(localized: "Paired Devices · \(server.displayName)", bundle: .main))
+                                        .lineLimit(1).truncationMode(.middle)
                                     Spacer(minLength: 8)
                                     StatusBadge(server.statusTitle, systemImage: server.statusSymbol, tone: server.statusTone)
                                         .textCase(nil)
                                 }
                                 .accessibilityElement(children: .combine)
                             } else {
-                                Text(String(localized: "Macs", bundle: .main))
+                                Text(String(localized: "Paired Devices", bundle: .main))
                             }
                         }
                     }
@@ -80,41 +100,19 @@ struct MachinesView: View {
             .scrollContentBackground(.hidden)
             .background(WitermTheme.canvas)
             .modifier(HostSearch(enabled: showsSearch, text: $search))
-            // Pull down to check servers and list paired Macs again.
+            // Pull down to check servers and list paired devices again.
             .refreshable {
                 refreshAll()
                 while servers.relayServers.contains(where: { macs.existing(for: $0)?.busy != nil }), !Task.isCancelled {
                     try? await Task.sleep(for: .milliseconds(100))
                 }
             }
-            .navigationTitle(String(localized: "Machines", bundle: .main))
-            .navigationDestination(for: MachinesRoute.self) { route in
-                switch route {
-                case .macSetup:
-                    ServerSetupView(model: servers.servers.first ?? placeholder) {
-                        path = []
-                        ui.presentNew()
-                    }
-                }
-            }
+            .navigationTitle(String(localized: "Devices", bundle: .main))
             .overlay(alignment: .bottom) { SSHUndoRemovalBar(model: ssh) }
-        }
-        // Setup is done once a server offers remote terminals; its Macs show here.
-        .onChange(of: Self.needsSetup(servers)) { _, needed in if !needed { path = [] } }
-        .sheet(item: $pairingServer, onDismiss: refreshAll) { server in
-            DevicePairingView(serverAddress: server.address).id(server.address)
-        }
-        .sheet(isPresented: $joiningSession) {
-            JoinSessionView { server, grant in openMac(server, grant) }
         }
         .sheet(item: $inspected) { item in
             MacDeviceDetails(server: item.server, grant: item.grant) { inspected = nil }
         }
-    }
-
-    private var openSharedSessionButton: some View {
-        Button(String(localized: "Open Shared Session…", bundle: .main), systemImage: "qrcode.viewfinder") { joiningSession = true }
-            .accessibilityIdentifier("openSharedSession")
     }
 
     private func refreshAll() {
@@ -122,10 +120,10 @@ struct MachinesView: View {
         for server in servers.relayServers { macs.model(for: server).loadDevices() }
     }
 
-    // MARK: Macs
+    // MARK: Paired devices
 
     @ViewBuilder
-    private func macRows(_ server: ConnectionModel) -> some View {
+    private func deviceRows(_ server: ConnectionModel) -> some View {
         if server.supportsRelay {
             let model = macs.model(for: server)
             if let busy = model.busy {
@@ -140,11 +138,13 @@ struct MachinesView: View {
                 HStack(spacing: 4) {
                     Button { openMac(server, grant) } label: {
                         HStack(spacing: 14) {
-                            IconTile(systemImage: "desktopcomputer", tint: grant.host.identityHue)
-                            VStack(alignment: .leading, spacing: 4) {
+                            IconTile(systemImage: grant.host.platform == .macos ? "laptopcomputer" : "iphone", tint: grant.host.identityHue)
+                            VStack(alignment: .leading, spacing: 3) {
                                 Text(grant.host.name).foregroundStyle(WitermTheme.ink)
-                                StatusBadge(grant.permission == .view ? String(localized: "View Only", bundle: .main) : String(localized: "Can Type", bundle: .main),
-                                            systemImage: grant.permission == .view ? "eye" : "keyboard")
+                                Text([grant.permission == .view ? String(localized: "View Only", bundle: .main) : String(localized: "Can Type", bundle: .main),
+                                      server.displayName].joined(separator: " · "))
+                                    .font(.caption).foregroundStyle(WitermTheme.secondary)
+                                    .lineLimit(1).truncationMode(.middle)
                             }
                             Spacer(minLength: 8)
                         }
@@ -153,7 +153,7 @@ struct MachinesView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(model.busy != nil)
-                    .accessibilityHint(String(localized: "Shows this Mac's terminal sessions.", bundle: .main))
+                    .accessibilityHint(String(localized: "Shows this device’s terminal sessions.", bundle: .main))
                     Button(String(localized: "Device Details", bundle: .main), systemImage: "info.circle") {
                         inspected = Inspected(server: server, grant: grant)
                     }
@@ -163,33 +163,10 @@ struct MachinesView: View {
                     .accessibilityLabel(String(localized: "Details for \(grant.host.name)", bundle: .main))
                 }
             }
-            if model.loaded, model.grants.isEmpty, model.busy == nil {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(String(localized: "No Macs Yet", bundle: .main)).font(.headline)
-                    Text(String(localized: "Pair with your Mac to open its terminals here, or open one session someone shares with you.", bundle: .main))
-                        .font(.subheadline)
-                        .foregroundStyle(WitermTheme.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier("remoteDevicesEmpty")
-            }
-            Button(model.grants.isEmpty ? String(localized: "Pair a Mac", bundle: .main) : String(localized: "Pair Another Mac", bundle: .main),
-                   systemImage: "link") { pairingServer = server }
-                .accessibilityIdentifier("devicePairing")
-            // Joining one shared session sits with the Macs; it needs no pairing.
-            if server.id == servers.relayServers.first?.id { openSharedSessionButton }
         } else {
-            switch server.phase {
-            case .available:
-                Text(String(localized: "This server does not offer remote terminals.", bundle: .main))
-                    .font(.subheadline)
-                    .foregroundStyle(WitermTheme.secondary)
-            case .checking, .idle, .failed:
-                ConnectionFeedback(server: server)
-                if !server.phase.isChecking {
-                    Button(String(localized: "Check Again", bundle: .main), action: server.check)
-                }
+            ConnectionFeedback(server: server)
+            if !server.phase.isChecking {
+                Button(String(localized: "Check Again", bundle: .main), action: server.check)
             }
         }
     }
@@ -215,18 +192,6 @@ struct MachinesView: View {
             SSHHostActions(profile: profile, ssh: ssh, ui: ui)
                 .accessibilityIdentifier("machineHostActions-\(profile.id.uuidString)")
         }
-    }
-
-    private func rowLabel(_ title: String, detail: String, symbol: String) -> some View {
-        HStack(spacing: 14) {
-            IconTile(systemImage: symbol)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title).foregroundStyle(WitermTheme.ink)
-                Text(detail).font(.caption).foregroundStyle(WitermTheme.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(.vertical, 4)
     }
 }
 #endif

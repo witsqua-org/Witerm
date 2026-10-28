@@ -2,59 +2,73 @@ import XCTest
 
 @MainActor
 final class ConnectionFlowTests: XCTestCase {
-    /// Launches without assuming which Devices tab state appears: a configured
-    /// server is checked automatically, and a relay-capable one opens Devices.
     /// The saved server list as a launch argument; an empty address means none.
     private func serverList(_ addresses: [String]) -> [String] {
         ["-witerm.serverAddresses", "(" + addresses.map { "\"\($0)\"" }.joined(separator: ", ") + ")"]
     }
 
-    private func launchApp(address: String = "") -> XCUIApplication {
+    private func launchApp(address: String = "", language: String = "zh-Hans", extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = serverList(address.isEmpty ? [] : [address])
-        app.launchArguments += ["-witerm.startTask", "mac"]
-        app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launchArguments += ["-AppleLanguages", "(\(language))", "-AppleLocale", language == "en" ? "en_US" : "zh_CN"]
+        app.launchArguments += extra
         app.launch()
         return app
     }
 
-    /// Lands on Mac setup: shown at once without a server, or one tap into
-    /// Machines when a saved server does not offer remote terminals.
-    private func launch(address: String = "") -> XCUIApplication {
-        let app = launchApp(address: address)
-        if !address.isEmpty {
-            openMachines(app)
-            let setup = app.buttons["machinesMacSetup"]
-            XCTAssertTrue(setup.waitForExistence(timeout: 10))
-            setup.tap()
-        }
-        XCTAssertTrue(app.buttons["primaryAction"].waitForExistence(timeout: 10))
-        return app
-    }
-
-    private func openMachines(_ app: XCUIApplication) {
+    private func openDevices(_ app: XCUIApplication) {
         let tab = app.tabBars.buttons.element(boundBy: 1)
         XCTAssertTrue(tab.waitForExistence(timeout: 10))
         tab.tap()
     }
 
     private func openSettings(_ app: XCUIApplication) {
-        let tab = app.tabBars.buttons["设置"]
+        let tab = app.tabBars.buttons.element(boundBy: 2)
         XCTAssertTrue(tab.waitForExistence(timeout: 10))
         tab.tap()
     }
 
-    /// Settings summarizes servers in one row; its page lists one row per
-    /// server, whose status and actions are a tap away.
+    /// Settings → Continuation Servers, which lists one row per server.
+    private func openServers(_ app: XCUIApplication) {
+        openSettings(app)
+        let servers = app.buttons["settingsServers"]
+        XCTAssertTrue(servers.waitForExistence(timeout: 10))
+        servers.tap()
+    }
+
     private func openServer(_ app: XCUIApplication, index: Int = 0) {
         let row = app.buttons["settingsServerRow-\(index)"]
-        if !row.waitForExistence(timeout: 2) {
-            let servers = app.buttons["settingsServers"]
-            XCTAssertTrue(servers.waitForExistence(timeout: 10))
-            servers.tap()
-        }
+        if !row.waitForExistence(timeout: 2) { openServers(app) }
         XCTAssertTrue(row.waitForExistence(timeout: 10))
         row.tap()
+    }
+
+    /// Devices → Continue from Another Device, typing the invitation.
+    private func openContinue(_ app: XCUIApplication, typing invitation: String? = nil) {
+        openDevices(app)
+        let start = app.buttons["continueFromDevice"]
+        XCTAssertTrue(start.waitForExistence(timeout: 10))
+        start.tap()
+        XCTAssertTrue(app.buttons["pasteInvitation"].waitForExistence(timeout: 10))
+        guard let invitation else { return }
+        app.buttons["typeInvitation"].tap()
+        let field = app.descendants(matching: .any)["sessionInvitationField"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText(invitation)
+        app.buttons["preparePairing"].tap()
+    }
+
+    private func pairingLink(server: String, id: String) -> String {
+        var parts = URLComponents()
+        parts.scheme = "witerm"
+        parts.host = "pair"
+        parts.queryItems = [
+            URLQueryItem(name: "server", value: server),
+            URLQueryItem(name: "id", value: id),
+            URLQueryItem(name: "secret", value: String(repeating: "A", count: 43)),
+            URLQueryItem(name: "host_key", value: Data(repeating: 1, count: 32).base64EncodedString())
+        ]
+        return parts.string!
     }
 
     private func capture(_ name: String, app: XCUIApplication) {
@@ -64,30 +78,40 @@ final class ConnectionFlowTests: XCTestCase {
         add(attachment)
     }
 
-    func testEmptyStateAndAddressValidation() {
-        let app = launch()
-        XCTAssertTrue(app.buttons["primaryAction"].label.contains("添加服务器"))
-        capture("01-empty", app: app)
-        app.buttons["primaryAction"].tap()
+    /// The address field says what it understood and turns an SSH login into
+    /// a way to add an SSH host, instead of a generic format error.
+    func testAddressEntryExplainsAndFixes() {
+        let app = launchApp()
+        openServers(app)
+        let add = app.buttons["settingsEditServer"]
+        XCTAssertTrue(add.waitForExistence(timeout: 5))
+        add.tap()
         let field = app.textFields["serverAddressField"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.tap()
-        field.typeText("https://")
-        app.buttons["saveServerAddress"].tap()
-        XCTAssertTrue(app.staticTexts["addressValidationError"].waitForExistence(timeout: 5))
-        capture("02-validation", app: app)
+        field.typeText("deploy@build.example.com")
+        XCTAssertTrue(app.descendants(matching: .any)["addressValidationError"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["serverAddressAddSSH"].exists)
+        XCTAssertFalse(app.buttons["saveServerAddress"].isEnabled)
+        capture("02-ssh-login", app: app)
+        field.press(forDuration: 1.2)
+        if app.menuItems["全选"].waitForExistence(timeout: 2) { app.menuItems["全选"].tap() }
+        field.typeText(XCUIKeyboardKey.delete.rawValue)
+        field.typeText("test.witerm.dev")
+        let understood = app.descendants(matching: .any)["serverAddressInterpretation"].firstMatch
+        XCTAssertTrue(understood.waitForExistence(timeout: 5))
+        XCTAssertTrue(understood.label.contains("https://test.witerm.dev"))
+        XCTAssertTrue(app.buttons["saveServerAddress"].isEnabled)
+        capture("02-understood", app: app)
         app.buttons["取消"].tap()
-        XCTAssertTrue(app.buttons["primaryAction"].label.contains("添加服务器"))
     }
 
     func testRealServerSuccess() {
         let app = launchApp(address: "http://localhost:37429")
-        // The launch check succeeds and Machines lists the server's Macs.
-        openMachines(app)
-        XCTAssertTrue(app.buttons["devicePairing"].firstMatch.waitForExistence(timeout: 15))
-        XCTAssertFalse(app.buttons["primaryAction"].exists)
-        capture("03-macs", app: app)
-        openSettings(app)
+        openDevices(app)
+        XCTAssertTrue(app.buttons["continueFromDevice"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.descendants(matching: .any)["remoteDevicesEmpty"].firstMatch.waitForExistence(timeout: 15))
+        capture("03-devices", app: app)
         openServer(app)
         let feedback = app.descendants(matching: .any)["settingsConnectionFeedback"].firstMatch
         let success = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "服务器可以访问"), object: feedback)
@@ -99,15 +123,16 @@ final class ConnectionFlowTests: XCTestCase {
         let originalAppearance = XCUIDevice.shared.appearance
         XCUIDevice.shared.appearance = .dark
         defer { XCUIDevice.shared.appearance = originalAppearance }
-        let app = launch()
+        let app = launchApp()
+        XCTAssertTrue(app.buttons["firstUseContinue"].waitForExistence(timeout: 10))
         // The appearance change reaches the app asynchronously; capture only
         // once the rendered screen is actually dark.
         XCTAssertTrue(waitForDarkScreen(app), "The app did not render in dark appearance")
         capture("07-dark", app: app)
-        app.tabBars.buttons.element(boundBy: 0).tap()
-        XCTAssertTrue(app.buttons["newSSHProfile"].waitForExistence(timeout: 5))
+        openDevices(app)
+        XCTAssertTrue(app.buttons["continueFromDevice"].waitForExistence(timeout: 5))
         XCTAssertTrue(waitForDarkScreen(app))
-        capture("07-dark-terminals", app: app)
+        capture("07-dark-devices", app: app)
         openSettings(app)
         XCTAssertTrue(app.buttons["settingsDisplay"].waitForExistence(timeout: 5))
         XCTAssertTrue(waitForDarkScreen(app))
@@ -139,13 +164,15 @@ final class ConnectionFlowTests: XCTestCase {
         return total / Double(side * side) / 255
     }
 
+    /// A refused connection says so and names the server.
     func testConnectionFailureHasRecovery() {
-        let app = launch(address: "http://localhost:1")
-        app.buttons["primaryAction"].tap()
-        let feedback = app.descendants(matching: .any)["connectionFeedback"].firstMatch
-        let failure = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "无法连接服务器"), object: feedback)
+        let app = launchApp(address: "http://localhost:1")
+        openServer(app)
+        let check = app.buttons["settingsCheckConnection"]
+        if check.waitForExistence(timeout: 10) { check.tap() }
+        let feedback = app.descendants(matching: .any)["settingsConnectionFeedback"].firstMatch
+        let failure = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "localhost:1"), object: feedback)
         wait(for: [failure], timeout: 15)
-        XCTAssertTrue(feedback.label.contains("请确认地址、网络与服务器是否可用，然后重试。"))
         capture("04-error", app: app)
     }
 
@@ -154,62 +181,47 @@ final class ConnectionFlowTests: XCTestCase {
         // compiled into the app and cancellation uses the real URLSession task.
         // Usually the launch check is still running; if it already finished,
         // start a new one so the test never depends on launch timing.
-        let app = launch(address: "http://localhost:18081")
+        let app = launchApp(address: "http://localhost:18081")
+        openServer(app)
         let cancel = app.buttons["cancelConnection"]
         if !cancel.waitForExistence(timeout: 2) {
-            app.buttons["primaryAction"].tap()
+            app.buttons["settingsCheckConnection"].tap()
         }
         XCTAssertTrue(cancel.waitForExistence(timeout: 5))
         capture("05-loading", app: app)
         cancel.tap()
-        XCTAssertTrue(app.buttons["primaryAction"].isEnabled)
+        XCTAssertTrue(app.buttons["settingsCheckConnection"].waitForExistence(timeout: 5))
         XCTAssertFalse(cancel.exists)
         let unexpectedSuccess = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "label CONTAINS %@", "服务器可以访问"),
-            object: app.descendants(matching: .any)["connectionFeedback"].firstMatch
+            object: app.descendants(matching: .any)["settingsConnectionFeedback"].firstMatch
         )
         unexpectedSuccess.isInverted = true
         wait(for: [unexpectedSuccess], timeout: 4)
     }
 
     func testAccessibilityLayout() {
-        let app = XCUIApplication()
-        app.launchArguments = serverList([]) + ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
-        app.launchArguments += ["-witerm.startTask", "mac"]
-        app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
-        app.launch()
-        XCTAssertTrue(app.buttons["primaryAction"].waitForExistence(timeout: 10))
-        for _ in 0..<4 {
-            if app.buttons["primaryAction"].isHittable { break }
-            app.swipeUp()
-        }
-        XCTAssertTrue(app.buttons["primaryAction"].isHittable)
-        XCTAssertGreaterThanOrEqual(app.buttons["primaryAction"].frame.height, 44)
+        let app = launchApp(extra: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
+        openContinue(app)
+        let paste = app.buttons["pasteInvitation"]
+        for _ in 0..<4 where !paste.isHittable { app.swipeUp() }
+        XCTAssertTrue(paste.isHittable)
+        XCTAssertGreaterThanOrEqual(paste.frame.height, 44)
         capture("06-accessibility-type", app: app)
     }
 
     /// Two spellings of the local test server are two servers, each with its
-    /// own identity: both list their devices together, a duplicate is
-    /// refused, and removing one leaves the other.
+    /// own identity: a duplicate is refused, and removing one leaves the other.
     func testSeveralServersAreUsedTogether() {
         let app = XCUIApplication()
         app.launchArguments = serverList(["http://localhost:37429", "http://127.0.0.1:37429"])
-        app.launchArguments += ["-witerm.startTask", "mac"]
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
-        openMachines(app)
-        XCTAssertTrue(app.buttons["devicePairing"].firstMatch.waitForExistence(timeout: 15))
-        XCTAssertTrue(app.staticTexts["localhost:37429"].waitForExistence(timeout: 15))
-        XCTAssertTrue(app.staticTexts["127.0.0.1:37429"].exists)
-        let empty = app.descendants(matching: .any).matching(identifier: "remoteDevicesEmpty")
-        let bothListed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "count == 2"), object: empty)
-        wait(for: [bothListed], timeout: 20)
+        openDevices(app)
+        XCTAssertTrue(app.buttons["continueFromDevice"].waitForExistence(timeout: 15))
         capture("10-several-servers", app: app)
 
-        // Settings summarizes the servers; their page lists one row each, then Add Server.
-        app.tabBars.buttons["Settings"].tap()
-        XCTAssertTrue(app.buttons["settingsServers"].waitForExistence(timeout: 5))
-        app.buttons["settingsServers"].tap()
+        openServers(app)
         XCTAssertTrue(app.buttons["settingsServerRow-0"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["settingsServerRow-1"].exists)
         let add = app.buttons["settingsAddServer"]
@@ -219,7 +231,8 @@ final class ConnectionFlowTests: XCTestCase {
         let field = app.textFields["serverAddressField"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.tap()
-        field.typeText("http://LOCALHOST:37429/")
+        // Another spelling of a saved server, with no scheme: the same server.
+        field.typeText("LOCALHOST:37429")
         app.buttons["saveServerAddress"].tap()
         XCTAssertTrue(app.staticTexts["This server is already in your list."].waitForExistence(timeout: 5))
         app.buttons["Cancel"].tap()
@@ -236,111 +249,51 @@ final class ConnectionFlowTests: XCTestCase {
         XCTAssertTrue(app.buttons["settingsServerRow-0"].exists)
     }
 
-    func testPairingRequiresVerifiedServer() {
-        let app = launch(address: "http://localhost:1")
-        openSettings(app)
-        openServer(app)
-        let entry = app.buttons["settingsDevicePairing"]
-        XCTAssertTrue(entry.waitForExistence(timeout: 10))
-        let failed = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "label CONTAINS %@", "无法连接服务器"),
-            object: app.descendants(matching: .any)["settingsConnectionFeedback"].firstMatch)
-        wait(for: [failed], timeout: 15)
-        XCTAssertFalse(entry.isEnabled)
-    }
-
-    private func openPairing() -> XCUIApplication {
-        let app = launchApp(address: "http://localhost:37429")
-        openSettings(app)
-        openServer(app)
-        let entry = app.buttons["settingsDevicePairing"]
-        XCTAssertTrue(entry.waitForExistence(timeout: 10))
-        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: entry)
-        wait(for: [enabled], timeout: 15)
-        entry.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["pairingInvitationField"].firstMatch.waitForExistence(timeout: 15))
-        return app
-    }
-
-    func testPairingCapabilityAndEmptyGrants() {
-        let app = openPairing()
-        app.swipeUp()
-        XCTAssertTrue(app.staticTexts["还没有已授权的设备。"].waitForExistence(timeout: 5))
-        capture("08-pairing-empty", app: app)
-        app.buttons["closePairing"].tap()
-        XCTAssertTrue(app.buttons["settingsDevicePairing"].waitForExistence(timeout: 5))
-    }
-
     func testMalformedInvitationCannotJoin() {
-        let app = openPairing()
-        let field = app.descendants(matching: .any)["pairingInvitationField"].firstMatch
-        field.tap()
-        field.typeText("not-a-pairing-invitation")
-        app.buttons["preparePairing"].tap()
-        XCTAssertTrue(app.staticTexts["邀请格式不正确"].waitForExistence(timeout: 5))
+        let app = launchApp(address: "http://localhost:37429")
+        openContinue(app, typing: "not-a-pairing-invitation")
+        XCTAssertTrue(app.staticTexts["invitationProblem"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["joinPairing"].exists)
-        XCTAssertTrue(field.exists)
         capture("09-pairing-invalid", app: app)
     }
 
     func testScannerUnavailablePreservesPasteFlow() {
-        let app = openPairing()
-        let scan = app.buttons["scanPairingInvitation"]
-        XCTAssertTrue(scan.waitForExistence(timeout: 5))
-        scan.tap()
-        // The retained simulator has no camera. The real fallback must still
-        // allow the user to return to invitation review.
+        let app = launchApp(address: "http://localhost:37429")
+        openContinue(app)
+        // The retained simulator has no camera: the flow still offers paste and typing.
         XCTAssertTrue(app.descendants(matching: .any)["pairingScannerUnavailable"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["pasteInvitation"].exists)
+        XCTAssertTrue(app.buttons["typeInvitation"].exists)
         capture("12-scanner-fallback", app: app)
-        app.buttons["取消"].tap()
-        XCTAssertTrue(app.buttons["preparePairing"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["joinPairing"].exists)
     }
 
-    func testInvitationCannotSwitchServer() {
-        let app = openPairing()
-        var parts = URLComponents()
-        parts.scheme = "witerm"
-        parts.host = "pair"
-        parts.queryItems = [
-            URLQueryItem(name: "server", value: "https://other-server.example.com"),
-            URLQueryItem(name: "id", value: "00000000-0000-4000-8000-000000000001"),
-            URLQueryItem(name: "secret", value: String(repeating: "A", count: 43)),
-            URLQueryItem(name: "host_key", value: Data(repeating: 1, count: 32).base64EncodedString())
-        ]
-        let field = app.descendants(matching: .any)["pairingInvitationField"].firstMatch
-        field.tap()
-        field.typeText(parts.string!)
-        app.buttons["preparePairing"].tap()
-        XCTAssertTrue(app.staticTexts["邀请来自其他服务器"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["joinPairing"].exists)
-        XCTAssertTrue(field.exists)
+    /// An invitation naming a server you haven't added asks first and adds
+    /// nothing until you tap; cancelling leaves the server list as it was.
+    func testInvitationNeverSwitchesServerSilently() {
+        let app = launchApp(address: "http://localhost:37429")
+        openContinue(app, typing: pairingLink(server: "https://other-server.example.com", id: "00000000-0000-4000-8000-000000000001"))
+        let request = app.buttons["joinPairing"]
+        XCTAssertTrue(request.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["other-server.example.com"].exists)
+        capture("13-new-server", app: app)
+        app.navigationBars.buttons.firstMatch.tap()
+        app.buttons["取消"].firstMatch.tap()
+        openServers(app)
+        XCTAssertTrue(app.buttons["settingsServerRow-0"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["settingsServerRow-1"].exists, "The invitation added a server without asking")
     }
 
     func testReviewedInvitationSurvivesForegroundRefresh() {
-        let app = openPairing()
-        var parts = URLComponents()
-        parts.scheme = "witerm"
-        parts.host = "pair"
-        parts.queryItems = [
-            URLQueryItem(name: "server", value: "http://localhost:37429"),
-            URLQueryItem(name: "id", value: "00000000-0000-4000-8000-000000000002"),
-            URLQueryItem(name: "secret", value: String(repeating: "A", count: 43)),
-            URLQueryItem(name: "host_key", value: Data(repeating: 1, count: 32).base64EncodedString())
-        ]
-        let field = app.descendants(matching: .any)["pairingInvitationField"].firstMatch
-        field.tap()
-        field.typeText(parts.string!)
-        app.buttons["preparePairing"].tap()
-        let review = app.buttons["joinPairing"]
-        XCTAssertTrue(review.waitForExistence(timeout: 5))
+        let app = launchApp(address: "http://localhost:37429")
+        // Typed, so the check screen shows even though the server is saved.
         // Only review locally generated invitation text. Never submit a
         // pairing request or grant access to a real device in this test.
+        openContinue(app, typing: pairingLink(server: "http://localhost:37429", id: "00000000-0000-4000-8000-000000000002"))
+        let review = app.buttons["joinPairing"]
+        XCTAssertTrue(review.waitForExistence(timeout: 5))
         XCUIDevice.shared.press(.home)
         app.activate()
         XCTAssertTrue(review.waitForExistence(timeout: 10))
-        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: review)
-        wait(for: [ready], timeout: 10)
-        XCTAssertFalse(app.descendants(matching: .any)["pairingInvitationField"].firstMatch.exists)
+        XCTAssertTrue(review.isEnabled)
     }
 }

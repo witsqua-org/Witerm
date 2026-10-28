@@ -233,6 +233,19 @@ public struct PairingInvitation: Sendable, Equatable {
     self = Self.make(server: server.absoluteString, pairingID: id, hostKey: hostKey, secret: secret)
   }
 
+  /// Parses a link that names its own server, for a device that may not
+  /// have that server yet. The app asks before adding it.
+  public init(urlString: String) throws {
+    guard urlString.utf8.count <= 4096,
+      let parts = URLComponents(string: urlString.trimmingCharacters(in: .whitespacesAndNewlines)),
+      let server = parts.queryItems?.first(where: { $0.name == "server" })?.value
+    else { throw PairingClientError.invalidInvitation }
+    try self.init(urlString: urlString, expectedServer: server)
+  }
+
+  /// The normalized server address the invitation names.
+  public var server: String { serverAddress }
+
   private init(
     validatedURL: String, pairingID: String, hostKey: String, server: String, secret: String
   ) {

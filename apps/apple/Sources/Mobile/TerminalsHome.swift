@@ -12,8 +12,8 @@ struct TerminalsHome: View {
     let macs: RemoteModels
     /// Opens a paired Mac's sessions.
     let openMac: (ConnectionModel, DeviceGrant) -> Void
-    /// Shows Macs and pairing in the Machines tab.
-    let setUpMac: () -> Void
+    /// Opens Continue from Another Device.
+    let continueFromDevice: () -> Void
     @Environment(ServerList.self) private var servers
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var search = ""
@@ -48,7 +48,7 @@ struct TerminalsHome: View {
                 }
             }
             if !pairedMacs.isEmpty || !hosts.isEmpty || favoritesOnly {
-                Section(String(localized: "Machines", bundle: .main)) {
+                Section(String(localized: "Devices", bundle: .main)) {
                     if showsFilters, ssh.profiles.contains(where: ssh.isFavorite) {
                         Toggle(String(localized: "Favorites Only", bundle: .main), isOn: $favoritesOnly)
                             .accessibilityIdentifier("sshFavoritesOnly")
@@ -127,11 +127,10 @@ struct TerminalsHome: View {
         let model = macs.existing(for: server)
         return Button { openMac(server, grant) } label: {
             HStack(spacing: 14) {
-                IconTile(systemImage: "desktopcomputer", tint: grant.host.identityHue)
+                IconTile(systemImage: grant.host.platform == .macos ? "laptopcomputer" : "iphone", tint: grant.host.identityHue)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(grant.host.name).foregroundStyle(WitermTheme.ink)
-                    Text([String(localized: "Mac", bundle: .main),
-                          grant.permission == .view ? String(localized: "View Only", bundle: .main) : nil,
+                    Text([grant.permission == .view ? String(localized: "View Only", bundle: .main) : String(localized: "Can Type", bundle: .main),
                           servers.servers.count > 1 ? server.displayName : nil].compactMap { $0 }.joined(separator: " · "))
                         .font(.caption)
                         .foregroundStyle(WitermTheme.secondary)
@@ -150,7 +149,7 @@ struct TerminalsHome: View {
         .buttonStyle(.plain)
         .disabled(model?.busy != nil)
         .accessibilityIdentifier("remoteMac-\(grant.id)")
-        .accessibilityHint(String(localized: "Shows this Mac's terminal sessions.", bundle: .main))
+        .accessibilityHint(String(localized: "Shows this device’s terminal sessions.", bundle: .main))
     }
 
     // MARK: First use
@@ -165,23 +164,23 @@ struct TerminalsHome: View {
                     .foregroundStyle(WitermTheme.ink)
                     .fixedSize(horizontal: false, vertical: true)
                 VStack(spacing: 0) {
-                    FirstUseRow(title: String(localized: "Connect to a Server", bundle: .main),
+                    FirstUseRow(title: String(localized: "Connect to an SSH Host", bundle: .main),
                                 detail: String(localized: "Needs an address and a login", bundle: .main),
                                 symbol: "terminal", hue: IdentityHue.rose, action: ui.presentNew)
                         .accessibilityIdentifier("sshAddFirstHost")
                     Divider().padding(.leading, 60)
-                    FirstUseRow(title: String(localized: "Continue from Your Mac", bundle: .main),
-                                detail: String(localized: "Needs Witerm on the Mac", bundle: .main),
-                                symbol: "desktopcomputer", hue: IdentityHue.sky, action: setUpMac)
-                        .accessibilityIdentifier("terminalsSetUpMac")
+                    FirstUseRow(title: String(localized: "Continue from Another Device", bundle: .main),
+                                detail: String(localized: "Scan or paste an invitation from it", bundle: .main),
+                                symbol: "laptopcomputer.and.iphone", hue: IdentityHue.sky, action: continueFromDevice)
+                        .accessibilityIdentifier("firstUseContinue")
                     Divider().padding(.leading, 60)
-                    FirstUseRow(title: String(localized: "Import Hosts", bundle: .main),
+                    FirstUseRow(title: String(localized: "Import SSH Hosts", bundle: .main),
                                 detail: String(localized: "From an SSH config file", bundle: .main),
                                 symbol: "square.and.arrow.down", hue: IdentityHue.violet, action: ui.presentImport)
                         .accessibilityIdentifier("sshImportHosts")
                 }
                 .witermCard(padding: 0)
-                Text(String(localized: "Direct SSH needs no Witerm server. What you type is never stored or sent anywhere else.", bundle: .main))
+                Text(String(localized: "SSH connects directly and needs no continuation server. What you type is never stored or sent anywhere else.", bundle: .main))
                     .font(.footnote)
                     .foregroundStyle(WitermTheme.secondary)
                     .fixedSize(horizontal: false, vertical: true)
