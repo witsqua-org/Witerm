@@ -4,7 +4,7 @@ The Mac background service (`witerm-agent`) hosts shells in a private tmux serve
 
 ## Process and files
 
-**Install path.** The service ships as `WitermMac.app/Contents/Library/LaunchServices/WitermAgent.app` and runs through the LaunchAgent `com.witerm.agent` (with `AbandonProcessGroup=true`).
+**Install path.** The service ships as `Witerm.app/Contents/Library/LaunchServices/WitermAgent.app` and runs through the LaunchAgent `com.witerm.agent` (with `AbandonProcessGroup=true`).
 
 - It runs as the user, never as root, and both the app and the service are unsandboxed.
 - The two share the App Group `group.com.witerm.$(DEVELOPMENT_TEAM)`.
