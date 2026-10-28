@@ -71,5 +71,17 @@
         "co_typing": true
       }
     ]
+  },
+  "access_listed_request": {
+    "version": 1,
+    "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    "operation": "access",
+    "access": {
+      "device_id": "99999999-9999-4999-8999-999999999999",
+      "scope": "shared",
+      "permission": "view",
+      "co_typing": true,
+      "session_ids": ["66666666-6666-4666-8666-666666666666"]
+    }
   }
 }

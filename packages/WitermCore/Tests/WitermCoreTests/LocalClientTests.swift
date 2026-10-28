@@ -505,6 +505,7 @@ final class RemoteAccessFixtureTests: XCTestCase {
       let local_session: LocalSessionInfo
       let access_request: LocalAgentRequest
       let access_response: LocalAgentFrame
+      let access_listed_request: LocalAgentRequest
     }
     var root = URL(fileURLWithPath: #filePath)
     for _ in 0..<5 { root.deleteLastPathComponent() }
@@ -528,13 +529,19 @@ final class RemoteAccessFixtureTests: XCTestCase {
     let access = try XCTUnwrap(fixture.access_request.access)
     XCTAssertEqual(access, LocalDeviceAccess(deviceID: "99999999-9999-4999-8999-999999999999", scope: .all, permission: .control))
     XCTAssertEqual(fixture.access_response.accesses, [access])
+    // A policy may list single sessions besides shared ones.
+    let listed = try XCTUnwrap(fixture.access_listed_request.access)
+    XCTAssertEqual(listed.sessionIDs, [sessions[0].id])
+    XCTAssertTrue(listed.lists(sessions[0].id))
+    XCTAssertFalse(listed.lists(sessions[1].id))
+    XCTAssertTrue(access.lists(sessions[1].id), "Every session is listed for scope all")
     // Sharing from a service before these fields existed still decodes.
     let legacy = try decoder.decode(
       LocalSessionSharing.self, from: Data(#"{"shared":true,"attachments":[]}"#.utf8))
     XCTAssertEqual(legacy, LocalSessionSharing(shared: true, attachments: []))
     let encoded = try JSONEncoder().encode(LocalDeviceAccess.default(for: access.deviceID))
     let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
-    XCTAssertEqual(Set(object.keys), ["device_id", "scope", "permission", "co_typing"])
+    XCTAssertEqual(Set(object.keys), ["device_id", "scope", "permission", "co_typing", "session_ids"])
   }
 }
 #endif
