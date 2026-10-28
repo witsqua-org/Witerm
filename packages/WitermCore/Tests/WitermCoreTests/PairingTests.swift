@@ -143,6 +143,11 @@ final class PairingTests: XCTestCase {
       urlString: original.urlString, expectedServer: "HTTPS://EXAMPLE.COM:443/")
     XCTAssertEqual(parsed.hostPublicKey, key)
     XCTAssertEqual(parsed.pairingID, original.pairingID)
+    // A device without the server reads it from the link.
+    let named = try PairingInvitation(urlString: original.urlString)
+    XCTAssertEqual(named, parsed)
+    XCTAssertEqual(named.server, "https://example.com")
+    XCTAssertThrowsError(try PairingInvitation(urlString: "witerm://pair?id=x"))
     XCTAssertThrowsError(
       try PairingInvitation(
         urlString: original.urlString, expectedServer: "https://other.example.com")

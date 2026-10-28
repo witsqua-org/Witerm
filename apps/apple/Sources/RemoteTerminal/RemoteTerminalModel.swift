@@ -36,13 +36,13 @@ struct RemoteTerminalIssue {
                 recovery = String(localized: "Reconnect to continue.", bundle: .main)
             case .readOnly:
                 title = String(localized: "View-Only Connection", bundle: .main)
-                recovery = String(localized: "The Mac allows only watching this session right now. Use View Only.", bundle: .main)
+                recovery = String(localized: "The other device allows only watching this session right now. Use View Only.", bundle: .main)
             case .sessionBusy:
                 title = String(localized: "Session Is Being Controlled", bundle: .main)
                 recovery = String(localized: "View only, or reconnect after the other device disconnects.", bundle: .main)
             case .sessionUnavailable:
                 title = String(localized: "Session Unavailable", bundle: .main)
-                recovery = String(localized: "It ended or is no longer shared on the Mac. Refresh the list.", bundle: .main)
+                recovery = String(localized: "It ended, or the other device no longer allows it. Refresh the list.", bundle: .main)
             }
         } else if let error = error as? LocalAgentClientError {
             switch error {
@@ -88,6 +88,7 @@ final class RemoteTerminalModel {
     private(set) var busy: String?
     private(set) var issue: RemoteTerminalIssue?
     private(set) var loaded = false
+    @ObservationIgnored private var opensSoleSession = false
     /// A short explanation of what an automatic reconnect did, such as
     /// joining read-only because another device has control.
     private(set) var notice: String?
@@ -161,13 +162,19 @@ final class RemoteTerminalModel {
         } catch { issue = RemoteTerminalIssue(error) }
     }
 
-    func select(_ grant: DeviceGrant) {
+    /// `openingSole` attaches at once when the device can open exactly one
+    /// session, as after continuing a session from that device.
+    func select(_ grant: DeviceGrant, openingSole: Bool = false) {
         guard busy == nil else { return }
         suspend()
         clearDisplay()
         selectedGrant = grant
         selectedSession = nil
         sessions = []
+        opensSoleSession = openingSole
+        // A grant approved just now is listed before the next device listing;
+        // listing its sessions verifies it first, as for any grant.
+        if !grants.contains(where: { $0.id == grant.id }) { grants.append(grant) }
         refreshSessions()
     }
 
@@ -194,6 +201,11 @@ final class RemoteTerminalModel {
                     if let selected = self.selectedSession, !sessions.contains(where: { $0.id == selected.id }) {
                         self.selectedSession = nil
                     }
+                    if self.opensSoleSession, sessions.count == 1 {
+                        self.opensSoleSession = false
+                        self.attach(sessions[0])
+                    }
+                    self.opensSoleSession = false
                 } catch { self?.failed(error, token: token) }
             }
         } catch { issue = RemoteTerminalIssue(error) }

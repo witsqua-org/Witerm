@@ -15,7 +15,7 @@ import XCTest
         let name = "UI saved only " + String(UUID().uuidString.prefix(6))
         setOrientation()
         let app = XCUIApplication()
-        app.launchArguments = ["-witerm.startTask", "ssh", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
         addTeardownBlock { await MainActor.run { app.terminate() } }
         XCTAssertTrue(app.buttons["newSSHProfile"].waitForExistence(timeout: 10))
@@ -82,7 +82,7 @@ import XCTest
     func testGeneratedKeyShowsPublicKeyWithoutSaving() {
         setOrientation()
         let app = XCUIApplication()
-        app.launchArguments = ["-witerm.startTask", "ssh", "-AppleLanguages", "(en)"]
+        app.launchArguments = ["-AppleLanguages", "(en)"]
         app.launch()
         defer { app.terminate() }
         XCTAssertTrue(app.buttons["newSSHProfile"].waitForExistence(timeout: 10))
@@ -106,7 +106,7 @@ import XCTest
     func testInvalidConfigurationShowsFieldErrorsBeforeConnecting() {
         setOrientation()
         let app = XCUIApplication()
-        app.launchArguments = ["-witerm.startTask", "ssh", "-AppleLanguages", "(en)"]
+        app.launchArguments = ["-AppleLanguages", "(en)"]
         app.launch()
         defer { app.terminate() }
         XCTAssertTrue(app.buttons["newSSHProfile"].waitForExistence(timeout: 10))
