@@ -3,12 +3,13 @@ import SwiftUI
 import WitermCore
 
 /// One paired device's sessions and live terminal, for one server.
-/// `RemoteDevicesView` shows it once a device is selected. Navigation follows
+/// The Terminals tab shows it once a Mac is chosen. Navigation follows
 /// the model's state rather than a pushed stack, so the renderer stays alive
 /// until a detach ACK confirms control was released.
 struct RemoteTerminalWorkspace: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.horizontalSizeClass) private var sizeClass
     let model: RemoteTerminalModel
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -35,8 +36,9 @@ struct RemoteTerminalWorkspace: View {
                 browser
             }
         }
-        .background(WitermTheme.canvas)
-        .navigationTitle(model.selectedGrant?.host.name ?? String(localized: "Devices", bundle: .main))
+        .background(model.displayAttachment != nil && compactTerminal ? terminalBackground : WitermTheme.canvas)
+        .edgeSwipeBack(enabled: model.busy == nil && (model.displayAttachment != nil || model.selectedGrant != nil), action: goBack)
+        .navigationTitle(navigationTitle)
         .navigationBarTitleDisplayMode(model.selectedGrant == nil ? .large : .inline)
         .toolbar(terminalShown ? .hidden : .automatic, for: .tabBar)
         .onChange(of: model.displayAttachment != nil, initial: true) { _, shown in
@@ -52,32 +54,85 @@ struct RemoteTerminalWorkspace: View {
                         .disabled(model.busy != nil)
                         .accessibilityIdentifier("remoteSessionList")
                 } else if model.selectedGrant != nil {
-                    Button(String(localized: "Devices", bundle: .main), systemImage: "chevron.backward") { model.loadDevices() }
+                    Button(String(localized: "Terminals", bundle: .main), systemImage: "chevron.backward") { model.loadDevices() }
                         .labelStyle(.titleAndIcon)
                         .disabled(model.busy != nil)
                         .accessibilityIdentifier("remoteChooseMac")
                 }
             }
-            ToolbarItem(placement: .primaryAction) {
-                if model.displayAttachment == nil {
-                    Button(String(localized: "Refresh", bundle: .main), systemImage: "arrow.clockwise", action: model.refreshSessions)
-                    .disabled(model.busy != nil)
-                    .accessibilityIdentifier("refreshRemoteSessions")
+            // On iPhone the bar names the session and holds its actions, so
+            // the terminal gets the screen instead of a second header.
+            if compactTerminal, let attachment = model.displayAttachment {
+                ToolbarItem(placement: .principal) { compactTitle(attachment) }
+                // Two buttons leave the title room; switching between typing
+                // and watching is rarer now that devices type together.
+                ToolbarItemGroup(placement: .primaryAction) {
+                    terminalKeyboardButton
+                    Menu(String(localized: "Terminal Actions", bundle: .main), systemImage: "ellipsis.circle") {
+                        terminalControlButton
+                        terminalSecondaryActions
+                    }
+                    .accessibilityIdentifier("terminalActionsMenu")
                 }
             }
         }
         .task {
             // Returning to the tab resumes where the person left off; a kept
-            // last frame waits for an explicit reconnect.
+            // last frame waits for a reconnect.
             if model.displayAttachment == nil { model.refreshSessions() }
-        }
-        .onChange(of: scenePhase) { _, phase in
-            if phase != .active { model.suspend() }
         }
         // Going back to the device list has already cleared the selection and
         // started reloading devices; suspending then would cancel that load.
         .onDisappear { if model.selectedGrant != nil { model.suspend() } }
         .sheet(isPresented: $showingAppearance) { TerminalAppearanceSettings() }
+    }
+
+    private var navigationTitle: String {
+        if compactTerminal, let attachment = model.displayAttachment { return attachment.session.name }
+        return model.selectedGrant?.host.name ?? String(localized: "Terminals", bundle: .main)
+    }
+
+    private var compactTerminal: Bool { sizeClass == .compact }
+
+    /// The edge swipe and the back button: from a terminal to its sessions,
+    /// from sessions to the list of terminals.
+    private func goBack() {
+        if model.displayAttachment != nil { model.showSessions() } else if model.selectedGrant != nil { model.loadDevices() }
+    }
+
+    /// The session's name, and under it the Mac with an icon for typing or
+    /// watching; the status words are spoken rather than shown.
+    private func compactTitle(_ attachment: RemoteTerminalAttachment) -> some View {
+        VStack(spacing: 1) {
+            Text(attachment.session.name)
+                .font(.headline)
+                .foregroundStyle(WitermTheme.ink)
+            HStack(spacing: 4) {
+                Image(systemName: terminalStatusImage)
+                    .foregroundStyle(model.isInteractive ? WitermTheme.positive : WitermTheme.secondary)
+                    .imageScale(.small)
+                    .accessibilityHidden(true)
+                Text(verbatim: model.selectedGrant?.host.name ?? "")
+            }
+            .font(.caption)
+            .foregroundStyle(WitermTheme.secondary)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel([model.selectedGrant?.host.name, terminalStatus].compactMap { $0 }.joined(separator: ", "))
+            .accessibilityIdentifier("terminalInputStatus")
+        }
+        .lineLimit(1)
+        .truncationMode(.tail)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+
+    /// The terminal's own background, so the area under the home indicator
+    /// continues the terminal instead of showing a band.
+    private var terminalBackground: Color {
+        let dark = systemColorScheme == .dark
+        if terminalHighContrast || contrast == .increased { return dark ? .black : .white }
+        guard let values = terminalPalette.values(dark: dark) else { return Color(uiColor: .systemBackground) }
+        return Color(uiColor: UIColor(terminalRGB: values.background))
     }
 
     private var browser: some View {
@@ -106,6 +161,15 @@ struct RemoteTerminalWorkspace: View {
             .frame(maxWidth: 700)
             .frame(maxWidth: .infinity)
         }
+        // Pull down to list the Mac's sessions again; the list also reloads
+        // when it appears and when the app returns.
+        .refreshable {
+            model.refreshSessions()
+            while model.busy != nil, !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+        }
+        .accessibilityIdentifier("remoteSessionsList")
     }
 
     private func sessions(for grant: DeviceGrant) -> some View {
@@ -124,18 +188,19 @@ struct RemoteTerminalWorkspace: View {
             HStack {
                 Text(String(localized: "Terminal Sessions", bundle: .main)).font(.headline)
                 Spacer()
-                StatusBadge(grant.permission == .view ? String(localized: "Read-Only Permission", bundle: .main) : String(localized: "Control Permission", bundle: .main),
+                StatusBadge(grant.permission == .view ? String(localized: "View Only", bundle: .main) : String(localized: "Can Type", bundle: .main),
                             systemImage: grant.permission == .view ? "eye" : "keyboard")
             }
             .padding(.top, 4)
             ForEach(model.sessions) { session in
+                let access = model.access(for: session)
                 HStack(spacing: 12) {
                     Button { model.attach(session) } label: {
                         HStack(spacing: 14) {
                             IconTile(systemImage: "terminal", tint: grant.host.identityHue)
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(session.name).font(.headline).foregroundStyle(WitermTheme.ink)
-                                Text(grant.permission == .control ? String(localized: "Enter with Control", bundle: .main) : String(localized: "View Only", bundle: .main))
+                                Text(access == .control ? String(localized: "Open to Type", bundle: .main) : String(localized: "View Only", bundle: .main))
                                     .font(.caption).foregroundStyle(WitermTheme.secondary)
                             }
                             Spacer(minLength: 8)
@@ -149,7 +214,7 @@ struct RemoteTerminalWorkspace: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("remoteSession-\(session.id)")
-                    if grant.permission == .control {
+                    if access == .control {
                         Button(String(localized: "View Only", bundle: .main), systemImage: "eye") { model.attach(session, mode: .view) }
                             .labelStyle(.iconOnly)
                             .touchTarget(square: true)
@@ -160,7 +225,7 @@ struct RemoteTerminalWorkspace: View {
                 .disabled(model.busy != nil)
             }
             if model.loaded, model.sessions.isEmpty, model.busy == nil {
-                ContentUnavailableView(String(localized: "No Available Sessions", bundle: .main), systemImage: "terminal", description: Text(String(localized: "Share a terminal session on the device, then refresh the list.", bundle: .main)))
+                ContentUnavailableView(String(localized: "No Available Sessions", bundle: .main), systemImage: "terminal", description: Text(String(localized: "Share a terminal session on the device, then pull down to refresh.", bundle: .main)))
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("remoteSessionsEmpty")
             }
@@ -170,12 +235,34 @@ struct RemoteTerminalWorkspace: View {
     private func terminal(_ attachment: RemoteTerminalAttachment) -> some View {
         let id = model.attachmentID
         return VStack(spacing: 0) {
-            TerminalHeader(attachment.session.name, destination: model.selectedGrant?.host.name,
-                           status: terminalStatus, statusImage: terminalStatusImage, live: model.isInteractive,
-                           hue: model.selectedGrant?.host.identityHue) {
-                terminalActions
+            if compactTerminal {
+                // The Mac's hue edges the terminal, so it always shows where input goes.
+                Rectangle()
+                    .fill((model.selectedGrant?.host.identityHue ?? WitermTheme.secondary).opacity(0.55))
+                    .frame(height: 2)
+                    .accessibilityHidden(true)
+            } else {
+                // The navigation bar already names the Mac.
+                TerminalHeader(attachment.session.name, status: terminalStatus, statusImage: terminalStatusImage,
+                               live: model.isInteractive, hue: model.selectedGrant?.host.identityHue) {
+                    terminalActions
+                }
             }
             OfflineBanner(insets: EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+            if let notice = model.notice {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Image(systemName: "eye").accessibilityHidden(true)
+                    Text(notice).frame(maxWidth: .infinity, alignment: .leading)
+                    Button(String(localized: "Dismiss", bundle: .main), systemImage: "xmark", action: model.dismissNotice)
+                        .labelStyle(.iconOnly)
+                        .touchTarget(square: true)
+                }
+                .font(.subheadline)
+                .padding(.horizontal, 16)
+                .background(WitermTheme.surface)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("remoteTerminalNotice")
+            }
             if finding {
                 TerminalFindBar(finder: finder) { finding = false }
                 Divider()
@@ -196,6 +283,14 @@ struct RemoteTerminalWorkspace: View {
                 )
                 .id(id)
                 if !model.isInteractive { connectionOverlay }
+            }
+            // Keeps terminal contents out of the app switcher's snapshot.
+            .overlay {
+                if scenePhase != .active {
+                    Rectangle().fill(WitermTheme.canvas)
+                        .overlay { Image(systemName: "lock.fill").font(.largeTitle).foregroundStyle(WitermTheme.secondary) }
+                        .accessibilityHidden(true)
+                }
             }
         }
     }
@@ -263,7 +358,7 @@ struct RemoteTerminalWorkspace: View {
 
     @ViewBuilder private var terminalControlButton: some View {
         if model.isInteractive, model.canRequestControl {
-            Button(model.mode == .control ? String(localized: "Release Control", bundle: .main) : String(localized: "Request Control", bundle: .main), systemImage: model.mode == .control ? "eye" : "keyboard") {
+            Button(model.mode == .control ? String(localized: "Watch Only", bundle: .main) : String(localized: "Start Typing", bundle: .main), systemImage: model.mode == .control ? "eye" : "keyboard") {
                 model.switchMode()
             }
             .touchTarget()

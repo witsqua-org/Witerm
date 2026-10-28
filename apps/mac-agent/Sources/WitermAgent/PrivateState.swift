@@ -140,6 +140,61 @@ final class PrivateState {
         try replace("sharing.json", with: JSONEncoder().encode(ids.sorted()))
     }
 
+    /// Sessions no paired device may reach, even one allowed every session.
+    func loadPrivate() throws -> Set<String> {
+        guard let data = try readPrivateFile("private.json", limit: 4096) else { return [] }
+        let ids = try JSONDecoder().decode([String].self, from: data)
+        guard ids.count <= 16, ids.allSatisfy(validSessionID) else { throw AgentFailure() }
+        return Set(ids)
+    }
+
+    func savePrivate(_ ids: Set<String>) throws {
+        try replace("private.json", with: JSONEncoder().encode(ids.sorted()))
+    }
+
+    /// This Mac's policy for each paired device. A device without an entry
+    /// reaches shared sessions only.
+    func loadDeviceAccess() throws -> [String: LocalDeviceAccess] {
+        guard let data = try readPrivateFile("device-access.json", limit: 16384) else { return [:] }
+        let entries = try JSONDecoder().decode([LocalDeviceAccess].self, from: data)
+        guard entries.count <= 64, Set(entries.map(\.deviceID)).count == entries.count,
+              entries.allSatisfy({ validSessionID($0.deviceID) }) else { throw AgentFailure() }
+        return Dictionary(uniqueKeysWithValues: entries.map { ($0.deviceID, $0) })
+    }
+
+    func saveDeviceAccess(_ entries: [String: LocalDeviceAccess]) throws {
+        try replace("device-access.json", with: JSONEncoder().encode(entries.values.sorted { $0.deviceID < $1.deviceID }))
+    }
+
+    /// Invitations to single sessions, with proof keys until redeemed.
+    func loadGuests() throws -> [String: LocalGuestInvite] {
+        guard let data = try readPrivateFile("guests.json", limit: 65536) else { return [:] }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let entries = try decoder.decode([LocalGuestInvite].self, from: data)
+        guard entries.count <= 96, Set(entries.map(\.pairingID)).count == entries.count,
+              entries.allSatisfy({ validSessionID($0.pairingID) && validSessionID($0.sessionID) }) else { throw AgentFailure() }
+        return Dictionary(uniqueKeysWithValues: entries.map { ($0.pairingID, $0) })
+    }
+
+    func saveGuests(_ entries: [String: LocalGuestInvite]) throws {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        try replace("guests.json", with: encoder.encode(entries.values.sorted { $0.pairingID < $1.pairingID }))
+    }
+
+    /// A regular 0600 file owned by this user, or nil when it doesn't exist.
+    private func readPrivateFile(_ name: String, limit: Int) throws -> Data? {
+        let path = directory.appendingPathComponent(name)
+        var value = stat()
+        if lstat(path.path, &value) != 0 {
+            if errno == ENOENT { return nil }; throw AgentFailure()
+        }
+        guard value.st_uid == geteuid(), value.st_mode & S_IFMT == S_IFREG,
+              value.st_mode & 0o7777 == 0o600, value.st_size <= limit else { throw AgentFailure() }
+        return try Data(contentsOf: path)
+    }
+
     private func replace(_ name: String, with data: Data) throws {
         let temporary = directory.appendingPathComponent(".\(name)-\(UUID().uuidString)")
         let fd = open(temporary.path, O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW | O_CLOEXEC, 0o600)

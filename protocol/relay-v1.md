@@ -6,7 +6,7 @@ An iOS client lists and attaches to existing Mac sessions through the server. Th
 - remote session create or close
 - SSH and SFTP
 - file transfer and clipboard sync
-- forced takeover
+- forced takeover (devices type together instead; see [local-agent-v1](local-agent-v1.md))
 - iOS background execution
 
 ## Server routes
@@ -81,13 +81,15 @@ Each side builds the prologue from its own locally verified grant, never from se
 Encrypted records carry the [local-agent-v1](local-agent-v1.md) JSON requests and frames.
 
 **Operations.**
-- Only `status`, `list`, `attach`, `input`, `resize`, and `detach` are accepted remotely.
-- The Mac answers `list` and `attach` only for sessions shared on the Mac. Others don't appear and attach as `not_found` (`sessionUnavailable` in the Swift client). Stopping sharing closes the device's attachment the same way.
+- Only `status`, `list`, `attach` (with optional `history`), `input` (with optional `automatic`), `resize`, `detach`, and `redeem` (with `proof`) are accepted remotely.
+- The Mac answers `list` and `attach` only for sessions its policy lets that device (or that invitation) reach, and each listed session carries `access`, limited to the grant. Others don't appear and attach as `not_found` (`sessionUnavailable` in the Swift client). Narrowing access closes the device's attachment the same way.
 - A remote `status` reports only whether tmux is available, never the Mac's servers.
 - The Mac rejects input, resize, and control attaches for `view` grants, even if the server is malicious.
 - The Mac's local service decides who controls a session.
 
-**Tunnels.** Each list or attach uses its own tunnel, with fresh keys and a fresh local grant check.
+**Tunnels.** Each list, attach, or redeem uses its own tunnel, with fresh keys and a fresh local grant check.
+
+**Session invitations.** A grant from a session invitation is an ordinary signed grant, but the Mac records the invitation first and the grant reaches nothing until `redeem` arrives on it with the proof described in [local-agent-v1](local-agent-v1.md#sharing). The proof key travels only in the link, never to the server. The client compares the signed permission with the link's before redeeming.
 
 **Detach.**
 - The detach acknowledgement is sent only after the Mac has released control, so another device can take control immediately.
@@ -99,7 +101,7 @@ Encrypted records carry the [local-agent-v1](local-agent-v1.md) JSON requests an
 
 **Resizes.** `geometry` frames arrive in order inside the encrypted channel, each before the redraw at its size. The server never learns grid sizes.
 
-**Reconnects** are explicit. Input is never resent automatically.
+**Reconnects** run a full handshake and grant check every time. The iOS client reconnects on its own after backgrounding (once its 15-second grace ends) and after a network drop while active, with backoff and at most four tries; never after leaving, revocation, or the session ending. Input is never resent.
 
 ## Mac side
 

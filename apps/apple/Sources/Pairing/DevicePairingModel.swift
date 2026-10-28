@@ -158,9 +158,20 @@ final class DevicePairingModel {
         }
     }
 
+    /// The grant the requesting device already has with this device, if any.
+    /// The server allows one active grant per pair, so approving replaces it.
+    var existingGrantForRequest: DeviceGrant? {
+        guard let requester = pairing?.client else { return nil }
+        return grants.first { $0.client.id == requester.id || $0.host.id == requester.id }
+    }
+
     func approve(permission: PairingPermission) {
         guard mayApprove, let pairing else { return }
+        let replaced = existingGrantForRequest
         run(String(localized: "Approving pairing…", bundle: .main)) { client in
+            // Re-pairing replaces the device's current access: end it first,
+            // or the server refuses a second grant between the same devices.
+            if let replaced { try await client.revoke(grantID: replaced.id, pairingID: replaced.pairingID) }
             let result = try await client.approve(pairing, permission: permission)
             let grants = try await client.grants()
             return .refreshed(result, grants)

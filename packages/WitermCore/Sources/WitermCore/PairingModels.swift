@@ -137,6 +137,12 @@ enum PairingEncoding {
     return encoded == value ? data : nil
   }
 
+  /// Unpadded Base64URL, the encoding `randomValue` accepts.
+  static func base64URL(_ data: Data) -> String {
+    data.base64EncodedString().replacingOccurrences(of: "+", with: "-")
+      .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+  }
+
   static func canonicalID(_ value: String) -> String? {
     UUID(uuidString: value)?.uuidString.lowercased()
   }

@@ -23,7 +23,7 @@ import XCTest
         let host = app.textFields["sshHostAddress"]
         XCTAssertTrue(host.waitForExistence(timeout: 5))
         host.tap(); host.typeText("fixture@example.invalid")
-        XCTAssertTrue(app.staticTexts["sshAddressSummary"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["sshAddressSummary"].firstMatch.waitForExistence(timeout: 5))
         app.buttons["sshMoreOptions"].tap()
         let field = app.textFields["sshProfileName"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))

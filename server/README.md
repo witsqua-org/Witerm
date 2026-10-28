@@ -9,7 +9,7 @@ Contracts: [HTTP](../protocol/README.md), [pairing](../protocol/pairing-v1.md), 
 | Variable | Default | Meaning |
 |---|---|---|
 | `DATABASE_URL` | required | PostgreSQL connection string |
-| `HTTP_ADDR` | `127.0.0.1:8080` | Listen address |
+| `HTTP_ADDR` | `127.0.0.1:37429` | Listen address |
 | `MIGRATE_ON_START` | `false` | Apply migrations at startup (Compose turns this on) |
 | `TLS_CERT_FILE`, `TLS_KEY_FILE` | unset | Serve HTTPS/WSS (TLS 1.2+); set both or neither |
 | `RELAY_ALLOW_LOOPBACK_DEVELOPMENT` | `false` | Allow plain HTTP/WS for exact loopback hosts |

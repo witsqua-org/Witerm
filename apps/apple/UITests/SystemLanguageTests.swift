@@ -24,7 +24,7 @@ import XCTest
         let primary = app.buttons["primaryAction"]
         XCTAssertTrue(primary.waitForExistence(timeout: 10))
         XCTAssertEqual(primary.label, action)
-        app.tabBars.buttons["SSH"].tap()
+        app.tabBars.buttons.element(boundBy: 0).tap()
         app.buttons["newSSHProfile"].tap()
         XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons[cancel].exists)

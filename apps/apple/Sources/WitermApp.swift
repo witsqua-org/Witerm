@@ -17,6 +17,7 @@ struct WitermApp: App {
         Settings {
             MacSettingsView(service: service)
                 .environment(servers)
+                .environment(\.localAgent, service.client)
         }
         #endif
     }
@@ -44,6 +45,7 @@ struct WitermApp: App {
         Group {
             #if os(macOS)
                 MacWorkspaceView(service: service)
+                    .environment(\.localAgent, service.client)
             #else
                 MobileWorkspaceView()
             #endif
@@ -97,6 +99,8 @@ struct WorkspaceActions {
     var newSession: (() -> Void)?
     var newSSHConnection: () -> Void
     var importSSHHosts: (() -> Void)?
+    /// Opens a new pairing invitation's QR code (Mac).
+    var pairDevice: (() -> Void)? = nil
     var refresh: () -> Void
     /// Open terminals in sidebar order; the first nine get ⌘1–⌘9.
     var terminalNames: [String] = []
@@ -126,6 +130,12 @@ struct WitermCommands: Commands {
                 .disabled(actions == nil)
             Button(String(localized: "Import SSH Hosts…", bundle: .main)) { actions?.importSSHHosts?() }
                 .disabled(actions?.importSSHHosts == nil)
+            #if os(macOS)
+            Divider()
+            Button(String(localized: "Pair iPhone or iPad…", bundle: .main)) { actions?.pairDevice?() }
+                .keyboardShortcut("p", modifiers: [.command, .option])
+                .disabled(actions?.pairDevice == nil)
+            #endif
         }
         CommandGroup(before: .toolbar) {
             Button(String(localized: "Refresh", bundle: .main)) { actions?.refresh() }

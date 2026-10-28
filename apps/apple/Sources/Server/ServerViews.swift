@@ -208,7 +208,7 @@ struct ServerSetupView: View {
                     .frame(maxWidth: .infinity)
             }
         }
-        .navigationTitle(String(localized: "Devices", bundle: .main))
+        .navigationTitle(String(localized: "Mac Access", bundle: .main))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {

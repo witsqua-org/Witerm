@@ -6,12 +6,11 @@ import WitermCore
 enum MacDestination: Hashable {
     case local(String)
     case ssh(UUID)
-    /// Paired devices through one saved server; nil when none is saved.
-    case devices(ConnectionModel.ID?)
 }
 
-/// One sidebar for everything a person can open: sessions on this Mac, saved
-/// SSH hosts, and paired devices. The detail column is always the work itself.
+/// One sidebar for everything a person can open: sessions on this Mac and
+/// saved SSH hosts. Paired devices are managed in Settings. The detail column
+/// is always the work itself.
 struct MacWorkspaceView: View {
     let service: LocalAgentService
     @Environment(ServerList.self) private var servers
@@ -23,6 +22,8 @@ struct MacWorkspaceView: View {
     @State private var endingSession: LocalSessionInfo?
     @State private var sharingSession: LocalSessionInfo?
     @State private var renamingSession: LocalSessionInfo?
+    @State private var pairingDevice = false
+    @State private var invitingSession: LocalSessionInfo?
     @State private var search = ""
 
     var body: some View {
@@ -60,6 +61,7 @@ struct MacWorkspaceView: View {
             newSession: canCreateSession ? { creatingSession = true } : nil,
             newSSHConnection: sshUI.presentNew,
             importSSHHosts: sshUI.presentImport,
+            pairDevice: { pairingDevice = true },
             refresh: { Task { await refresh() } },
             terminalNames: openTerminals.map(\.name),
             showTerminal: { index in
@@ -87,6 +89,8 @@ struct MacWorkspaceView: View {
                 terminal.rename(session, to: name, using: client)
             }
         }
+        .sheet(isPresented: $pairingDevice) { MacPairDeviceSheet(service: service) }
+        .sheet(item: $invitingSession) { session in SessionInviteView(service: service, session: session) }
         .sheet(item: $sharingSession) { session in
             SessionHandoffView(service: service, terminal: terminal, sessionID: session.id)
         }
@@ -123,12 +127,6 @@ struct MacWorkspaceView: View {
         }
         .onChange(of: ssh.profiles.map(\.id)) { _, ids in
             if case .ssh(let id) = selection, !ids.contains(id), ssh.connectingProfile?.id != id { selection = nil }
-        }
-        .onChange(of: servers.servers.map(\.id)) { _, ids in
-            // A removed server's page falls back to the first remaining one.
-            if case .devices(let id)? = selection, id.map(ids.contains) != true {
-                selection = .devices(ids.first)
-            }
         }
         .onDisappear { ssh.disconnectAll(); terminal.stopWatching() }
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.willSleepNotification)) { _ in
@@ -175,11 +173,17 @@ struct MacWorkspaceView: View {
         List(selection: $selection) {
             Section(String(localized: "This Mac", bundle: .main)) {
                 localRows
+                // Pairing lives in Settings too; this is where people look for it.
+                Button(String(localized: "Pair iPhone or iPad…", bundle: .main), systemImage: "qrcode") { pairingDevice = true }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("pairDeviceSidebar")
             }
             Section(String(localized: "SSH Hosts", bundle: .main)) {
                 ForEach(ssh.orderedProfiles(search: search)) { profile in
                     let session = ssh.session(for: profile.id)
-                    SSHHostRowContent(profile: profile, active: session != nil, favorite: ssh.isFavorite(profile))
+                    SSHHostRowContent(profile: profile, active: session != nil, favorite: ssh.isFavorite(profile),
+                                      activity: session?.activity)
                         .tag(MacDestination.ssh(profile.id))
                         .accessibilityIdentifier("sshProfileRow-\(profile.id.uuidString)")
                         .accessibilityLabel(profile.name)
@@ -212,23 +216,6 @@ struct MacWorkspaceView: View {
                         .accessibilityIdentifier("sshImportHosts")
                 }
             }
-            Section(String(localized: "Devices", bundle: .main)) {
-                if servers.servers.count > 1 {
-                    // One row per server: pairing and remote access are per server.
-                    ForEach(Array(servers.servers.enumerated()).filter { search.isEmpty || $0.element.displayName.localizedCaseInsensitiveContains(search) }, id: \.element.id) { index, server in
-                        Label(server.displayName, systemImage: "iphone.and.arrow.forward")
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .tag(MacDestination.devices(server.id))
-                            .accessibilityLabel(String(localized: "Paired Devices, \(server.displayName)", bundle: .main))
-                            .accessibilityIdentifier(index == 0 ? "devicesNavigation" : "devicesNavigation-\(index)")
-                    }
-                } else {
-                    Label(String(localized: "Paired Devices", bundle: .main), systemImage: "iphone.and.arrow.forward")
-                        .tag(MacDestination.devices(servers.servers.first?.id))
-                        .accessibilityIdentifier("devicesNavigation")
-                }
-            }
         }
         .listStyle(.sidebar)
         .searchable(text: $search, prompt: String(localized: "Search Sessions and Hosts", bundle: .main))
@@ -245,15 +232,26 @@ struct MacWorkspaceView: View {
             ForEach(terminal.sessions.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) }) { session in
                 let attached = terminal.selectedID == session.id && terminal.attachment != nil
                 let shared = session.sharing?.shared == true
+                let doing = terminal.activity(for: session.id).summary(home: NSHomeDirectory())
                 Label {
-                    HStack(spacing: 6) {
-                        Text(session.name).lineLimit(1)
-                        if shared {
-                            Image(systemName: "antenna.radiowaves.left.and.right")
-                                .font(.caption)
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack(spacing: 6) {
+                            Text(session.name).lineLimit(1)
+                            if shared {
+                                Image(systemName: "antenna.radiowaves.left.and.right")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .help(String(localized: "Shared with paired devices", bundle: .main))
+                                    .accessibilityHidden(true)
+                            }
+                        }
+                        // What it was doing when last shown here.
+                        if let doing {
+                            Text(verbatim: doing)
+                                .font(.caption.monospaced())
                                 .foregroundStyle(.secondary)
-                                .help(String(localized: "Shared with paired devices", bundle: .main))
-                                .accessibilityHidden(true)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
                         }
                     }
                 } icon: {
@@ -263,7 +261,7 @@ struct MacWorkspaceView: View {
                 .tag(MacDestination.local(session.id))
                 .accessibilityLabel(session.name)
                 .accessibilityValue([attached ? String(localized: "Connected", bundle: .main) : nil,
-                                     shared ? String(localized: "Shared", bundle: .main) : nil]
+                                     shared ? String(localized: "Shared", bundle: .main) : nil, doing]
                     .compactMap { $0 }.joined(separator: ", "))
                 .accessibilityIdentifier("localSession-\(session.id)")
                 .contextMenu {
@@ -272,8 +270,12 @@ struct MacWorkspaceView: View {
                         Button(String(localized: "View Only", bundle: .main)) { terminal.attach(session, using: client, mode: .view) }
                         Divider()
                         Button(String(localized: "Continue on iPhone…", bundle: .main)) { sharingSession = session }
+                        Button(String(localized: "Share with a Link…", bundle: .main)) { invitingSession = session }
                         if shared {
                             Button(String(localized: "Stop Sharing", bundle: .main)) { terminal.setShared(session, false, using: client) }
+                        }
+                        RemoteAccessMenuItems(session: session) { keepPrivate, typing in
+                            terminal.configure(session, keepPrivate: keepPrivate, remoteTyping: typing, using: client)
                         }
                         Divider()
                         Button(String(localized: "Rename…", bundle: .main)) { renamingSession = session }
@@ -310,7 +312,7 @@ struct MacWorkspaceView: View {
     private var serverFooter: some View {
         SettingsLink {
             HStack(spacing: 10) {
-                Image(systemName: footerSymbol)
+                Image(systemName: servers.summarySymbol)
                     .foregroundStyle(footerTint)
                     .frame(width: 18)
                     .accessibilityHidden(true)
@@ -318,7 +320,7 @@ struct MacWorkspaceView: View {
                     Text(footerTitle)
                         .font(.callout.weight(.medium))
                         .lineLimit(1)
-                    Text(footerStatus)
+                    Text(servers.summaryStatus)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -335,48 +337,17 @@ struct MacWorkspaceView: View {
         .buttonStyle(.plain)
         .background(.bar)
         .overlay(alignment: .top) { Divider() }
-        .accessibilityLabel(String(localized: "Server: \(footerTitle), \(footerStatus)", bundle: .main))
+        .accessibilityLabel(String(localized: "Server: \(footerTitle), \(servers.summaryStatus)", bundle: .main))
         .accessibilityHint(String(localized: "Opens Settings", bundle: .main))
         .accessibilityIdentifier("serverStatusFooter")
     }
 
-    /// One server is named; several are summarized by their worst state.
     private var footerTitle: String {
-        switch servers.servers.count {
-        case 0: String(localized: "No Server", bundle: .main)
-        case 1: servers.servers[0].displayName
-        default: String(localized: "\(servers.servers.count) Servers", bundle: .main)
-        }
-    }
-
-    private var footerTone: StatusBadge.Tone {
-        let tones = servers.servers.map(\.statusTone)
-        if tones.contains(.warning) { return .warning }
-        if !tones.isEmpty, tones.allSatisfy({ $0 == .positive }) { return .positive }
-        return .neutral
-    }
-
-    private var footerStatus: String {
-        let list = servers.servers
-        if list.count == 1 { return list[0].statusTitle }
-        if list.isEmpty { return String(localized: "Not Set Up", bundle: .main) }
-        if list.contains(where: { $0.phase.isChecking }) { return String(localized: "Checking", bundle: .main) }
-        let failed = list.filter { $0.statusTone == .warning }.count
-        if failed > 0 { return String(localized: "\(failed) Unreachable", bundle: .main) }
-        return footerTone == .positive ? String(localized: "All Reachable", bundle: .main) : String(localized: "Not Checked", bundle: .main)
-    }
-
-    private var footerSymbol: String {
-        if servers.servers.count == 1 { return servers.servers[0].statusSymbol }
-        switch footerTone {
-        case .positive: return "checkmark.circle.fill"
-        case .warning: return "exclamationmark.circle"
-        case .neutral: return "server.rack"
-        }
+        servers.servers.count == 1 ? servers.servers[0].displayName : servers.summaryTitle
     }
 
     private var footerTint: Color {
-        switch footerTone {
+        switch servers.summaryTone {
         case .positive: WitermTheme.positive
         case .warning: WitermTheme.warning
         case .neutral: .secondary
@@ -401,10 +372,6 @@ struct MacWorkspaceView: View {
             } else {
                 overview
             }
-        case .devices(let id)?:
-            MacDevicesView(service: service, server: servers.server(id: id))
-                .id(id)
-                .safeAreaInset(edge: .top, spacing: 0) { offlineBanner }
         case nil:
             overview
         }

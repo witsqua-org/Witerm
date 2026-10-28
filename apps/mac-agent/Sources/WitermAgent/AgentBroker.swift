@@ -11,12 +11,38 @@ final class AgentBroker: @unchecked Sendable {
     private var listener: Int32 = -1
     private var active = false
     private var connections: [UUID: AgentConnection] = [:]
-    private var controllers: [String: UUID] = [:]
+    /// Attachments that may type, per session. Several can: typing is shared
+    /// when every one of them allows it.
+    private var writers: [String: Set<UUID>] = [:]
+    /// The writer whose grid the session uses: the last one that typed, or
+    /// the first to attach. Others see that grid until they type.
+    private var sizeOwners: [String: UUID] = [:]
+    /// Each writer's own grid, applied when it becomes the size owner.
+    private var preferred: [UUID: (columns: Int, rows: Int)] = [:]
+    /// When each writer last typed, so the grid changes hands only once its
+    /// owner pauses rather than on every interleaved keystroke.
+    private var lastInput: [UUID: TimeInterval] = [:]
+    /// How long the grid's owner must be idle before another typist takes it.
+    static let ownerHold: TimeInterval = 2
+    /// Sessions whose paired devices are view only for now. Kept in memory:
+    /// restarting the service ends the pause.
+    private var remoteTypingPaused: Set<String> = []
+    /// This Mac's policy per paired device.
+    private var accessPolicies: [String: LocalDeviceAccess]
+    /// Invitations to single sessions, keyed by pairing. A grant from one of
+    /// these pairings reaches only its session, once redeemed and until it expires.
+    private var guests: [String: LocalGuestInvite]
+    private var expiryTimer: DispatchSourceTimer?
     private var socketIdentity: (dev_t, ino_t)?
 
     init(configuration: AgentConfiguration, relays: RelayStatusBoard? = nil) throws {
         state = try PrivateState(directory: configuration.stateDirectory)
         engine = try TmuxEngine(state: state, configuration: configuration)
+        // An unreadable policy file falls back to shared sessions only.
+        accessPolicies = (try? state.loadDeviceAccess()) ?? [:]
+        // An unreadable invitation file loses the invitations, never widens them:
+        // their grants then reach only what an unknown device would.
+        guests = (try? state.loadGuests()) ?? [:]
         self.relays = relays
     }
 
@@ -37,6 +63,15 @@ final class AgentBroker: @unchecked Sendable {
                 guard lstat(state.socketURL.path, &value) == 0 else { throw AgentFailure() }
                 socketIdentity = (value.st_dev, value.st_ino)
                 listener = fd; active = true
+                // Invitations end at their time even while nobody sends a request.
+                let timer = DispatchSource.makeTimerSource(queue: queue)
+                timer.schedule(deadline: .now() + 2, repeating: 2)
+                timer.setEventHandler { [weak self] in
+                    guard let self, self.active, !self.guests.isEmpty else { return }
+                    self.enforceRemoteAccess()
+                }
+                timer.resume()
+                expiryTimer = timer
                 return fd
             } catch { Darwin.close(fd); throw error }
         }
@@ -47,10 +82,11 @@ final class AgentBroker: @unchecked Sendable {
         queue.sync {
             guard active else { return }
             active = false
+            expiryTimer?.cancel(); expiryTimer = nil
             _ = Darwin.shutdown(listener, SHUT_RDWR)
             listener = -1
             for connection in connections.values { connection.child?.stop(); connection.finish(afterFlush: false) }
-            connections.removeAll(); controllers.removeAll()
+            connections.removeAll(); writers.removeAll(); sizeOwners.removeAll(); preferred.removeAll(); lastInput.removeAll()
             var value = stat()
             if let identity = socketIdentity, lstat(state.socketURL.path, &value) == 0,
                value.st_dev == identity.0, value.st_ino == identity.1, value.st_uid == geteuid() {
@@ -87,7 +123,7 @@ final class AgentBroker: @unchecked Sendable {
 
     private func disconnect(_ connection: AgentConnection, final: Bool) {
         queue.async { [self] in
-            if let sessionID = connection.sessionID, controllers[sessionID] == connection.token { controllers.removeValue(forKey: sessionID) }
+            releaseWriter(connection)
             connection.child?.stop()
             connection.child = nil
             connection.mode = nil
@@ -134,18 +170,23 @@ final class AgentBroker: @unchecked Sendable {
         case .list: allowed.insert("peer")
         case .create: allowed.formUnion(["name", "columns", "rows", "cwd", "shared"])
         case .close: allowed.insert("session_id")
-        case .share: allowed.formUnion(["session_id", "shared"])
+        case .share: allowed.formUnion(["session_id", "shared", "keep_private", "remote_typing"])
+        case .access: allowed.insert("access")
+        case .guest: allowed.formUnion(["guest", "pairing_id"])
+        case .redeem: allowed.formUnion(["proof", "peer"])
         case .rename: allowed.formUnion(["session_id", "name"])
-        case .attach: allowed.formUnion(["session_id", "columns", "rows", "mode", "peer"])
-        case .input: allowed.insert("data")
+        case .attach: allowed.formUnion(["session_id", "columns", "rows", "mode", "history", "peer"])
+        case .input: allowed.formUnion(["data", "automatic"])
         case .resize: allowed.formUnion(["columns", "rows"])
         }
         return Set(raw.keys).isSubset(of: allowed)
     }
 
     private func handle(_ request: LocalAgentRequest, on connection: AgentConnection) throws {
-        func reply(session: LocalSessionInfo? = nil, sessions: [LocalSessionInfo]? = nil, status: LocalAgentStatus? = nil, mode: LocalAttachmentMode? = nil) {
-            connection.enqueue(LocalAgentFrame(id: request.id, kind: .response, ok: true, status: status, sessions: sessions, session: session, mode: mode))
+        func reply(session: LocalSessionInfo? = nil, sessions: [LocalSessionInfo]? = nil, status: LocalAgentStatus? = nil,
+                   mode: LocalAttachmentMode? = nil, accesses: [LocalDeviceAccess]? = nil, guests: [LocalGuestInvite]? = nil) {
+            connection.enqueue(LocalAgentFrame(id: request.id, kind: .response, ok: true, status: status, sessions: sessions,
+                                               session: session, mode: mode, accesses: accesses, guests: guests))
         }
         func dimensions() throws -> (Int, Int) {
             guard let columns = request.columns, let rows = request.rows, validDimensions(columns: columns, rows: rows) else { throw AgentFailure(.invalidRequest) }
@@ -157,15 +198,18 @@ final class AgentBroker: @unchecked Sendable {
         func peer() throws -> LocalRemotePeer? {
             guard let peer = request.peer else { return nil }
             guard validSessionID(peer.deviceID), (1...64).contains(peer.name.unicodeScalars.count),
-                  peer.name.rangeOfCharacter(from: .controlCharacters) == nil else { throw AgentFailure(.invalidRequest) }
+                  peer.name.rangeOfCharacter(from: .controlCharacters) == nil,
+                  peer.pairingID.map(validSessionID) ?? true else { throw AgentFailure(.invalidRequest) }
             return peer
         }
         switch request.operation {
         case .status: reply(status: LocalAgentStatus(tmuxAvailable: engine.available, relays: relays?.snapshot() ?? []))
         case .list:
-            if try peer() != nil {
-                // A paired device sees only shared sessions, without who else is attached.
-                reply(sessions: try engine.sessions().filter { engine.shared.contains($0.id) })
+            if let remote = try peer() {
+                // A paired device sees only the sessions it may reach and what
+                // it may do there, never who else is attached.
+                reply(sessions: try engine.sessions().filter { reachable($0.id, by: remote) }
+                    .map { $0.forPeer(access: remoteAccess($0.id, for: remote)) })
             } else {
                 reply(sessions: try engine.sessions().map { withSharing($0) })
             }
@@ -175,23 +219,80 @@ final class AgentBroker: @unchecked Sendable {
             let session = try engine.create(name: name, columns: columns, rows: rows, cwd: request.cwd, shared: request.shared == true)
             reply(session: withSharing(session))
         case .share:
-            guard connection.child == nil, let shared = request.shared else { throw AgentFailure(.invalidRequest) }
+            guard connection.child == nil, request.peer == nil,
+                  request.shared != nil || request.keepPrivate != nil || request.remoteTyping != nil,
+                  !(request.shared == true && request.keepPrivate == true) else { throw AgentFailure(.invalidRequest) }
             let id = try sessionID()
-            try engine.setShared(id, shared)
-            if !shared {
-                // Stopping sharing disconnects paired devices; the shell keeps running.
-                for attached in connections.values where attached.sessionID == id && attached.peer != nil {
-                    attached.finish(afterFlush: true, terminalError: .notFound, emitClosed: true)
-                    attached.child?.stop()
-                }
+            if let keepPrivate = request.keepPrivate { try engine.setPrivate(id, keepPrivate) }
+            if let shared = request.shared { try engine.setShared(id, shared) }
+            if let typing = request.remoteTyping {
+                if typing { remoteTypingPaused.remove(id) } else { remoteTypingPaused.insert(id) }
             }
+            // Narrowing access disconnects only the paired devices it affects;
+            // the shell keeps running.
+            enforceRemoteAccess()
             reply(session: withSharing(try engine.session(id)))
+        case .access:
+            guard connection.child == nil, request.peer == nil else { throw AgentFailure(.invalidRequest) }
+            if let access = request.access {
+                guard validSessionID(access.deviceID) else { throw AgentFailure(.invalidRequest) }
+                var next = accessPolicies
+                next[access.deviceID] = access
+                guard next.count <= 64 else { throw AgentFailure(.invalidRequest) }
+                try state.saveDeviceAccess(next)
+                accessPolicies = next
+                enforceRemoteAccess()
+            }
+            reply(accesses: accessPolicies.values.sorted { $0.deviceID < $1.deviceID })
+        case .guest:
+            guard connection.child == nil, request.peer == nil else { throw AgentFailure(.invalidRequest) }
+            var next = guests
+            if let invite = request.guest {
+                let now = Date()
+                guard validSessionID(invite.pairingID), next[invite.pairingID] == nil, invite.key?.count == 32, !invite.redeemed,
+                      invite.expiresAt > now, invite.expiresAt.timeIntervalSince(now) <= SessionInvitation.longestAccess + 60 else { throw AgentFailure(.invalidRequest) }
+                _ = try engine.session(invite.sessionID)
+                next[invite.pairingID] = invite
+                guard next.values.filter({ $0.expiresAt != LocalGuestInvite.ended }).count <= 32 else { throw AgentFailure(.invalidRequest) }
+            }
+            if let removing = request.pairingID {
+                guard validSessionID(removing), let old = next[removing] else { throw AgentFailure(.invalidRequest) }
+                // A forgotten invitation's grant still reaches nothing, even if
+                // revoking it on the server failed or raced an approval.
+                next[removing] = LocalGuestInvite(pairingID: removing, sessionID: old.sessionID, permission: .view,
+                                                  expiresAt: LocalGuestInvite.ended, redeemed: false)
+                let ended = next.values.filter { $0.expiresAt == LocalGuestInvite.ended }
+                for stale in ended.dropFirst(64) { next.removeValue(forKey: stale.pairingID) }
+            }
+            if next != guests {
+                try state.saveGuests(next)
+                guests = next
+                enforceRemoteAccess()
+            }
+            reply(guests: guests.values.filter { $0.expiresAt != LocalGuestInvite.ended }.sorted { $0.pairingID < $1.pairingID }.map {
+                LocalGuestInvite(pairingID: $0.pairingID, sessionID: $0.sessionID, permission: $0.permission,
+                                 expiresAt: $0.expiresAt, redeemed: $0.redeemed)
+            })
+        case .redeem:
+            // Unknown, used, expired and wrong proofs all look the same.
+            guard connection.child == nil, let remote = try peer(), let pairingID = remote.pairingID,
+                  let publicKey = remote.publicKey, let proof = request.proof else { throw AgentFailure(.invalidRequest) }
+            guard let invite = guests[pairingID], !invite.redeemed, let key = invite.key, invite.expiresAt > Date(),
+                  SessionInvitation.verify(proof: proof, key: key, pairingID: pairingID, clientPublicKey: publicKey) else { throw AgentFailure(.notFound) }
+            var next = guests
+            // Once redeemed the key has done its job; it isn't kept.
+            next[pairingID] = LocalGuestInvite(pairingID: pairingID, sessionID: invite.sessionID, permission: invite.permission,
+                                               expiresAt: invite.expiresAt, redeemed: true)
+            try state.saveGuests(next)
+            guests = next
+            reply()
         case .rename:
             guard connection.child == nil, let name = request.name, validDisplayName(name) else { throw AgentFailure(.invalidRequest) }
             reply(session: withSharing(try engine.rename(try sessionID(), to: name)))
         case .close:
             let id = try sessionID()
             try engine.close(id)
+            remoteTypingPaused.remove(id)
             reply()
             for attached in connections.values where attached.sessionID == id {
                 attached.finish(afterFlush: true, emitClosed: true)
@@ -201,29 +302,85 @@ final class AgentBroker: @unchecked Sendable {
             let id = try sessionID()
             let (columns, rows) = try dimensions()
             let remote = try peer()
-            // An unshared session does not exist for a paired device.
-            if remote != nil, !engine.shared.contains(id) { throw AgentFailure(.notFound) }
-            if mode == .control, controllers[id] != nil { throw AgentFailure(.sessionBusy) }
+            if let remote {
+                // A session a paired device may not reach does not exist for it.
+                guard reachable(id, by: remote) else { throw AgentFailure(.notFound) }
+                if mode == .control, remoteAccess(id, for: remote) != .control { throw AgentFailure(.readOnly) }
+            }
+            let others = writers[id] ?? []
+            if mode == .control, !others.isEmpty {
+                // Typing is shared only when everyone who may type allows it.
+                guard coTypes(remote), others.allSatisfy({ coTypes(connections[$0]?.peer) }) else { throw AgentFailure(.sessionBusy) }
+            }
             let previous = try engine.verifiedSession(id)
-            let changed = mode == .control && (previous.columns != columns || previous.rows != rows)
+            // Joining others who type keeps their grid until this one types.
+            let changed = mode == .control && others.isEmpty && (previous.columns != columns || previous.rows != rows)
             let info = changed ? try resizeSession(previous, columns: columns, rows: rows) : previous
             // A viewer observes the controller's current window, not its stale
             // list/request grid. Its PTY must render that same authoritative size.
             let child = try engine.attach(id, columns: info.columns, rows: info.rows, mode: mode)
             connection.child = child; connection.sessionID = id; connection.mode = mode; connection.peer = remote
-            if mode == .control { controllers[id] = connection.token }
+            if mode == .control {
+                writers[id, default: []].insert(connection.token)
+                preferred[connection.token] = (columns, rows)
+                if others.isEmpty { sizeOwners[id] = connection.token }
+            }
             // FIFO delivery guarantees the response precedes the first VT event.
             reply(session: info, mode: mode)
             if changed { connection.enqueue(LocalAgentFrame(kind: .geometry, session: info)) }
-            child.start(output: { [weak connection] bytes in connection?.enqueue(LocalAgentFrame(kind: .output, data: bytes)) ?? false }, ended: { [weak connection] in connection?.finish(afterFlush: true, emitClosed: true) })
+            // A renderer with its own scrollback gets earlier output first, then
+            // tmux's redraw of the live screen. Its stream never switches to the
+            // alternate screen, so new output scrolls into that scrollback.
+            let screen = request.history == true ? AlternateScreenFilter() : nil
+            if screen != nil, let earlier = try? engine.history(id, rows: info.rows) {
+                for offset in stride(from: 0, to: earlier.count, by: 8192) {
+                    guard connection.enqueue(LocalAgentFrame(kind: .output, data: earlier.subdata(in: offset..<min(offset + 8192, earlier.count)))) else { break }
+                }
+            }
+            child.start(output: { [weak connection] bytes in
+                let visible = screen?.filter(bytes) ?? bytes
+                return visible.isEmpty ? true : connection?.enqueue(LocalAgentFrame(kind: .output, data: visible)) ?? false
+            }, ended: { [weak connection] in connection?.finish(afterFlush: true, emitClosed: true) })
         case .input:
-            guard let child = connection.child, connection.sessionID != nil, let data = request.data, data.count <= 16384 else { throw AgentFailure(.invalidRequest) }
+            guard let child = connection.child, let id = connection.sessionID, let data = request.data, data.count <= 16384 else { throw AgentFailure(.invalidRequest) }
             guard connection.mode == .control else { throw AgentFailure(.readOnly) }
+            if let remote = connection.peer, remoteAccess(id, for: remote) != .control { throw AgentFailure(.readOnly) }
+            // A terminal's automatic answers (to tmux's queries on attach, for
+            // example) aren't typing: they never take the grid.
+            guard request.automatic != true else { try child.send(data); reply(); return }
+            let now = ProcessInfo.processInfo.systemUptime
+            defer { lastInput[connection.token] = now }
+            let owner = sizeOwners[id]
+            let ownerTyping = owner.map { writers[id]?.contains($0) == true && now - (lastInput[$0] ?? -.infinity) < Self.ownerHold } ?? false
+            if owner != connection.token, !ownerTyping {
+                // Typing makes this writer's grid the session's, before its
+                // input arrives, once the previous owner has paused.
+                sizeOwners[id] = connection.token
+                if let size = preferred[connection.token] {
+                    let current = try engine.session(id)
+                    if current.columns != size.columns || current.rows != size.rows {
+                        _ = try resizeSession(current, columns: size.columns, rows: size.rows)
+                    }
+                }
+            }
             try child.send(data); reply()
         case .resize:
-            guard connection.child != nil, let id = connection.sessionID else { throw AgentFailure(.invalidRequest) }
+            guard let child = connection.child, let id = connection.sessionID else { throw AgentFailure(.invalidRequest) }
             guard connection.mode == .control else { throw AgentFailure(.readOnly) }
             let (columns, rows) = try dimensions()
+            preferred[connection.token] = (columns, rows)
+            if let owner = sizeOwners[id], owner != connection.token, writers[id]?.contains(owner) == true {
+                // Another writer's grid is in use. Remember this one for when
+                // it types, and show it the grid it must render meanwhile.
+                let current = try engine.session(id)
+                if current.columns != columns || current.rows != rows {
+                    guard connection.enqueue(LocalAgentFrame(kind: .geometry, session: current)) else { throw AgentFailure(.backpressure) }
+                    try? engine.refresh(id, terminals: [child.terminalName], columns: current.columns, rows: current.rows)
+                }
+                reply()
+                return
+            }
+            sizeOwners[id] = connection.token
             let previous = try engine.session(id)
             if previous.columns != columns || previous.rows != rows {
                 _ = try resizeSession(previous, columns: columns, rows: rows)
@@ -235,9 +392,7 @@ final class AgentBroker: @unchecked Sendable {
         case .detach:
             guard let child = connection.child else { throw AgentFailure(.invalidRequest) }
             // The ACK means another endpoint may acquire control immediately.
-            if let id = connection.sessionID, controllers[id] == connection.token {
-                controllers.removeValue(forKey: id)
-            }
+            releaseWriter(connection)
             connection.child = nil
             connection.mode = nil
             connection.sessionID = nil
@@ -248,15 +403,77 @@ final class AgentBroker: @unchecked Sendable {
         }
     }
 
-    /// The session with whether it is shared and who is attached to it.
+    /// The session with who may reach it and who is attached to it.
     private func withSharing(_ session: LocalSessionInfo) -> LocalSessionInfo {
         let attachments = connections.values
             .filter { $0.sessionID == session.id && $0.child != nil && $0.mode != nil }
             .sorted { $0.token.uuidString < $1.token.uuidString }
-            .map { LocalAttachmentInfo(mode: $0.mode!, device: $0.peer) }
+            .map { LocalAttachmentInfo(mode: $0.mode!, device: $0.peer?.identity) }
         return LocalSessionInfo(id: session.id, name: session.name, createdAt: session.createdAt,
                                 columns: session.columns, rows: session.rows,
-                                sharing: LocalSessionSharing(shared: engine.shared.contains(session.id), attachments: attachments))
+                                sharing: LocalSessionSharing(shared: engine.shared.contains(session.id),
+                                                             keepPrivate: engine.keptPrivate.contains(session.id),
+                                                             remoteTyping: !remoteTypingPaused.contains(session.id),
+                                                             attachments: attachments))
+    }
+
+    // MARK: Remote access
+
+    private func policy(_ peer: LocalRemotePeer) -> LocalDeviceAccess {
+        accessPolicies[peer.deviceID] ?? .default(for: peer.deviceID)
+    }
+
+    /// The invitation a request's grant came from, if any.
+    private func invite(_ peer: LocalRemotePeer) -> LocalGuestInvite? {
+        peer.pairingID.flatMap { guests[$0] }
+    }
+
+    /// Whether a paired device may list and attach to a session at all. An
+    /// invitation's grant reaches its one session, once redeemed and until it expires.
+    private func reachable(_ id: String, by peer: LocalRemotePeer) -> Bool {
+        guard !engine.keptPrivate.contains(id) else { return false }
+        if let invite = invite(peer) { return invite.redeemed && invite.sessionID == id && invite.expiresAt > Date() }
+        return engine.shared.contains(id) || policy(peer).scope == .all
+    }
+
+    /// The most a paired device may do in a session under this Mac's policy.
+    /// The relay endpoint further limits it to the device's signed grant.
+    private func remoteAccess(_ id: String, for peer: LocalRemotePeer) -> LocalAttachmentMode {
+        let permission = invite(peer)?.permission ?? policy(peer).permission
+        return permission == .control && !remoteTypingPaused.contains(id) ? .control : .view
+    }
+
+    /// This Mac always types alongside others, and so does someone it invited
+    /// to type; a paired device only when allowed.
+    private func coTypes(_ peer: LocalRemotePeer?) -> Bool {
+        guard let peer else { return true }
+        return invite(peer) != nil || policy(peer).coTyping
+    }
+
+    private func releaseWriter(_ connection: AgentConnection) {
+        preferred.removeValue(forKey: connection.token)
+        lastInput.removeValue(forKey: connection.token)
+        guard let id = connection.sessionID else { return }
+        writers[id]?.remove(connection.token)
+        if writers[id]?.isEmpty == true { writers.removeValue(forKey: id) }
+        if sizeOwners[id] == connection.token { sizeOwners.removeValue(forKey: id) }
+    }
+
+    /// Closes paired-device attachments a narrowed policy no longer allows:
+    /// unreachable sessions close as `not_found`, lost typing as `read_only`.
+    /// Local attachments and shells are never touched.
+    private func enforceRemoteAccess() {
+        for attached in connections.values {
+            guard let remote = attached.peer, let id = attached.sessionID, attached.child != nil else { continue }
+            let code: LocalAgentErrorCode
+            if !reachable(id, by: remote) { code = .notFound }
+            else if attached.mode == .control, remoteAccess(id, for: remote) != .control { code = .readOnly }
+            else if attached.mode == .control, (writers[id]?.count ?? 0) > 1, !coTypes(remote) { code = .sessionBusy }
+            else { continue }
+            releaseWriter(attached)
+            attached.finish(afterFlush: true, terminalError: code, emitClosed: true)
+            attached.child?.stop()
+        }
     }
 
     private func resizeSession(_ previous: LocalSessionInfo, columns: Int, rows: Int) throws -> LocalSessionInfo {
@@ -322,5 +539,32 @@ final class AgentBroker: @unchecked Sendable {
             }
             throw error
         }
+    }
+}
+
+/// Removes tmux's switch to and from the outer alternate screen, which it
+/// sends when a client starts and stops. Programs inside a pane never reach
+/// the outer terminal's alternate screen; tmux draws them itself. Without the
+/// switch, a renderer's own scrollback keeps what scrolls off its screen.
+/// Used only from one PTY reader thread.
+final class AlternateScreenFilter: @unchecked Sendable {
+    private static let switches = [Data("\u{1b}[?1049h".utf8), Data("\u{1b}[?1049l".utf8)]
+    private var pending = Data()
+
+    func filter(_ bytes: Data) -> Data {
+        var input = pending + bytes
+        pending.removeAll()
+        for sequence in Self.switches {
+            while let range = input.range(of: sequence) { input.removeSubrange(range) }
+        }
+        // Hold back only a tail that could still become a switch.
+        if let escape = input.lastIndex(of: 0x1b), input.distance(from: escape, to: input.endIndex) < Self.switches[0].count {
+            let tail = input[escape...]
+            if Self.switches.contains(where: { $0.starts(with: tail) }) {
+                pending = Data(tail)
+                input.removeSubrange(escape...)
+            }
+        }
+        return input
     }
 }

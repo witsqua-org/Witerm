@@ -29,7 +29,7 @@ final class ServerList {
         let stored = defaults.stringArray(forKey: Self.storageKey)
             ?? defaults.string(forKey: Self.legacyKey).map { [$0] }
         #if os(macOS)
-        let addresses = stored ?? ["http://localhost:8080"]
+        let addresses = stored ?? ["http://localhost:37429"]
         #else
         let addresses = stored ?? []
         #endif
@@ -110,5 +110,39 @@ struct ServerAddressKey: Hashable {
         parts.query = nil
         parts.fragment = nil
         value = parts.string ?? address
+    }
+}
+
+/// All saved servers summarized by their worst state, for places that show
+/// one status: the Mac sidebar footer and the iOS Settings index.
+extension ServerList {
+    var summaryTitle: String {
+        servers.isEmpty ? String(localized: "No Server", bundle: .main)
+            : String(localized: "\(servers.count) Servers", bundle: .main)
+    }
+
+    var summaryTone: StatusBadge.Tone {
+        let tones = servers.map(\.statusTone)
+        if tones.contains(.warning) { return .warning }
+        if !tones.isEmpty, tones.allSatisfy({ $0 == .positive }) { return .positive }
+        return .neutral
+    }
+
+    var summaryStatus: String {
+        if servers.count == 1 { return servers[0].statusTitle }
+        if servers.isEmpty { return String(localized: "Not Set Up", bundle: .main) }
+        if servers.contains(where: { $0.phase.isChecking }) { return String(localized: "Checking", bundle: .main) }
+        let failed = servers.filter { $0.statusTone == .warning }.count
+        if failed > 0 { return String(localized: "\(failed) Unreachable", bundle: .main) }
+        return summaryTone == .positive ? String(localized: "All Reachable", bundle: .main) : String(localized: "Not Checked", bundle: .main)
+    }
+
+    var summarySymbol: String {
+        if servers.count == 1 { return servers[0].statusSymbol }
+        switch summaryTone {
+        case .positive: return "checkmark.circle.fill"
+        case .warning: return "exclamationmark.circle"
+        case .neutral: return "server.rack"
+        }
     }
 }

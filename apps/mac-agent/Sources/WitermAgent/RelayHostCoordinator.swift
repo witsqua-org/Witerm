@@ -31,6 +31,7 @@ actor RelayHostCoordinator {
         var listener: RelayHostConnection?
         var tunnels: [String: Task<Void, Never>] = [:]
         var bridges: [String: RelayTerminalBridge] = [:]
+        var pairing: PairingClient?
     }
 
     private let settings: RelayHostConfigurationStore
@@ -58,9 +59,12 @@ actor RelayHostCoordinator {
     func start() {
         guard monitor == nil else { return }
         monitor = Task { [weak self] in
+            var tick = 0
             while !Task.isCancelled {
                 guard let self else { return }
                 await self.refreshSettings()
+                tick += 1
+                if tick % 30 == 0 { await self.sweepInvitations() }
                 do { try await Task.sleep(for: .seconds(1)) } catch { return }
             }
         }
@@ -151,6 +155,7 @@ actor RelayHostCoordinator {
                     await connection.disconnect(); return
                 }
                 links[server]?.listener = connection
+                links[server]?.pairing = pairing
                 board.set(server, .ready)
                 for try await offer in connection.offers {
                     try Task.checkCancellation()
@@ -165,6 +170,32 @@ actor RelayHostCoordinator {
             if began.duration(to: .now) > .seconds(30) { delay = 1 }
             do { try await Task.sleep(for: .seconds(delay)) } catch { return }
             delay = min(30, delay * 2)
+        }
+    }
+
+    /// Revokes the grants of invitations that expired or whose session
+    /// ended, then forgets them. The local service already refuses them; this
+    /// also ends them on the server. An invitation is forgotten only once
+    /// every ready server confirms it has no grant left.
+    private func sweepInvitations() async {
+        let local = LocalAgentClient(socketURL: socketURL)
+        guard let invites = try? await local.guests(), !invites.isEmpty,
+              let sessions = try? await local.sessions() else { return }
+        let live = Set(sessions.map(\.id))
+        let ended = invites.filter { $0.expiresAt <= Date() || !live.contains($0.sessionID) }
+        guard !ended.isEmpty else { return }
+        let clients = links.values.compactMap(\.pairing)
+        guard !clients.isEmpty, clients.count == links.count else { return }
+        for invite in ended {
+            var settled = true
+            for pairing in clients {
+                do {
+                    for grant in try await pairing.grants() where grant.pairingID == invite.pairingID {
+                        try await pairing.revoke(grantID: grant.id, pairingID: grant.pairingID)
+                    }
+                } catch { settled = false }
+            }
+            if settled { _ = try? await local.guests(removing: invite.pairingID) }
         }
     }
 
@@ -210,11 +241,11 @@ enum RelayTerminalPolicy {
                   let columns = request.columns, let rows = request.rows,
                   validDimensions(columns: columns, rows: rows), let mode = request.mode else { throw AgentFailure(.invalidRequest) }
             guard permission == .control || mode == .view else { throw AgentFailure(.readOnly) }
-            allowed = ["version", "id", "operation", "session_id", "columns", "rows", "mode"]
+            allowed = ["version", "id", "operation", "session_id", "columns", "rows", "mode", "history"]
         case .input:
             guard attached, let bytes = request.data, bytes.count <= 16_384 else { throw AgentFailure(.invalidRequest) }
             guard permission == .control else { throw AgentFailure(.readOnly) }
-            allowed = ["version", "id", "operation", "data"]
+            allowed = ["version", "id", "operation", "data", "automatic"]
         case .resize:
             guard attached, let columns = request.columns, let rows = request.rows,
                   validDimensions(columns: columns, rows: rows) else { throw AgentFailure(.invalidRequest) }
@@ -223,7 +254,10 @@ enum RelayTerminalPolicy {
         case .detach:
             guard attached else { throw AgentFailure(.invalidRequest) }
             allowed = ["version", "id", "operation"]
-        case .create, .close, .share, .rename: throw AgentFailure(.invalidRequest)
+        case .redeem:
+            guard !attached, request.proof?.count == 32 else { throw AgentFailure(.invalidRequest) }
+            allowed = ["version", "id", "operation", "proof"]
+        case .create, .close, .share, .rename, .access, .guest: throw AgentFailure(.invalidRequest)
         }
         guard Set(object.keys).isSubset(of: allowed) else { throw AgentFailure(.invalidRequest) }
         return request
@@ -287,13 +321,19 @@ actor RelayTerminalBridge {
                     // Remote devices learn only whether tmux exists, not this Mac's servers.
                     try await reply(request, status: LocalAgentStatus(tmuxAvailable: status.tmuxAvailable))
                     await awaitPeerClose(); return
+                case .redeem:
+                    try await local.redeem(proof: request.proof!, peer: peer(grant))
+                    try await reply(request); await awaitPeerClose(); return
                 case .list:
-                    let sessions = try await local.sessions(peer: peer(grant))
+                    // The Mac's policy can only narrow the signed grant.
+                    let sessions = try await local.sessions(peer: peer(grant)).map {
+                        grant.permission == .control ? $0 : $0.forPeer(access: .view)
+                    }
                     try await reply(request, sessions: sessions); await awaitPeerClose(); return
                 case .attach:
                     trace("local-attach-start")
                     let connection = try await local.attach(sessionID: request.sessionID!, columns: request.columns!, rows: request.rows!,
-                                                            mode: request.mode!, peer: peer(grant))
+                                                            mode: request.mode!, history: request.history == true, peer: peer(grant))
                     guard !closed else { await connection.disconnect(); return }
                     attachment = connection
                     trace("local-attach-ready")
@@ -315,7 +355,8 @@ actor RelayTerminalBridge {
     /// The paired device this channel acts for. The broker shows it only
     /// shared sessions.
     private func peer(_ grant: DeviceGrant) -> LocalRemotePeer {
-        LocalRemotePeer(deviceID: grant.client.id, name: grant.client.name)
+        LocalRemotePeer(deviceID: grant.client.id, name: grant.client.name, pairingID: grant.pairingID,
+                        publicKey: grant.client.publicKey)
     }
 
     private func initialRequest() async throws -> Data {
@@ -387,7 +428,7 @@ actor RelayTerminalBridge {
                 request = try RelayTerminalPolicy.request(bytes, attached: true, permission: grant.permission)
                 guard let request else { throw AgentFailure(.invalidRequest) }
                 switch request.operation {
-                case .input: try await connection.send(request.data!)
+                case .input: try await connection.send(request.data!, automatic: request.automatic == true)
                 case .resize: try await connection.resize(columns: request.columns!, rows: request.rows!)
                 case .detach:
                     detaching = true

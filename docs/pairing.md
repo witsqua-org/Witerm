@@ -6,13 +6,15 @@ Wire format: [pairing-v1](../protocol/pairing-v1.md).
 
 ## How it works
 
-1. **Mac** (Paired Devices → create invitation) makes a 5-minute invitation with a one-time secret and the Mac's public key, shown as a QR code and as copyable text.
-2. **iOS** (Continue from My Mac, Pair a Device on the Devices tab, or Settings → Device Pairing) scans or pastes it. iOS checks that it names the current server, pins the Mac's key, and shows the Mac's fingerprint. Scanning only fills in the invitation; it never opens a link or joins on its own.
+1. **Mac** (File → Pair iPhone or iPad…, ⌥⌘P, or the button under This Mac in the sidebar; also Settings → Devices) makes a 5-minute invitation with a one-time secret and the Mac's public key, shown as a QR code and as copyable text.
+2. **iOS** (Continue from My Mac, Pair a Device under Machines, or Settings → Servers and Pairing → a server → Device Pairing) scans or pastes it. iOS checks that it names the current server, pins the Mac's key, and shows the Mac's fingerprint. Scanning only fills in the invitation; it never opens a link or joins on its own.
 3. **iOS** sends the request. This creates a *pending* pairing and grants nothing.
-4. **Mac** shows the device's name and fingerprint. You choose view-only or control and approve. The Mac signs the approval, binding the pairing, both keys, and the permission.
+4. **Mac** shows the device's name and fingerprint. You choose view-only or control, and whether it reaches all sessions on this Mac or only those you share, and approve. The Mac signs the approval, binding the pairing, both keys, and the permission; the session choice is this Mac's own policy and can be changed later under Settings → Devices ([Encrypted relay](relay.md#using-it)).
 5. Both devices verify the signature before storing the grant in the Keychain.
 
 Either device can revoke a grant at any time.
+
+To let someone open one session without pairing, the Mac sends a session invitation instead. It uses the same endpoints, and the Mac limits that grant to the session and a time ([Session invitations](relay.md#session-invitations)).
 
 ## Trust boundaries
 
@@ -32,7 +34,7 @@ Not available yet: deep links and cloud accounts.
 - A live two-device flow against a running server:
 
   ```sh
-  WITERM_PAIRING_TEST_SERVER_URL=http://localhost:8080 swift test --package-path packages/WitermCore --filter PairingTests
+  WITERM_PAIRING_TEST_SERVER_URL=http://localhost:37429 swift test --package-path packages/WitermCore --filter PairingTests
   ```
 
 `tools/pairing-smoke` is an independent black-box client using only Go's standard library. It checks replay protection, pending-without-grant, signed approval, isolation from other devices, revocation, and concurrent claims, and never prints tokens or keys. Run it against a separate Compose project so test identities stay out of your main database:

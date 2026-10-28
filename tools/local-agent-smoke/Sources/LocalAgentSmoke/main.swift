@@ -92,10 +92,19 @@ func waitForAgent(_ client: LocalAgentClient) async throws {
         try await first.send(Data("printf 'WT_''PID=%s\\n' \"$$\"; printf 'WT_''READY\\n'\n".utf8))
         try await waitFor("WT_READY", in: capture)
         let originalPID = try await shellPID(capture)
+        // This Mac's own clients type together; the second keeps the first's grid.
+        let second = try await client.attach(sessionID: session.id, columns: 100, rows: 30)
+        guard second.session.columns == 80 else { throw SmokeFailure("A joining writer took over the grid") }
+        try await second.send(Data("printf 'WT_''SECOND\\n'\n".utf8))
+        try await waitFor("WT_SECOND", in: capture)
+        try await second.detach()
+        // A paired device not allowed to type alongside is refused, never takes over.
+        let phone = LocalRemotePeer(deviceID: UUID().uuidString.lowercased(), name: "Smoke phone")
+        _ = try await client.deviceAccess(LocalDeviceAccess(deviceID: phone.deviceID, scope: .all, permission: .control, coTyping: false))
         do {
-            let unexpected = try await client.attach(sessionID: session.id)
+            let unexpected = try await client.attach(sessionID: session.id, peer: phone)
             await unexpected.disconnect()
-            throw SmokeFailure("Second controller was accepted")
+            throw SmokeFailure("A device without shared typing took control")
         } catch LocalAgentClientError.rejected(.sessionBusy) { }
         let observer = try await client.attach(sessionID: session.id, mode: .view)
         do { try await observer.send(Data("invalid\n".utf8)); throw SmokeFailure("Observer input accepted") }
@@ -140,6 +149,6 @@ func waitForAgent(_ client: LocalAgentClient) async throws {
         await restarted.disconnect(); reader.cancel()
         try await client.close(sessionID: session.id)
         guard try await client.sessions().isEmpty else { throw SmokeFailure("Close left a session") }
-        print("PASS: real PTY input, resize, controller exclusion, read-only, alternate-screen repaint, reconnect, agent restart, rename and explicit close")
+        print("PASS: real PTY input, resize, shared typing with a refused paired writer, read-only, alternate-screen repaint, reconnect, agent restart, rename and explicit close")
     }
 }

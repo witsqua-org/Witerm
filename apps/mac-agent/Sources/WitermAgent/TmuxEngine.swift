@@ -7,8 +7,10 @@ final class TmuxEngine {
     let state: PrivateState
     let configuration: AgentConfiguration
     private var records: [String: LocalSessionInfo]
-    /// Sessions paired devices may list and attach to.
+    /// Sessions every paired device may list and attach to.
     private(set) var shared: Set<String>
+    /// Sessions no paired device may reach. Never also shared.
+    private(set) var keptPrivate: Set<String>
 
     init(state: PrivateState, configuration: AgentConfiguration) throws {
         self.state = state
@@ -16,6 +18,9 @@ final class TmuxEngine {
         records = try state.loadMetadata()
         // An unreadable sharing file shares nothing rather than stopping the service.
         shared = ((try? state.loadSharing()) ?? []).intersection(records.keys)
+        // An unreadable privacy file can't prove a session is safe to show,
+        // but devices limited to shared sessions still see only shared ones.
+        keptPrivate = ((try? state.loadPrivate()) ?? []).intersection(records.keys).subtracting(shared)
     }
 
     var available: Bool { configuration.tmuxPath != nil }
@@ -53,6 +58,8 @@ final class TmuxEngine {
         if kept.count != records.count { try state.saveMetadata(kept); records = kept }
         let stillShared = shared.intersection(records.keys)
         if stillShared != shared { shared = stillShared; try state.saveSharing(shared) }
+        let stillPrivate = keptPrivate.intersection(records.keys)
+        if stillPrivate != keptPrivate { keptPrivate = stillPrivate; try state.savePrivate(keptPrivate) }
         return records.values.sorted { $0.createdAt == $1.createdAt ? $0.id < $1.id : $0.createdAt < $1.createdAt }
     }
 
@@ -177,6 +184,7 @@ final class TmuxEngine {
         records.removeValue(forKey: id)
         try state.saveMetadata(records)
         if shared.remove(id) != nil { try state.saveSharing(shared) }
+        if keptPrivate.remove(id) != nil { try state.savePrivate(keptPrivate) }
     }
 
     /// The display name is metadata only; tmux keeps the internal name.
@@ -190,13 +198,26 @@ final class TmuxEngine {
         return record
     }
 
+    /// Sharing a session ends keeping it private.
     func setShared(_ id: String, _ value: Bool) throws {
         _ = try session(id)
+        if value { try setPrivate(id, false) }
         var next = shared
         if value { next.insert(id) } else { next.remove(id) }
         guard next != shared else { return }
         try state.saveSharing(next)
         shared = next
+    }
+
+    /// Keeping a session private ends sharing it.
+    func setPrivate(_ id: String, _ value: Bool) throws {
+        _ = try session(id)
+        if value { try setShared(id, false) }
+        var next = keptPrivate
+        if value { next.insert(id) } else { next.remove(id) }
+        guard next != keptPrivate else { return }
+        try state.savePrivate(next)
+        keptPrivate = next
     }
 
     /// The start directory must be an existing directory this user can enter.
@@ -207,6 +228,34 @@ final class TmuxEngine {
         var info = stat()
         guard stat(path, &info) == 0 else { throw AgentFailure(.notFound) }
         guard info.st_mode & S_IFMT == S_IFDIR, access(path, X_OK | R_OK) == 0 else { throw AgentFailure(.invalidRequest) }
+    }
+
+    /// Earlier output above the visible screen, as VT bytes for a fresh
+    /// renderer's scrollback: up to 1,000 lines and 128 KiB with their colors,
+    /// then enough line feeds to scroll them all above the screen tmux
+    /// redraws next. Nothing while a program uses the alternate screen.
+    func history(_ id: String, rows: Int) throws -> Data {
+        _ = try session(id)
+        let target = internalName(id)
+        let alternate = try command(["display-message", "-p", "-t", target, "#{alternate_on}"])
+        guard String(decoding: alternate, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) == "0" else { return Data() }
+        let captured = try command(["capture-pane", "-p", "-e", "-t", target, "-S", "-1000", "-E", "-1"], timeout: 2)
+        var lines = captured.split(separator: 0x0a, omittingEmptySubsequences: false)
+        if lines.last?.isEmpty == true { lines.removeLast() }
+        // Leading blank lines are tmux's unused history, not output.
+        while let first = lines.first, first.allSatisfy({ $0 == 0x20 }) { lines.removeFirst() }
+        guard !lines.isEmpty else { return Data() }
+        var kept: [Data.SubSequence] = []
+        var size = 0
+        for line in lines.reversed() {
+            guard size + line.count + 2 <= 131_072 else { break }
+            size += line.count + 2
+            kept.append(line)
+        }
+        var output = Data("\u{1b}[0m".utf8)
+        for line in kept.reversed() { output.append(contentsOf: line); output.append(contentsOf: [0x1b, 0x5b, 0x30, 0x6d, 0x0d, 0x0a]) }
+        output.append(Data(repeating: 0x0a, count: rows))
+        return output
     }
 
     func attach(_ id: String, columns: Int, rows: Int, mode: LocalAttachmentMode) throws -> PTYChild {

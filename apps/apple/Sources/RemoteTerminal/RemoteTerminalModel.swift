@@ -36,7 +36,7 @@ struct RemoteTerminalIssue {
                 recovery = String(localized: "Reconnect to continue.", bundle: .main)
             case .readOnly:
                 title = String(localized: "View-Only Connection", bundle: .main)
-                recovery = String(localized: "Use View Only, or authorize control again on the device.", bundle: .main)
+                recovery = String(localized: "The Mac allows only watching this session right now. Use View Only.", bundle: .main)
             case .sessionBusy:
                 title = String(localized: "Session Is Being Controlled", bundle: .main)
                 recovery = String(localized: "View only, or reconnect after the other device disconnects.", bundle: .main)
@@ -88,6 +88,20 @@ final class RemoteTerminalModel {
     private(set) var busy: String?
     private(set) var issue: RemoteTerminalIssue?
     private(set) var loaded = false
+    /// A short explanation of what an automatic reconnect did, such as
+    /// joining read-only because another device has control.
+    private(set) var notice: String?
+    /// Whether the app is in the foreground. Reconnects wait for it.
+    @ObservationIgnored private var appActive = true
+    /// The terminal was interrupted by something the person didn't choose
+    /// (the app went to the background or the network dropped), so it
+    /// reconnects on its own once the app is active. Leaving, revocation,
+    /// and a session ending never set it.
+    @ObservationIgnored private var resumeWhenActive = false
+    @ObservationIgnored private var automaticAttempts = 0
+    @ObservationIgnored private var retry: Task<Void, Never>?
+    @ObservationIgnored private var grace: Task<Void, Never>?
+    @ObservationIgnored private var backgroundTask = UIBackgroundTaskIdentifier.invalid
     @ObservationIgnored private var activeID: UUID?
     @ObservationIgnored private var pairing: PairingClient?
     @ObservationIgnored private var work: Task<Void, Never>?
@@ -100,7 +114,14 @@ final class RemoteTerminalModel {
     var canReconnect: Bool {
         selectedGrant != nil && selectedSession != nil && busy == nil && connectionState != .ended
     }
-    var canRequestControl: Bool { selectedGrant?.permission == .control }
+    var canRequestControl: Bool { selectedSession.map { access(for: $0) == .control } ?? false }
+
+    /// What this device may do in a session: the Mac's policy for it, within
+    /// the signed grant.
+    func access(for session: LocalSessionInfo) -> LocalAttachmentMode {
+        guard selectedGrant?.permission == .control else { return .view }
+        return sessions.first { $0.id == session.id }?.access ?? session.access ?? .control
+    }
 
     func loadDevices() {
         suspend()
@@ -179,9 +200,20 @@ final class RemoteTerminalModel {
     }
 
     func attach(_ session: LocalSessionInfo, mode requestedMode: LocalAttachmentMode? = nil) {
+        attach(session, mode: requestedMode, automatic: false)
+    }
+
+    private func attach(_ session: LocalSessionInfo, mode requestedMode: LocalAttachmentMode?, automatic: Bool) {
         guard busy == nil, let grant = selectedGrant else { return }
-        let targetMode = requestedMode ?? (grant.permission == .view ? .view : .control)
-        guard grant.permission == .control || targetMode == .view else {
+        let allowed = access(for: session)
+        if !automatic {
+            automaticAttempts = 0
+            notice = nil
+        }
+        resumeWhenActive = false
+        retry?.cancel(); retry = nil
+        let targetMode = requestedMode ?? allowed
+        guard allowed == .control || targetMode == .view else {
             issue = RemoteTerminalIssue(RelayError.readOnly)
             return
         }
@@ -204,13 +236,18 @@ final class RemoteTerminalModel {
                     try Task.checkCancellation()
                     _ = try await pairing.trustedRelayGrant(id: grant.id)
                     let next = try await RemoteTerminalClient(pairing: pairing, grantID: grant.id).attach(
-                        sessionID: session.id, columns: session.columns, rows: session.rows, mode: targetMode)
+                        sessionID: session.id, columns: session.columns, rows: session.rows, mode: targetMode,
+                        // Earlier output fills the renderer's scrollback, so a drag scrolls back through it.
+                        history: true)
                     guard let self, self.generation == token, !Task.isCancelled else {
                         await next.abort()
                         return
                     }
-                    self.selectedSession = next.session
-                    self.sessions = self.sessions.map { $0.id == next.session.id ? next.session : $0 }
+                    // The attach reply carries the live grid; the listed access still applies.
+                    let live = LocalSessionInfo(id: next.session.id, name: next.session.name, createdAt: next.session.createdAt,
+                                                columns: next.session.columns, rows: next.session.rows, access: allowed)
+                    self.selectedSession = live
+                    self.sessions = self.sessions.map { $0.id == live.id ? live : $0 }
                     self.mode = targetMode
                     self.attachmentID = UUID()
                     self.activeID = self.attachmentID
@@ -219,7 +256,20 @@ final class RemoteTerminalModel {
                     self.connectionState = .connected
                     self.busy = nil
                     self.work = nil
-                } catch { self?.failed(error, token: token) }
+                    self.automaticAttempts = 0
+                } catch {
+                    guard let self, self.generation == token, !Task.isCancelled else { return }
+                    // Coming back never takes control by force: when another
+                    // device has it, watch instead and say so.
+                    if automatic, targetMode == .control, Self.isBusy(error) {
+                        self.busy = nil
+                        self.work = nil
+                        self.notice = String(localized: "Another device has control, so this terminal is view only.", bundle: .main)
+                        self.attach(session, mode: .view, automatic: true)
+                        return
+                    }
+                    self.failed(error, token: token, automatic: automatic)
+                }
             }
         } catch {
             if let previous { Task { await previous.abort() } }
@@ -243,20 +293,144 @@ final class RemoteTerminalModel {
         if let previous { Task { await previous.abort() } }
         // Renderer shutdown cancels its callback task. The active attachment
         // identity, rather than that task's cancellation bit, owns this event.
-        failed(error, token: generation, allowCancelledCaller: true)
+        failed(error, token: generation, allowCancelledCaller: true, automatic: true)
     }
 
     func attachmentEnded(id: UUID) {
         guard id == activeID else { return }
         let previous = deactivate()
         if let previous { Task { await previous.abort() } }
+        resumeWhenActive = false
         connectionState = .ended
         issue = nil
         if let id = selectedSession?.id { sessions.removeAll { $0.id == id } }
     }
 
+    // MARK: Background and return
+
+    /// How long a live terminal stays connected in the background, so a quick
+    /// app switch costs nothing. It stays well inside the time iOS allows a
+    /// background task, leaving room for the bounded detach that follows.
+    static let backgroundGrace: Duration = .seconds(15)
+
+    /// The app moved to the background. A live terminal keeps its connection
+    /// for a short grace period, then detaches cleanly so another device can
+    /// take control, and reconnects when the app returns.
+    func enterBackground() {
+        appActive = false
+        retry?.cancel(); retry = nil
+        guard attachment != nil, busy == nil else {
+            // Interrupted mid-connect, or already disconnected by accident:
+            // pick it up again on return.
+            if displayAttachment != nil, connectionState != .ended, busy != nil || resumeWhenActive { resumeWhenActive = true }
+            suspend()
+            return
+        }
+        resumeWhenActive = true
+        endBackgroundTask()
+        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Witerm terminal") { [weak self] in
+            // iOS is about to suspend the app: there is no time left for an
+            // acknowledged detach, so close at once. The Mac releases control
+            // when the connection closes.
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.grace?.cancel(); self.grace = nil
+                let resume = self.resumeWhenActive
+                self.suspend()
+                self.resumeWhenActive = resume
+                self.endBackgroundTask()
+            }
+        }
+        grace = Task { [weak self] in
+            do { try await Task.sleep(for: Self.backgroundGrace) } catch { return }
+            self?.detachForBackground()
+        }
+    }
+
+    /// The app is active again: finish any background work and reconnect a
+    /// terminal that was interrupted.
+    func enterForeground() {
+        appActive = true
+        grace?.cancel(); grace = nil
+        endBackgroundTask()
+        resumeIfNeeded()
+        // A list may have changed while away.
+        if displayAttachment == nil, selectedGrant != nil, busy == nil { refreshSessions() }
+    }
+
+    private func detachForBackground() {
+        grace = nil
+        guard !appActive, busy == nil, let previous = deactivate() else { endBackgroundTask(); return }
+        cancelWork()
+        connectionState = .disconnected
+        // Busy until the detach ACK, so returning mid-release reconnects only
+        // after the Mac has let go of the old connection.
+        busy = String(localized: "Leaving…", bundle: .main)
+        let token = generation
+        work = Task { [weak self] in
+            // A failed release leaves nothing to resend; the Mac also
+            // releases control when this connection closes.
+            do { try await previous.detach() } catch { await previous.abort() }
+            guard let self, self.generation == token else { return }
+            self.busy = nil
+            self.work = nil
+            self.endBackgroundTask()
+            self.resumeIfNeeded()
+        }
+    }
+
+    private func resumeIfNeeded() {
+        guard appActive, resumeWhenActive, attachment == nil, busy == nil, displayAttachment != nil,
+              canReconnect, let session = selectedSession else { return }
+        resumeWhenActive = false
+        attach(session, mode: reconnectMode, automatic: true)
+    }
+
+    private func endBackgroundTask() {
+        guard backgroundTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundTask)
+        backgroundTask = .invalid
+    }
+
+    /// Network and relay interruptions are retried a few times with growing
+    /// pauses while the app is active. Anything about trust, permission or
+    /// the session itself waits for the person.
+    private func scheduleAutomaticReconnect(after error: Error) {
+        guard Self.isTransient(error), displayAttachment != nil, connectionState != .ended,
+              selectedSession != nil else { return }
+        guard appActive else { resumeWhenActive = true; return }
+        guard automaticAttempts < 4 else { return }
+        automaticAttempts += 1
+        let delay = Duration.seconds(1 << (automaticAttempts - 1))
+        let token = generation
+        retry = Task { [weak self] in
+            do { try await Task.sleep(for: delay) } catch { return }
+            guard let self, self.generation == token, self.appActive else { return }
+            self.retry = nil
+            self.resumeWhenActive = true
+            self.resumeIfNeeded()
+        }
+    }
+
+    private static func isTransient(_ error: Error) -> Bool {
+        if let relay = error as? RelayError {
+            return [.offline, .transport, .unavailable, .backpressure].contains(relay)
+        }
+        if error is URLError { return true }
+        if let local = error as? LocalAgentClientError, case .rejected = local { return false }
+        return error is LocalAgentClientError
+    }
+
+    private static func isBusy(_ error: Error) -> Bool {
+        (error as? RelayError) == .sessionBusy || (error as? LocalAgentClientError) == .rejected(.sessionBusy)
+    }
+
+    func dismissNotice() { notice = nil }
+
     func disconnect() {
         guard busy == nil, let previous = deactivate() else { return }
+        resumeWhenActive = false
+        notice = nil
         cancelWork()
         connectionState = .disconnected
         busy = String(localized: "Leaving…", bundle: .main)
@@ -274,6 +448,8 @@ final class RemoteTerminalModel {
 
     func showSessions() {
         guard busy == nil else { return }
+        resumeWhenActive = false
+        notice = nil
         let previous = deactivate()
         cancelWork()
         issue = nil
@@ -313,6 +489,8 @@ final class RemoteTerminalModel {
     func cancelWork() {
         generation += 1
         work?.cancel()
+        retry?.cancel()
+        retry = nil
         authorizationCheck?.cancel()
         work = nil
         authorizationCheck = nil
@@ -330,11 +508,12 @@ final class RemoteTerminalModel {
     }
 
     private func clearDisplay() {
+        resumeWhenActive = false
         displayAttachment = nil
         attachmentID = UUID()
     }
 
-    private func failed(_ error: Error, token: Int, allowCancelledCaller: Bool = false) {
+    private func failed(_ error: Error, token: Int, allowCancelledCaller: Bool = false, automatic: Bool = false) {
         guard generation == token, allowCancelledCaller || !Task.isCancelled else { return }
         busy = nil
         work = nil
@@ -344,6 +523,7 @@ final class RemoteTerminalModel {
         }
         if displayAttachment != nil { connectionState = .disconnected }
         issue = RemoteTerminalIssue(error)
+        if automatic { scheduleAutomaticReconnect(after: error) }
         // A peer-side revoke closes the transport. Refresh signed grants so the
         // UI removes stale reconnect actions rather than misreporting an outage.
         guard let grant = selectedGrant, let pairing else { return }
@@ -366,6 +546,8 @@ final class RemoteTerminalModel {
     }
 
     private func authorizationUnavailable() {
+        resumeWhenActive = false
+        notice = nil
         let previous = deactivate()
         if let previous { Task { await previous.abort() } }
         if let id = selectedGrant?.id { grants.removeAll { $0.id == id } }
