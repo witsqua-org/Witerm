@@ -15,25 +15,25 @@ struct MacSettingsView: View {
     var body: some View {
         TabView(selection: $tab) {
             MacGeneralSettings(service: service)
-                .frame(width: 560, height: 560)
+                .settingsPane()
                 .tabItem { Label(String(localized: "General", bundle: .main), systemImage: "gearshape") }
                 .tag(SettingsTab.general.rawValue)
             Form { TerminalAppearanceSections() }
                 .formStyle(.grouped)
-                .frame(width: 560, height: 580)
+                .settingsPane()
                 .tabItem { Label(String(localized: "Terminal", bundle: .main), systemImage: "terminal") }
                 .tag(SettingsTab.terminal.rawValue)
             Form { SnippetSections() }
                 .formStyle(.grouped)
-                .frame(width: 560, height: 560)
+                .settingsPane()
                 .tabItem { Label(String(localized: "Snippets", bundle: .main), systemImage: "text.badge.plus") }
                 .tag(SettingsTab.snippets.rawValue)
-            MacDevicesSettings(service: service)
-                .frame(width: 620, height: 640)
-                .tabItem { Label(String(localized: "Devices", bundle: .main), systemImage: "iphone.and.arrow.forward") }
+            MacDevicesView(service: service)
+                .settingsPane()
+                .tabItem { Label(String(localized: "Devices", bundle: .main), systemImage: "laptopcomputer.and.iphone") }
                 .tag(SettingsTab.devices.rawValue)
             CommandLineToolSettings()
-                .frame(width: 560, height: 560)
+                .settingsPane()
                 .tabItem { Label(String(localized: "Command Line", bundle: .main), systemImage: "apple.terminal") }
                 .tag(SettingsTab.commandLine.rawValue)
         }
@@ -41,76 +41,18 @@ struct MacSettingsView: View {
     }
 }
 
-/// Pairing and remote access, per server: an admin task, so it lives in
-/// Settings rather than among the terminals in the sidebar.
-private struct MacDevicesSettings: View {
-    let service: LocalAgentService
-    @Environment(ServerList.self) private var servers
-    @State private var serverID: ConnectionModel.ID?
-
-    private var server: ConnectionModel? { servers.server(id: serverID) ?? servers.servers.first }
-
-    @AppStorage(SettingsTab.key) private var tab = SettingsTab.general.rawValue
-
-    var body: some View {
-        VStack(spacing: 0) {
-            if servers.servers.isEmpty {
-                ContentUnavailableView {
-                    Label(String(localized: "Set Up a Server", bundle: .main), systemImage: "server.rack")
-                } description: {
-                    Text(String(localized: "Pairing and remote access use your Witerm server. Add its address in General.", bundle: .main))
-                } actions: {
-                    Button(String(localized: "Open General", bundle: .main)) { tab = SettingsTab.general.rawValue }
-                        .accessibilityIdentifier("openServerSettings")
-                }
-            } else if servers.servers.count > 1 {
-                Picker(String(localized: "Server", bundle: .main), selection: Binding(
-                    get: { server?.id }, set: { serverID = $0 })) {
-                    ForEach(servers.servers) { Text($0.displayName).tag(Optional($0.id)) }
-                }
-                .accessibilityIdentifier("devicesServerPicker")
-                .padding(.horizontal, 32)
-                .padding(.top, 20)
-            }
-            if let server {
-                MacDevicesView(service: service, server: server)
-                    .id(server.id)
-            }
-        }
-    }
+private extension View {
+    /// One size for every tab, so switching tabs never resizes the window;
+    /// longer content scrolls inside.
+    func settingsPane() -> some View { frame(width: 640, height: 600) }
 }
 
 private struct MacGeneralSettings: View {
     let service: LocalAgentService
-    @Environment(ServerList.self) private var servers
-    @State private var editing: ServerEditRequest?
-    @State private var removing: ConnectionModel?
-    @State private var removalBlocked = false
     @State private var stopping = false
 
     var body: some View {
         Form {
-            ForEach(servers.servers) { server in
-                MacServerSection(server: server, titled: servers.servers.count > 1,
-                                 edit: { editing = .edit(server) }, remove: { removing = server })
-            }
-
-            Section {
-                HStack {
-                    Button(String(localized: "Add Server…", bundle: .main)) { editing = .add }
-                        .disabled(servers.isFull)
-                        .accessibilityIdentifier(servers.servers.isEmpty ? "serverSettings" : "addServer")
-                    Spacer()
-                }
-            } header: {
-                if servers.servers.isEmpty { Text(String(localized: "Server", bundle: .main)) }
-            } footer: {
-                Text(servers.isFull
-                     ? ServerList.Failure.full.message
-                     : String(localized: "Pairing and remote access use these servers, all at once. Direct SSH does not.", bundle: .main))
-                    .foregroundStyle(WitermTheme.secondary)
-            }
-
             Section(String(localized: "Local Terminal", bundle: .main)) {
                 LabeledContent(String(localized: "Background Service", bundle: .main), value: serviceStatus)
                 HStack {
@@ -135,26 +77,7 @@ private struct MacGeneralSettings: View {
             }
         }
         .formStyle(.grouped)
-        .serverEditor($editing)
         .task { await service.refresh() }
-        .alert(String(localized: "Remove Server?", bundle: .main), isPresented: Binding(
-            get: { removing != nil }, set: { if !$0 { removing = nil } })) {
-            Button(String(localized: "Cancel", bundle: .main), role: .cancel) {}
-            Button(String(localized: "Remove", bundle: .main), role: .destructive) {
-                guard let server = removing else { return }
-                do {
-                    try MacRemoteAccessModel.forget(serverAddress: server.address)
-                    servers.remove(server)
-                } catch { removalBlocked = true }
-            }
-        } message: {
-            Text(String(localized: "This Mac stops accepting remote access through this server. Pairings on the server are not revoked.", bundle: .main))
-        }
-        .alert(String(localized: "Unable to Remove Server", bundle: .main), isPresented: $removalBlocked) {
-            Button(String(localized: "OK", bundle: .main), role: .cancel) {}
-        } message: {
-            Text(String(localized: "Remote access settings could not be updated. Try again.", bundle: .main))
-        }
         .alert(String(localized: "Disable Local Terminal?", bundle: .main), isPresented: $stopping) {
             Button(String(localized: "Cancel", bundle: .main), role: .cancel) {}
             Button(String(localized: "Disable", bundle: .main), role: .destructive) {
@@ -172,47 +95,6 @@ private struct MacGeneralSettings: View {
         case .requiresApproval: String(localized: "Waiting for background approval", bundle: .main)
         case .notRegistered: String(localized: "Off", bundle: .main)
         case .unavailable: String(localized: "Local Terminal Unavailable", bundle: .main)
-        }
-    }
-}
-#endif
-
-#if os(macOS)
-/// One saved server: where it is, whether it answers, and its actions.
-private struct MacServerSection: View {
-    let server: ConnectionModel
-    let titled: Bool
-    let edit: () -> Void
-    let remove: () -> Void
-
-    var body: some View {
-        Section {
-            LabeledContent(String(localized: "Address", bundle: .main)) {
-                Text(server.address)
-                    .font(.system(.body, design: .monospaced))
-                    .foregroundStyle(WitermTheme.ink)
-                    .textSelection(.enabled)
-                    .multilineTextAlignment(.trailing)
-            }
-            // The feedback row states the status once, with when it was last checked.
-            ConnectionFeedback(server: server)
-                .accessibilityIdentifier("connectionFeedback")
-            HStack {
-                Button(String(localized: "Edit Address…", bundle: .main), action: edit)
-                    .accessibilityIdentifier("serverSettings")
-                Button(String(localized: "Remove…", bundle: .main), role: .destructive, action: remove)
-                    .accessibilityIdentifier("removeServer")
-                Spacer()
-                if server.phase.isChecking {
-                    Button(String(localized: "Cancel Check", bundle: .main), action: server.cancel)
-                        .accessibilityIdentifier("cancelConnection")
-                } else {
-                    Button(String(localized: "Check Connection", bundle: .main), action: server.check)
-                        .accessibilityIdentifier("primaryAction")
-                }
-            }
-        } header: {
-            Text(titled ? server.displayName : String(localized: "Server", bundle: .main))
         }
     }
 }

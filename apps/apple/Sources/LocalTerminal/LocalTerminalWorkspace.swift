@@ -15,8 +15,7 @@ struct LocalTerminalDetail: View {
     @AppStorage("witerm.terminalHighContrast") private var terminalHighContrast = false
     @AppStorage(TerminalColorScheme.key) private var terminalPalette = TerminalColorScheme.system
     @AppStorage("witerm.terminalAnnounceOutput") private var terminalAnnounceOutput = false
-    @State private var showingHandoff = false
-    @State private var showingInvite = false
+    @State private var continuing = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -41,14 +40,11 @@ struct LocalTerminalDetail: View {
         .background(WitermTheme.canvas)
         .navigationTitle(model.selectedSession?.name ?? String(localized: "Local Terminal", bundle: .main))
         .onDisappear { model.detach() }
-        .sheet(isPresented: $showingInvite) {
+        .sheet(isPresented: $continuing) {
             if let session = model.selectedSession {
-                SessionInviteView(service: service, session: session)
-            }
-        }
-        .sheet(isPresented: $showingHandoff) {
-            if let session = model.selectedSession {
-                SessionHandoffView(service: service, terminal: model, sessionID: session.id)
+                ContinueOnDeviceSheet(service: service, sessionID: session.id) { id in
+                    model.activity(for: id).summary(home: NSHomeDirectory())
+                }
             }
         }
     }
@@ -64,11 +60,11 @@ struct LocalTerminalDetail: View {
                 live: true
             ) {
                 let shared = session.sharing?.shared == true
-                Button(shared ? String(localized: "Sharing…", bundle: .main) : String(localized: "Continue on iPhone…", bundle: .main),
-                       systemImage: "antenna.radiowaves.left.and.right") { showingHandoff = true }
+                Button(String(localized: "Continue on Another Device…", bundle: .main),
+                       systemImage: "laptopcomputer.and.iphone") { continuing = true }
                 .touchTarget()
                 .accessibilityIdentifier("shareLocalSession")
-                .help(String(localized: "Pair a device and share this session", bundle: .main))
+                .help(String(localized: "Open this session on another device", bundle: .main))
                 if shared {
                     Button(String(localized: "Stop Sharing", bundle: .main), systemImage: "antenna.radiowaves.left.and.right.slash") {
                         model.setShared(session, false, using: client)
@@ -80,8 +76,6 @@ struct LocalTerminalDetail: View {
                     .accessibilityIdentifier("detachLocalTerminal")
                     .help(String(localized: "Leave this session; it keeps running", bundle: .main))
                 Menu(String(localized: "More", bundle: .main), systemImage: "ellipsis") {
-                    Button(String(localized: "Share with a Link…", bundle: .main), systemImage: "qrcode") { showingInvite = true }
-                        .accessibilityIdentifier("inviteLocalSessionMenu")
                     Button(String(localized: "Rename…", bundle: .main), systemImage: "pencil") { renameSession(session) }
                         .accessibilityIdentifier("renameLocalSessionMenu")
                     RemoteAccessMenuItems(session: session) { keepPrivate, typing in
