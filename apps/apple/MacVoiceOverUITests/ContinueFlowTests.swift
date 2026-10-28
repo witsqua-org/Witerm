@@ -66,4 +66,34 @@ final class ContinueFlowTests: XCTestCase {
         // Cancelling shares nothing.
         XCTAssertFalse(app.descendants(matching: .any)["localSession-" + id].firstMatch.value as? String ?? "" == "Shared")
     }
+
+    /// Every Settings tab keeps one window size, so switching never resizes it.
+    func testSettingsTabsKeepOneWindowSize() throws {
+        continueAfterFailure = false
+        guard let path = ProcessInfo.processInfo.environment["WITERM_HCI_FIXED_APP"] else {
+            throw XCTSkip("Set WITERM_HCI_FIXED_APP")
+        }
+        let app = XCUIApplication(url: URL(fileURLWithPath: path))
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        addTeardownBlock { await MainActor.run { app.terminate() } }
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 15))
+        app.typeKey(",", modifierFlags: .command)
+        let general = app.toolbars.buttons["General"].firstMatch
+        XCTAssertTrue(general.waitForExistence(timeout: 10))
+        var sizes: [String: CGSize] = [:]
+        for tab in ["General", "Terminal", "Snippets", "Devices", "Command Line"] {
+            app.toolbars.buttons[tab].firstMatch.click()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.8))
+            let window = app.windows.matching(NSPredicate(format: "title == %@", tab)).firstMatch
+            XCTAssertTrue(window.waitForExistence(timeout: 5), tab)
+            sizes[tab] = window.frame.size
+            let shot = XCTAttachment(screenshot: window.screenshot())
+            shot.name = "settings-\(tab)"
+            shot.lifetime = .keepAlways
+            add(shot)
+        }
+        XCTAssertEqual(Set(sizes.values.map { "\($0.width)x\($0.height)" }).count, 1, "\(sizes)")
+        app.typeKey("w", modifierFlags: .command)
+    }
 }

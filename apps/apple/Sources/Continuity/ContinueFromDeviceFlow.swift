@@ -21,19 +21,31 @@ struct ContinueFromDeviceFlow: View {
     @Environment(ServerList.self) private var servers
     @Environment(\.dismiss) private var dismiss
     @State private var path: [Route] = []
-    @State private var parsed: Parsed?
-    @State private var scanned = false
     @State private var problem: String?
     @State private var typing = false
     @State private var text = ""
     @State private var scanID = UUID()
     @FocusState private var fieldFocused: Bool
 
-    enum Route: Hashable { case check, wait }
+    /// Each step carries its invitation, so a pushed screen never reads
+    /// state that changed after it was pushed.
+    enum Route: Hashable {
+        case check(Parsed, scanned: Bool)
+        case wait(Parsed)
+    }
 
-    enum Parsed: Equatable {
+    enum Parsed: Hashable {
         case pairing(PairingInvitation)
         case share(SessionInvitation)
+
+        var link: String {
+            switch self {
+            case .pairing(let invitation): invitation.urlString
+            case .share(let invitation): invitation.urlString
+            }
+        }
+
+        func hash(into hasher: inout Hasher) { hasher.combine(link) }
 
         var server: String {
             switch self {
@@ -61,15 +73,13 @@ struct ContinueFromDeviceFlow: View {
                     }
                 }
                 .navigationDestination(for: Route.self) { route in
-                    if let parsed {
-                        switch route {
-                        case .check:
-                            ContinueCheckStep(parsed: parsed, scanned: scanned, scanAgain: scanAgain) { path.append(.wait) }
-                        case .wait:
-                            ContinueWaitStep(parsed: parsed, scanAgain: scanAgain) { server, grant in
-                                dismiss()
-                                opened(server, grant)
-                            }
+                    switch route {
+                    case .check(let parsed, let scanned):
+                        ContinueCheckStep(parsed: parsed, scanned: scanned, scanAgain: scanAgain) { path.append(.wait(parsed)) }
+                    case .wait(let parsed):
+                        ContinueWaitStep(parsed: parsed, scanAgain: scanAgain) { server, grant in
+                            dismiss()
+                            opened(server, grant)
                         }
                     }
                 }
@@ -90,7 +100,6 @@ struct ContinueFromDeviceFlow: View {
                     .aspectRatio(1, contentMode: .fit)
                     .frame(maxWidth: 420)
                     .frame(maxWidth: .infinity)
-                    .accessibilityIdentifier("scanSessionInvitation")
                 if let problem {
                     Label(problem, systemImage: "exclamationmark.circle")
                         .font(.subheadline).foregroundStyle(WitermTheme.warning)
@@ -139,12 +148,12 @@ struct ContinueFromDeviceFlow: View {
     /// straight to the request: the other device still has to approve.
     private func read(_ value: String, scanned: Bool) {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parsed: Parsed
         if let share = try? SessionInvitation(urlString: trimmed) {
             parsed = .share(share)
         } else if let pairing = try? PairingInvitation(urlString: trimmed) {
             parsed = .pairing(pairing)
         } else {
-            parsed = nil
             scanID = UUID()
             problem = trimmed.lowercased().hasPrefix("witerm://share")
                 ? String(localized: "This invitation has expired or isn’t valid. Ask for a new one.", bundle: .main)
@@ -152,14 +161,12 @@ struct ContinueFromDeviceFlow: View {
             return
         }
         problem = nil
-        self.scanned = scanned
-        let known = servers.servers.contains { ServerAddressKey($0.address) == ServerAddressKey(parsed?.server ?? "") }
-        path = scanned && known ? [.wait] : [.check]
+        let known = servers.servers.contains { ServerAddressKey($0.address) == ServerAddressKey(parsed.server) }
+        path = scanned && known ? [.wait(parsed)] : [.check(parsed, scanned: scanned)]
     }
 
     private func scanAgain() {
         path = []
-        parsed = nil
         scanID = UUID()
     }
 }
