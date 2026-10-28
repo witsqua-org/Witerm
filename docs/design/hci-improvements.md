@@ -53,3 +53,21 @@ From the fresh HCI review of 2026-10-27 (the "Now" items of its roadmap).
 | 4 | Consistency | Fixed verbs: Leave a Mac session (it keeps running), End Session, Disconnect SSH, Share or Stop Sharing; one icon per idea. | [LocalTerminalWorkspace](../../apps/apple/Sources/LocalTerminal/LocalTerminalWorkspace.swift), [RemoteTerminalWorkspace](../../apps/apple/Sources/RemoteTerminal/RemoteTerminalWorkspace.swift) |
 
 **Still to evaluate on real hardware:** camera scanning and permission recovery, a full phone handoff, one-handed use, hardware keyboards and their ⌘ shortcut list, iPad multitasking, haptics including the bell, real Wi-Fi loss for the offline banner, and real-network background behavior.
+
+## Round 5
+
+Device continuation, from the review of 2026-10-28 ([issue #3](https://github.com/FoLAWy-py/Witerm/issues/3)).
+
+| # | Principle | Change | Main code |
+|---|---|---|---|
+| 1 | Task, memory load | Continue on Another Device… is one Mac sheet with one question per step (Server, Device, Approve, Open); done steps are skipped and the strip shows what comes next. It replaces the continuation checklist, the Pair sheet, and Share with a Link. | [ContinueOnDeviceSheet](../../apps/apple/Sources/Continuity/ContinueOnDeviceSheet.swift) |
+| 2 | Task, shortcuts | Continue from Another Device on iOS opens to the camera with Paste, reads pairing codes and session invitations, takes the server from the invitation, and opens the session once approved. The first-use task choice is gone. | [ContinueFromDeviceFlow](../../apps/apple/Sources/Continuity/ContinueFromDeviceFlow.swift), [InvitationScanner](../../apps/apple/Sources/Pairing/InvitationScanner.swift) |
+| 3 | Consistency | One entry point per side: the terminal header, context menu, and File (⌥⌘P) on the Mac; first use and the Devices tab on iOS. | [MacWorkspaceView](../../apps/apple/Sources/LocalTerminal/MacWorkspaceView.swift), [DevicesView](../../apps/apple/Sources/Mobile/DevicesView.swift) |
+| 4 | Error prevention | One continuation server choice, `ServerList.selected`, used by every pairing screen and named on the code screen, so a code is never made for another server. | [ServerList](../../apps/apple/Sources/Server/ServerList.swift) |
+| 5 | Control, error prevention | Approval defaults to the session you started from; you can choose sessions or allow all. Policies list sessions in `session_ids`, and an ended session leaves every list. | [LocalModels](../../packages/WitermCore/Sources/WitermCore/LocalModels.swift), [AgentBroker](../../apps/mac-agent/Sources/WitermAgent/AgentBroker.swift) |
+| 6 | Error handling | Server addresses fill in `https://`, say what they'll connect to, recognize SSH logins, port 22, paths, credentials and invitations, and offer a fix. Check failures name the host and tell a non-Witerm answer apart. | [ServerAddressInput](../../apps/apple/Sources/Server/ServerAddressInput.swift), [ConnectionModel](../../apps/apple/Sources/ConnectionModel.swift) |
+| 7 | Consistency | Mac Settings tabs share one 640 × 600 size. Devices holds the server, remote access, paired devices with an Edit sheet, invitations, and Manage Servers. | [MacSettingsView](../../apps/apple/Sources/Server/MacSettingsView.swift), [MacDevicesView](../../apps/apple/Sources/Pairing/MacDevicesView.swift) |
+| 8 | Recognition | Platform-neutral words (devices, the other device, continuation server, SSH host, View Only, Can Type, code); the Devices tab; the app is built as Witerm.app; a between-devices icon instead of a QR icon on an entry that also takes paste. | [Localizable](../../apps/apple/Sources/Resources/Localizable.xcstrings) |
+
+**Still to evaluate on real hardware:** the whole continue flow with a camera scan, the Mac and phone flows run together, and VoiceOver through each step.
+
