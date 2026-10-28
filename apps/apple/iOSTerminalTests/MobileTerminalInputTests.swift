@@ -12,6 +12,30 @@ import XCTest
             fontSize: 14, isInteractive: true)
     }
 
+    /// A long press selects the word under the finger and dragging extends
+    /// it, in a read-only terminal too; Paste is offered only where typing is.
+    func testLongPressSelectsAndOffersEditActions() {
+        let reader = input(mode: .view)
+        reader.frame = reader.getOptimalFrameSize()
+        reader.feed(text: "alpha beta gamma")
+        let cell = CGSize(width: reader.frame.width / 80, height: reader.frame.height / 24)
+        func point(_ column: Int) -> CGPoint { CGPoint(x: (CGFloat(column) + 0.5) * cell.width, y: cell.height / 2) }
+        reader.beginSelection(at: point(7))
+        XCTAssertEqual(reader.selection.getSelectedText(), "beta")
+        reader.extendSelection(to: point(13))
+        XCTAssertEqual(reader.selection.getSelectedText(), "beta gam")
+        UIPasteboard.general.string = "pasted"
+        let paste = String(localized: "Paste", bundle: .main)
+        let copy = String(localized: "Copy", bundle: .main)
+        XCTAssertTrue(reader.editActions().contains { $0.title == copy })
+        XCTAssertFalse(reader.editActions().contains { $0.title == paste })
+        XCTAssertFalse(reader.allowMouseReporting)
+        let writer = input()
+        XCTAssertTrue(writer.allowMouseReporting)
+        XCTAssertTrue(writer.editActions().contains { $0.title == paste })
+        XCTAssertFalse(writer.editActions().contains { $0.title == copy })
+    }
+
     func testControlKeyResetsAndReadOnlyRejectsAccessoryAndPaste() {
         let terminal = input(), spy = InputSpy()
         terminal.terminalDelegate = spy
@@ -89,6 +113,9 @@ import XCTest
         let previous = defaults.string(forKey: MobileKey.key)
         defer { defaults.set(previous, forKey: MobileKey.key) }
         XCTAssertEqual(MobileKey.decode(""), MobileKey.allCases)
+        // An untouched row from before arrows moved forward follows the new default.
+        XCTAssertEqual(MobileKey.decode(MobileKey.previousDefault), MobileKey.allCases)
+        XCTAssertEqual(Array(MobileKey.allCases.prefix(7)), [.escape, .control, .tab, .left, .up, .down, .right])
         XCTAssertEqual(MobileKey.decode("tab,bogus,escape,tab"), [.tab, .escape])
         defaults.set(MobileKey.encode([.interrupt, .escape]), forKey: MobileKey.key)
         let terminal = input()

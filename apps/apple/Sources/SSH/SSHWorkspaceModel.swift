@@ -71,6 +71,7 @@ final class SSHSession: Identifiable {
     private var closed = false
 
     nonisolated var id: UUID { profile.id }
+    var activity: TerminalActivity { terminal.coordinator.activity }
 
     init(profile: SSHProfile, connection: SSHConnection, shell: SSHShell, token: UUID,
          onEnded: @escaping @MainActor (Error?) -> Void) {

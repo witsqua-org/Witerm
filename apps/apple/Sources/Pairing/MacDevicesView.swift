@@ -6,6 +6,8 @@ struct MacDevicesView: View {
     let service: LocalAgentService
     /// Nil when no server is saved yet.
     let server: ConnectionModel?
+    /// Opens with a fresh invitation, as the main window's Pair command does.
+    var startsInvitation = false
     @Environment(ServerList.self) private var servers
 
     var body: some View {
@@ -13,17 +15,24 @@ struct MacDevicesView: View {
             if let connection = server {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        Text(String(localized: "Pair iPhone and iPad, choose what they may do, and revoke access at any time.", bundle: .main))
-                            .font(.subheadline)
-                            .foregroundStyle(WitermTheme.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        MacRemoteAccessCard(serverAddress: connection.address, service: service)
-                            .id(connection.address)
+                        if !startsInvitation {
+                            Text(String(localized: "Pair iPhone and iPad, choose what they may do, and revoke access at any time.", bundle: .main))
+                                .font(.subheadline)
+                                .foregroundStyle(WitermTheme.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            MacRemoteAccessCard(serverAddress: connection.address, service: service)
+                                .id(connection.address)
+                        }
                         if connection.supportsPairing {
-                            DevicePairingView(serverAddress: connection.address, presentation: .embedded)
+                            DevicePairingView(serverAddress: connection.address, presentation: .embedded, startsInvitation: startsInvitation)
                                 .id(connection.address)
                         } else {
                             pairingUnavailable(connection)
+                        }
+                        // Pairing first; remote access is what makes it useful.
+                        if startsInvitation {
+                            MacRemoteAccessCard(serverAddress: connection.address, service: service)
+                                .id(connection.address)
                         }
                     }
                     .readableContent(padding: 32)
@@ -50,6 +59,7 @@ struct MacDevicesView: View {
     }
 
     private var title: String {
+        if startsInvitation { return String(localized: "Pair iPhone or iPad", bundle: .main) }
         guard let server, servers.servers.count > 1 else { return String(localized: "Paired Devices", bundle: .main) }
         return String(localized: "Paired Devices, \(server.displayName)", bundle: .main)
     }
@@ -81,6 +91,42 @@ struct MacDevicesView: View {
                 .foregroundStyle(WitermTheme.secondary)
                 .witermCard()
         }
+    }
+}
+
+/// Pairing from the main window: opens straight to a new invitation's QR
+/// code, with remote access and paired devices on the same page.
+struct MacPairDeviceSheet: View {
+    let service: LocalAgentService
+    @Environment(ServerList.self) private var servers
+    @Environment(\.dismiss) private var dismiss
+    @State private var serverID: ConnectionModel.ID?
+
+    private var server: ConnectionModel? { servers.server(id: serverID) ?? servers.servers.first }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                if servers.servers.count > 1 {
+                    Picker(String(localized: "Server", bundle: .main), selection: Binding(
+                        get: { server?.id }, set: { serverID = $0 })) {
+                        ForEach(servers.servers) { Text($0.displayName).tag(Optional($0.id)) }
+                    }
+                    .padding(.horizontal, 32)
+                    .padding(.top, 20)
+                }
+                MacDevicesView(service: service, server: server, startsInvitation: true)
+                    .id(server?.id)
+            }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(String(localized: "Done", bundle: .main)) { dismiss() }
+                        .keyboardShortcut(.cancelAction)
+                        .accessibilityIdentifier("closePairing")
+                }
+            }
+        }
+        .frame(minWidth: 620, idealWidth: 680, minHeight: 680)
     }
 }
 #endif

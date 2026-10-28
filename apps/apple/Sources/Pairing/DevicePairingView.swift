@@ -15,6 +15,10 @@ enum PairingPresentation {
 struct DevicePairingView: View {
     let presentation: PairingPresentation
     let onGrantsChanged: (([DeviceGrant]) -> Void)?
+    /// Opens with a fresh invitation on the Mac, and cancels it if it is
+    /// still unused when the view closes.
+    let startsInvitation: Bool
+    @State private var startedInvitation = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -26,11 +30,19 @@ struct DevicePairingView: View {
     #if os(iOS)
     @State private var scanning = false
     @State private var scannedInvitation: String?
+    #else
+    @Environment(\.localAgent) private var localAgent
+    @State private var scope = LocalSessionScope.all
+    /// This Mac's policy per paired device, from the background service.
+    @State private var accesses: [String: LocalDeviceAccess] = [:]
+    /// Invitations to single sessions, by pairing.
+    @State private var invites: [String: LocalGuestInvite] = [:]
     #endif
 
-    init(serverAddress: String, presentation: PairingPresentation = .sheet,
+    init(serverAddress: String, presentation: PairingPresentation = .sheet, startsInvitation: Bool = false,
          onGrantsChanged: (([DeviceGrant]) -> Void)? = nil) {
         self.presentation = presentation
+        self.startsInvitation = startsInvitation
         self.onGrantsChanged = onGrantsChanged
         _model = State(initialValue: DevicePairingModel(serverAddress: serverAddress))
     }
@@ -68,11 +80,30 @@ struct DevicePairingView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { model.resume() } else { model.suspend() }
         }
-        .onDisappear { model.suspend() }
+        .onDisappear {
+            // An invitation grants nothing until approved; one opened just for
+            // this view doesn't outlive it.
+            if startsInvitation, model.pairing?.status == .waiting { model.reject() }
+            model.suspend()
+        }
+        #if os(macOS)
+        .onChange(of: model.isWorking, initial: true) { _, working in
+            guard startsInvitation, !startedInvitation, !working, model.device != nil, model.pairing == nil,
+                  model.issue == nil else { return }
+            startedInvitation = true
+            model.create()
+        }
+        #endif
         .onChange(of: model.invitation?.urlString) { copied = false }
         .onChange(of: model.grants, initial: true) { _, grants in onGrantsChanged?(grants) }
+        #if os(macOS)
+        .task(id: model.grants.map(\.id)) { await loadAccesses() }
+        #endif
         .onChange(of: model.pairing?.id) { _, id in
             permission = .view
+            #if os(macOS)
+            scope = .all
+            #endif
             if id == nil { invitationText = "" }
         }
         .animation(WitermMotion.transition(reduceMotion: reduceMotion), value: model.pairing?.status)
@@ -121,10 +152,12 @@ struct DevicePairingView: View {
                     .accessibilityIdentifier("pairingActivity")
             }
             if let issue = model.issue { issueCard(issue) }
-            identity
+            // Opened to pair: the code comes first, this Mac's identity after it.
+            if !startsInvitation { identity }
             if model.device != nil {
                 #if os(macOS)
                 hostPairing
+                if startsInvitation { identity }
                 #else
                 clientPairing
                 #endif
@@ -176,7 +209,9 @@ struct DevicePairingView: View {
     #if os(macOS)
     private var hostPairing: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text(String(localized: "Pair iPhone or iPad", bundle: .main)).font(.headline)
+            if presentation == .sheet || !startsInvitation {
+                Text(String(localized: "Pair iPhone or iPad", bundle: .main)).font(.headline)
+            }
             if let pairing = model.pairing {
                 switch pairing.status {
                 case .waiting:
@@ -184,7 +219,7 @@ struct DevicePairingView: View {
                         HStack(alignment: .center, spacing: 16) {
                             PairingQRCode(value: invitation.urlString)
                             VStack(alignment: .leading, spacing: 12) {
-                                Text(String(localized: "Paste the invitation on the other device, then compare this device’s fingerprint.", bundle: .main))
+                                Text(String(localized: "On your iPhone or iPad, open Witerm, go to Machines → Pair a Mac, and scan this code. Or copy the invitation and paste it there.", bundle: .main))
                                     .font(.subheadline).foregroundStyle(WitermTheme.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
                                 Button(copied ? String(localized: "Invitation Copied", bundle: .main) : String(localized: "Copy Pairing Invitation", bundle: .main), systemImage: copied ? "checkmark" : "doc.on.doc") {
@@ -211,6 +246,12 @@ struct DevicePairingView: View {
                             fingerprint(client.publicKey)
                             Text(String(localized: "Confirm that this is the device you want to pair.", bundle: .main))
                                 .font(.subheadline).foregroundStyle(WitermTheme.secondary)
+                            if model.existingGrantForRequest != nil {
+                                IconText(String(localized: "Already paired. Approving replaces its current access.", bundle: .main), systemImage: "arrow.triangle.2.circlepath")
+                                    .font(.subheadline)
+                                    .foregroundStyle(WitermTheme.warning)
+                                    .accessibilityIdentifier("pairingReplacesGrant")
+                            }
                         }
                         VStack(alignment: .leading, spacing: 8) {
                             Text(String(localized: "Access Level", bundle: .main)).font(.subheadline.weight(.medium))
@@ -218,15 +259,27 @@ struct DevicePairingView: View {
                                              detail: String(localized: "Can watch terminal output.", bundle: .main),
                                              systemImage: "eye", value: .view)
                             permissionChoice(String(localized: "Allow Control", bundle: .main),
-                                             detail: String(localized: "Can also type into sessions when no one else is in control.", bundle: .main),
+                                             detail: String(localized: "Can also type, alongside this Mac.", bundle: .main),
                                              systemImage: "keyboard", value: .control)
                         }
                         .disabled(model.isWorking || model.issue?.integrityFailure == true)
                         // Contain, so the options keep their own identifiers.
                         .accessibilityElement(children: .contain)
                         .accessibilityIdentifier("pairingPermission")
+                        Picker(String(localized: "Sessions", bundle: .main), selection: $scope) {
+                            Text(String(localized: "All sessions on this Mac", bundle: .main)).tag(LocalSessionScope.all)
+                            Text(String(localized: "Only sessions I share", bundle: .main)).tag(LocalSessionScope.shared)
+                        }
+                        .pickerStyle(.radioGroup)
+                        .disabled(model.isWorking || localAgent == nil)
+                        .accessibilityIdentifier("pairingScope")
+                        Text(localAgent == nil
+                             ? String(localized: "Turn on the local terminal to choose; until then this device reaches only sessions you share.", bundle: .main)
+                             : String(localized: "Sessions you keep private are never shown. You can change this later.", bundle: .main))
+                            .font(.caption).foregroundStyle(WitermTheme.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                         HStack(spacing: 12) {
-                            PrimaryButton(String(localized: "Approve Pairing", bundle: .main), systemImage: "checkmark.shield") { model.approve(permission: permission) }
+                            PrimaryButton(String(localized: "Approve Pairing", bundle: .main), systemImage: "checkmark.shield") { approve(client) }
                                 .disabled(!model.mayApprove)
                                 .accessibilityIdentifier("approvePairing")
                             Button(String(localized: "Reject", bundle: .main), role: .destructive, action: model.reject)
@@ -249,6 +302,64 @@ struct DevicePairingView: View {
             }
         }
         .witermCard()
+    }
+
+    /// Stores this Mac's policy for the device before the grant exists, so
+    /// it never reaches more than chosen. A policy alone grants nothing.
+    private func approve(_ client: PairedDevice) {
+        let chosen = permission
+        guard let localAgent else { model.approve(permission: chosen); return }
+        let access = LocalDeviceAccess(deviceID: client.id, scope: scope, permission: chosen == .view ? .view : .control)
+        Task {
+            _ = try? await localAgent.deviceAccess(access)
+            model.approve(permission: chosen)
+        }
+    }
+
+    private func loadAccesses() async {
+        guard let localAgent, let entries = try? await localAgent.deviceAccess() else { return }
+        accesses = Dictionary(uniqueKeysWithValues: entries.map { ($0.deviceID, $0) })
+        let guests = (try? await localAgent.guests()) ?? []
+        invites = Dictionary(uniqueKeysWithValues: guests.map { ($0.pairingID, $0) })
+    }
+
+    /// What a paired device may reach and do on this Mac, within its grant.
+    @ViewBuilder
+    private func accessControls(_ grant: DeviceGrant, peer: PairedDevice) -> some View {
+        if let invite = invites[grant.pairingID] {
+            // An invitation reaches one session; it isn't managed like a pairing.
+            Text(String(localized: "Invited to one session until \(String(invite.expiresAt.formatted(date: .abbreviated, time: .shortened)))", bundle: .main))
+                .font(.caption).foregroundStyle(WitermTheme.secondary)
+                .padding(.leading, 58)
+        } else if let localAgent, grant.host.id == model.device?.id {
+            let current = accesses[peer.id] ?? .default(for: peer.id)
+            let store = { (next: LocalDeviceAccess) in
+                accesses[peer.id] = next
+                Task { _ = try? await localAgent.deviceAccess(next); await loadAccesses() }
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                Picker(String(localized: "Sessions", bundle: .main), selection: Binding(
+                    get: { current.scope },
+                    set: { store(LocalDeviceAccess(deviceID: peer.id, scope: $0, permission: current.permission, coTyping: current.coTyping)) })) {
+                    Text(String(localized: "All sessions", bundle: .main)).tag(LocalSessionScope.all)
+                    Text(String(localized: "Shared sessions only", bundle: .main)).tag(LocalSessionScope.shared)
+                }
+                .accessibilityIdentifier("deviceScope-\(peer.id)")
+                if grant.permission == .control {
+                    Toggle(String(localized: "Can type", bundle: .main), isOn: Binding(
+                        get: { current.permission == .control },
+                        set: { store(LocalDeviceAccess(deviceID: peer.id, scope: current.scope, permission: $0 ? .control : .view, coTyping: current.coTyping)) }))
+                        .accessibilityIdentifier("deviceCanType-\(peer.id)")
+                    Toggle(String(localized: "Type while this Mac is attached", bundle: .main), isOn: Binding(
+                        get: { current.coTyping },
+                        set: { store(LocalDeviceAccess(deviceID: peer.id, scope: current.scope, permission: current.permission, coTyping: $0)) }))
+                        .disabled(current.permission != .control)
+                        .accessibilityIdentifier("deviceCoTyping-\(peer.id)")
+                }
+            }
+            .font(.subheadline)
+            .padding(.leading, 58)
+        }
     }
 
     private func permissionChoice(_ title: String, detail: String, systemImage: String, value: PairingPermission) -> some View {
@@ -282,7 +393,7 @@ struct DevicePairingView: View {
     #else
     private var clientPairing: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(String(localized: "Pair a Device", bundle: .main)).font(.headline)
+            Text(String(localized: "Pair a Mac", bundle: .main)).font(.headline)
             if let pairing = model.pairing {
                 HStack(alignment: .top, spacing: 14) {
                     IconTile(systemImage: "desktopcomputer")
@@ -310,9 +421,9 @@ struct DevicePairingView: View {
                     .touchTarget()
                 }
             } else if let invitation = model.preparedInvitation {
-                Text(String(localized: "Device Fingerprint", bundle: .main)).font(.subheadline.weight(.medium))
+                Text(String(localized: "Mac Fingerprint", bundle: .main)).font(.subheadline.weight(.medium))
                 fingerprint(invitation.hostPublicKey)
-                Text(String(localized: "Compare this fingerprint with the one on the other device before requesting access.", bundle: .main))
+                Text(String(localized: "Check that it matches the fingerprint shown on your Mac before requesting access.", bundle: .main))
                     .font(.subheadline).foregroundStyle(WitermTheme.secondary)
                 PrimaryButton(String(localized: "Confirm and Request Pairing", bundle: .main), systemImage: "link", fullWidth: true, action: model.join)
                     .disabled(model.isWorking || model.issue?.integrityFailure == true)
@@ -321,7 +432,7 @@ struct DevicePairingView: View {
                     .frame(maxWidth: .infinity).touchTarget()
                     .disabled(model.isWorking)
             } else {
-                Text(String(localized: "On the other device, open Paired Devices and create an invitation.", bundle: .main))
+                Text(String(localized: "On the Mac, choose File > Pair iPhone or iPad… in Witerm, then scan its code.", bundle: .main))
                     .font(.subheadline).foregroundStyle(WitermTheme.secondary)
                 Button(String(localized: "Scan Mac’s QR Code", bundle: .main), systemImage: "qrcode.viewfinder") { scanning = true }
                     .buttonStyle(.bordered)
@@ -384,6 +495,9 @@ struct DevicePairingView: View {
                             revokeButton(grant, peer: peer)
                         }
                     }
+                    #if os(macOS)
+                    accessControls(grant, peer: peer)
+                    #endif
                     if grant.id != model.grants.last?.id { Divider() }
                 }
             }
@@ -428,7 +542,7 @@ struct DevicePairingView: View {
         switch pairing.status {
         case .approved where pairing.grant != nil:
             #if os(iOS)
-            text = String(localized: "Paired. On your Mac, allow remote access and share a session. Then open Devices on this iPhone or iPad.", bundle: .main)
+            text = String(localized: "Paired. The Mac's sessions you may use are in Terminals.", bundle: .main)
             #else
             text = String(localized: "Pairing Confirmed", bundle: .main)
             #endif
@@ -477,24 +591,26 @@ struct DevicePairingView: View {
     }
 }
 
-private struct PairingQRCode: View {
+struct PairingQRCode: View {
     let value: String
     @State private var image: CGImage?
 
     var body: some View {
-        Group {
+        // A fixed frame even before the image exists: an empty view never
+        // appears, so its task would never make the image.
+        ZStack {
             if let image {
                 Image(decorative: image, scale: 1)
                     .interpolation(.none)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 168, height: 168)
-                    .padding(12)
-                    .background(.white, in: .rect(cornerRadius: 14, style: .continuous))
                     .privacySensitive()
-                    .accessibilityHidden(true)
             }
         }
+        .frame(width: 168, height: 168)
+        .padding(12)
+        .background(.white, in: .rect(cornerRadius: 14, style: .continuous))
+        .accessibilityHidden(true)
         .task(id: value) {
             image = makeImage()
         }

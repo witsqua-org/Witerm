@@ -121,6 +121,8 @@ struct SSHNativeTerminalView: UIViewRepresentable {
 @MainActor final class SSHTerminalCoordinator: NSObject, @preconcurrency TerminalViewDelegate {
     private let shell: SSHShell
     private let onEnded: (Error?) -> Void
+    /// Title, folder, and last line, for the lists that show this session.
+    let activity = TerminalActivity()
     private weak var terminal: TerminalView?
     private var outputTask: Task<Void, Never>?
     private var inputTask: Task<Void, Never>?
@@ -149,6 +151,7 @@ struct SSHNativeTerminalView: UIViewRepresentable {
                     view.feed(byteArray: Array(bytes)[...])
                     self.stabilizeTestCursor(view)
                     self.refreshReading(view, output: true)
+                    self.activity.outputArrived(in: view.getTerminal())
                 }
                 guard let self, !self.stopped, !Task.isCancelled else { return }
                 self.stop(); self.onEnded(nil)
@@ -170,6 +173,7 @@ struct SSHNativeTerminalView: UIViewRepresentable {
         DispatchQueue.main.async { [weak oldTerminal] in _ = oldTerminal?.resignFirstResponder() }
         #endif
         outputTask?.cancel(); inputTask?.cancel(); resizeTask?.cancel()
+        activity.stop()
         input.removeAll(); inputBytes = 0; pendingSize = nil
         Task { [shell] in await shell.close() }
     }
@@ -263,8 +267,8 @@ struct SSHNativeTerminalView: UIViewRepresentable {
     func rangeChanged(source: TerminalView, startY: Int, endY: Int) { refreshReading(source) }
     func clipboardCopy(source: TerminalView, content: Data) {}
     func clipboardRead(source: TerminalView) -> Data? { nil }
-    func setTerminalTitle(source: TerminalView, title: String) {}
-    func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
+    func setTerminalTitle(source: TerminalView, title: String) { activity.titleChanged(title) }
+    func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) { activity.directoryChanged(directory) }
     func bell(source: TerminalView) { TerminalBell.ring() }
     func iTermContent(source: TerminalView, content: ArraySlice<UInt8>) {}
     // OSC links and clipboard requests never trigger system actions implicitly.

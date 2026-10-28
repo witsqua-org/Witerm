@@ -40,21 +40,22 @@ The interface is neutral graphite. `IdentityHue` gives each SSH host and paired 
 
 ### Mac
 
-One sidebar with three sections; the detail pane shows the selection.
+One sidebar with two sections, everything a person can open; the detail pane shows the selection. Rows say what each terminal is doing: the title and folder the shell reports, or else its last line, as last seen while the terminal was shown here.
 
 - **This Mac.** Local sessions, including ones started with `witerm`. Selecting one attaches with control. The context menu offers View Only, Share or Stop Sharing, Continue on iPhone, Rename…, and End Session. Shared sessions show an antenna. Under the terminal header, a bar says whether paired devices can reach the session and who's connected. An empty list points to `witerm new`.
 - **SSH Hosts.** The detail pane shows the route, Connect, Edit, and More (Host Keys, Delete), and becomes the terminal once connected. Connected hosts show a filled icon.
-- **Paired Devices.** Allow Remote Access and pairing, one row per saved server.
 
-A footer opens Settings (⌘,) and summarizes server health ("3 Servers · All Reachable"). Settings has General, Terminal, Snippets, and Command Line. Menus: File → New Terminal Session (⌘N), New SSH Connection (⇧⌘N), and Import SSH Hosts…; Edit → Find… (⌘F), Find Next (⌘G), Find Previous (⇧⌘G), Use Selection for Find (⌘E); View → Refresh (⌘R); Terminal → open terminals by name (⌘1–⌘9), Show Next and Previous Terminal (⇧⌘] and ⇧⌘[), Insert Snippet (⌥⌘1–⌥⌘9). Sidebar search also matches local session names.
+A footer opens Settings (⌘,) and summarizes server health ("3 Servers · All Reachable"). Settings has General, Terminal, Snippets, Devices, and Command Line. **Devices** holds Allow Remote Access and pairing, with a server picker when several are saved; it's an admin task, so it isn't in the sidebar beside the terminals. Menus: File → New Terminal Session (⌘N), New SSH Connection (⇧⌘N), and Import SSH Hosts…; Edit → Find… (⌘F), Find Next (⌘G), Find Previous (⇧⌘G), Use Selection for Find (⌘E); View → Refresh (⌘R); Terminal → open terminals by name (⌘1–⌘9), Show Next and Previous Terminal (⇧⌘] and ⇧⌘[), Insert Snippet (⌥⌘1–⌥⌘9). Sidebar search also matches local session names.
 
 ### iOS and iPadOS
 
-On first use, people choose **Connect to an SSH Host** or **Continue from My Mac**. The SSH path needs no server setup. Existing servers or saved hosts skip this choice, and later launches reopen the last tab.
+On first use, people choose **Connect to an SSH Host** or **Continue from My Mac**. The SSH path needs no server setup; the Mac path continues with server setup under Machines. Existing servers or saved hosts skip this choice, and later launches open Terminals.
 
-- **Devices.** Server setup at first. Once a server is verified: paired devices grouped by server, then sessions, then the terminal. A server with a problem says why in its own section. Device rows lead with name and permission; the full fingerprint is in Device Details.
-- **SSH.** Saved hosts with favorites first, then recent-first ordering. Search and the Favorites Only filter appear once there are eight or more hosts. On a regular-width iPad the host list stays beside the terminal and the tab bar stays available; compact layouts use a Hosts back button.
-- **Settings.** A short index. **Servers and Pairing**: one row per server with its status; the row opens the server's page (check, Device Pairing, edit, and Remove set apart). **Terminal**: Display (text size, color scheme, contrast, with its own reset), Keyboard Row, Snippets, and Bell and VoiceOver, each showing its current value.
+Tabs follow intent, not transport: people think "my terminals" and "my machines", not "SSH" versus "Devices".
+
+- **Terminals.** The home. **Open** lists live SSH terminals and ones that disconnected while the app was open, each as a card in the host's hue with its address and folder, its last line, what's running, and when output last arrived; a disconnected card says Tap to reconnect. **Machines** follows: paired Macs (which open their sessions, then the terminal) and saved SSH hosts with favorites first, then recent-first ordering. Search and the Favorites Only filter appear once there are eight or more hosts. With nothing set up, the home shows three ways in, each with what it needs. On a regular-width iPad the list stays beside the terminal and the tab bar stays available; compact layouts use a Terminals back button.
+- **Machines.** Managing what terminals run on. **Macs**: server setup at first (Set Up Mac Access), then paired Macs grouped by server, with Device Details and Pair a Device. A server with a problem says why in its own section. **SSH Hosts**: every saved host with its actions, plus Add Host and Import from SSH Config. Tapping a machine opens its terminal in Terminals.
+- **Settings.** A short index in three groups. **Appearance**: Text and Colors (text size, color scheme, contrast, with its own reset) and Bell and VoiceOver. **Typing**: Keyboard Row and Snippets. **Connections**: Servers and Pairing, one row with the worst server status; its page lists one row per server, and each server's page keeps check, Device Pairing, edit, and Remove set apart. Each row shows its current value.
 
 The tab bar hides while a terminal is open on compact layouts. With a hardware keyboard, the same menu commands work (except New Terminal Session), and holding ⌘ lists them.
 
@@ -62,7 +63,7 @@ The tab bar hides while a terminal is open on compact layouts. With a hardware k
 
 - **Continue on iPhone.** One checklist sheet from a local session: choose a server, check pairing, allow remote access, and share this session. Readiness comes from the selected server's grants and live relay status. The sheet can also release this Mac's control. On iOS, pairing takes a QR scan or a pasted invitation, both through the same server and fingerprint review; without a usable camera, it offers paste.
 - **Input destination.** Every live terminal names where typing goes: `user@host:port` for SSH, the Mac's name for paired sessions, This Mac for local ones. The header shows the input state: enabled, view only, handoff pending (input disabled until confirmed), or Disconnected for a kept last frame.
-- **Saving vs. connecting.** One address field takes `user@host:port` and shows what it understood. New hosts offer Connect or Save for Later at the bottom of the form, within reach of a thumb; editing uses Save and never connects. Name and jump hosts sit under More Options. Errors appear beside their field, and focus moves to the first one. Changing the endpoint clears its credentials, with an explanation.
+- **Saving vs. connecting.** One address field takes `user@host:port` and shows what it understood as User, Host, and Port chips. Key sign-in offers New Key (made on the device, with its public key to copy) or Existing Key (an imported file) as two cards; pasting stays available. New hosts offer Connect or Save for Later at the bottom of the form, within reach of a thumb; editing uses Save and never connects. Name and jump hosts sit under More Options. Errors appear beside their field, and focus moves to the first one. Changing the endpoint clears its credentials, with an explanation.
 - **Connection lifetime.** The first time an SSH terminal is on screen, iOS says once that SSH closes in the background and suggests tmux; afterwards it keeps the host on screen with the reason and Reconnect. Reconnecting opens a new shell and never replays input. Local Mac sessions keep running after a disconnect; End Session lives under More and keeps its confirmation.
 - **Mobile keys.** A sideways-scrolling row of Esc, Ctrl, Tab, Ctrl+C, Paste, and arrows with 44 pt targets and labels. Ctrl announces its state and resets after one key. Multiline paste is confirmed first and discarded if the connection drops. View-only terminals can't send these. Reading selection stays separate from IME selection.
 - **Deleting a host.** Immediate, with an Undo bar for 10 seconds instead of a confirmation. Undo restores the host's credentials, color, favorite, and order. Ending a Mac session, revoking a device, and deleting remote files keep their confirmations, because those can't be undone.
@@ -91,6 +92,7 @@ Shared components are in `apps/apple/Sources/Design/Components.swift`. Use them 
 | `ActivityRow` | Real, cancellable work in progress. No invented percentages. |
 | `StatusBadge` | Symbol plus text in a neutral, positive, or warning tone. |
 | `TerminalHeader` | Destination, input state, and actions for every terminal. The Mac omits the title (the window shows it). |
+| `TerminalActivityCard` | A live or recently disconnected terminal on a list: hue edge, address and folder, last line, what's running, and age. Reads `TerminalActivity`, which comes from the terminal's own renderer, updates at most once a second, and lives only in memory. |
 | `PageHeader`, `IconTile` | Pane titles; decorative icons hidden from VoiceOver. |
 
 **Sizing.** `WitermMetrics` defines one scale: 16 pt card padding, 20 pt page padding, 20 pt corner radius, 32 pt icon tile. `witermControl()` gives large capsule controls on iOS and regular ones on the Mac. Titles use `title2`, card titles `headline`.

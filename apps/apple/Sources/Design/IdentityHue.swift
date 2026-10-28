@@ -40,6 +40,10 @@ enum IdentityHue {
         colors[index(for: identity)]
     }
 
+    /// Named hues for the first-use screen, which previews the palette that
+    /// will mark machines. Nothing else uses a hue without a machine.
+    static let sky = colors[6], rose = colors[0], violet = colors[8]
+
     /// Frees a removed machine's hue for the next one.
     static func forget(_ identity: String) {
         guard assigned.removeValue(forKey: identity) != nil else { return }

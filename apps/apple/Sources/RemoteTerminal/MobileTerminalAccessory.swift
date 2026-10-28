@@ -6,17 +6,32 @@ import UIKit
 /// A key the mobile key row can show. The order and selection are kept in
 /// this device's preferences and edited under Settings → Keyboard Row.
 enum MobileKey: String, CaseIterable, Identifiable {
-    case escape, control, tab, interrupt, paste, snippets, left, down, up, right
-    case bar, tilde, slash, hyphen, home, end, pageUp, pageDown
+    // Ordered by how often they are needed: the first seven fit an iPhone's
+    // width without scrolling the row.
+    case escape, control, tab, left, up, down, right, interrupt, paste, snippets
+    case bar, slash, tilde, hyphen, home, end, pageUp, pageDown
 
     static let key = "witerm.mobileKeys"
     var id: String { rawValue }
 
+    /// The default row before arrows moved forward. A saved row identical to
+    /// it was never customized, so it follows the current default.
+    static let previousDefault = "escape,control,tab,interrupt,paste,snippets,left,down,up,right,bar,tilde,slash,hyphen,home,end,pageUp,pageDown"
+
     /// The order and keys stored under `key`; empty or unreadable means all keys.
     static func decode(_ raw: String) -> [MobileKey] {
+        guard raw != previousDefault else { return allCases }
         var seen = Set<MobileKey>()
         let keys = raw.split(separator: ",").compactMap { MobileKey(rawValue: String($0)) }.filter { seen.insert($0).inserted }
         return keys.isEmpty ? allCases : keys
+    }
+
+    /// Keys that repeat while held, like a hardware keyboard's.
+    var repeats: Bool {
+        switch self {
+        case .left, .down, .up, .right, .pageUp, .pageDown: true
+        default: false
+        }
     }
 
     static func encode(_ keys: [MobileKey]) -> String { keys.map(\.rawValue).joined(separator: ",") }
@@ -163,12 +178,36 @@ enum MobileKey: String, CaseIterable, Identifiable {
             }])
             button.showsMenuAsPrimaryAction = true
         default:
-            configure(button, key: key) { [weak terminal] in
-                guard let terminal else { return }
-                Self.press(key, on: terminal)
+            if key.repeats {
+                configure(button, key: key, action: nil)
+                addRepeat(to: button, key: key)
+            } else {
+                configure(button, key: key) { [weak terminal] in
+                    guard let terminal else { return }
+                    Self.press(key, on: terminal)
+                }
             }
         }
         return button
+    }
+
+    /// Holding a repeating key sends it after a pause, then steadily; a short
+    /// tap sends it once on touch-up. A cancelled touch (such as scrolling
+    /// the row) never sends anything.
+    private func addRepeat(to button: UIButton, key: MobileKey) {
+        let state = KeyRepeat()
+        button.addAction(UIAction { [weak terminal] _ in
+            state.start { [weak terminal] in
+                guard let terminal, terminal.acceptsInput, terminal.window != nil else { return false }
+                Self.press(key, on: terminal)
+                return true
+            }
+        }, for: .touchDown)
+        button.addAction(UIAction { _ in state.stop() }, for: [.touchUpOutside, .touchCancel, .touchDragExit])
+        button.addAction(UIAction { [weak terminal] _ in
+            guard !state.stop(), let terminal else { return }
+            Self.press(key, on: terminal)
+        }, for: .touchUpInside)
     }
 
     private static func press(_ key: MobileKey, on terminal: RemoteNativeTerminalView.TerminalInputView) {
@@ -242,6 +281,35 @@ enum MobileKey: String, CaseIterable, Identifiable {
         button.layer.cornerRadius = 8
         button.widthAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
         if let action { button.addAction(UIAction { _ in action() }, for: .touchUpInside) }
+    }
+}
+
+/// The timers behind one held key.
+@MainActor private final class KeyRepeat {
+    private var timer: Timer?
+    private var repeated = false
+
+    func start(_ send: @escaping @MainActor () -> Bool) {
+        stop()
+        timer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.timer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        guard let self else { return }
+                        if send() { self.repeated = true } else { self.stop() }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Ends the hold and reports whether it sent any key.
+    @discardableResult func stop() -> Bool {
+        timer?.invalidate()
+        timer = nil
+        defer { repeated = false }
+        return repeated
     }
 }
 

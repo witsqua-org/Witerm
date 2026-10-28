@@ -23,7 +23,7 @@ func Load() (Config, error) {
 func load(getenv func(string) string) (Config, error) {
 	cfg := Config{HTTPAddr: strings.TrimSpace(getenv("HTTP_ADDR")), DatabaseURL: strings.TrimSpace(getenv("DATABASE_URL"))}
 	if cfg.HTTPAddr == "" {
-		cfg.HTTPAddr = "127.0.0.1:8080"
+		cfg.HTTPAddr = "127.0.0.1:37429"
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")

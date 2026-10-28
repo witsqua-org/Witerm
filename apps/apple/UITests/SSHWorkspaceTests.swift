@@ -18,7 +18,7 @@ import XCTest
         addTeardownBlock { await MainActor.run { app.terminate() } }
         app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         app.launch()
-        let sshTab = app.tabBars.buttons["SSH"]
+        let sshTab = app.tabBars.buttons.element(boundBy: 0)
         XCTAssertTrue(sshTab.waitForExistence(timeout: 10))
         sshTab.tap()
         app.buttons["newSSHProfile"].tap()
@@ -151,7 +151,7 @@ import XCTest
         addTeardownBlock { await MainActor.run { app.terminate() } }
         app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         app.launch()
-        let sshTab = app.tabBars.buttons["SSH"]
+        let sshTab = app.tabBars.buttons.element(boundBy: 0)
         XCTAssertTrue(sshTab.waitForExistence(timeout: 10))
         sshTab.tap()
 
@@ -251,7 +251,7 @@ import XCTest
         addTeardownBlock { await MainActor.run { app.terminate() } }
         app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         app.launch()
-        let sshTab = app.tabBars.buttons["SSH"]
+        let sshTab = app.tabBars.buttons.element(boundBy: 0)
         XCTAssertTrue(sshTab.waitForExistence(timeout: 10))
         sshTab.tap()
         XCTAssertTrue(app.buttons["newSSHProfile"].waitForExistence(timeout: 5))
@@ -288,8 +288,9 @@ import XCTest
 
     private func fixtureRows(_ app: XCUIApplication, name: String, port: String) -> XCUIElementQuery {
         app.buttons.matching(NSPredicate(
-            format: "identifier BEGINSWITH %@ AND label == %@ AND value == %@",
-            "sshProfileRow-", name, "fixture@127.0.0.1:\(port)"))
+            // A host that disconnected while the app was open says so after its address.
+            format: "identifier BEGINSWITH %@ AND label == %@ AND (value == %@ OR value BEGINSWITH %@)",
+            "sshProfileRow-", name, "fixture@127.0.0.1:\(port)", "fixture@127.0.0.1:\(port)，"))
     }
 
     /// Removes rows with this test's unique name. A row's pin is removed only
@@ -338,10 +339,9 @@ import XCTest
             guard tapIfVisible(menu, in: app) else { return "actions menu not visible for delete" }
             let deletion = app.buttons["删除连接"]
             guard deletion.waitForExistence(timeout: 3) else { return "delete action missing" }
+            // Deletion is immediate and offers Undo instead of a confirmation.
             deletion.tap()
-            let confirmation = app.alerts["删除 SSH 连接？"]
-            guard confirmation.waitForExistence(timeout: 3) else { return "delete confirmation missing" }
-            confirmation.buttons["删除"].firstMatch.tap()
+            guard app.buttons["sshUndoRemove"].waitForExistence(timeout: 5) else { return "undo offer missing" }
             let deletedRow = app.buttons[identifier]
             let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: deletedRow)
             guard XCTWaiter.wait(for: [gone], timeout: 5) == .completed else { return "row was not deleted" }

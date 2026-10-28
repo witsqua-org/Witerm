@@ -12,11 +12,13 @@ struct NativeTerminalView: NSViewRepresentable {
     var preferredColorScheme: ColorScheme? = nil
     var palette: TerminalColorScheme = .system
     var announceOutput: Bool = false
+    /// Receives the title, folder, and last line for the sidebar.
+    var activity: TerminalActivity? = nil
     let onFailure: (Error) -> Void
     let onEnded: () -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(attachment: attachment, mode: mode, onFailure: onFailure, onEnded: onEnded)
+        Coordinator(attachment: attachment, mode: mode, activity: activity, onFailure: onFailure, onEnded: onEnded)
     }
 
     func makeNSView(context: Context) -> TerminalSurface {
@@ -163,7 +165,10 @@ struct NativeTerminalView: NSViewRepresentable {
                 let size = CGSize(width: max(viewport.width, cell.width * 20 + reserved), height: max(viewport.height, cell.height * 5))
                 scroll.hasHorizontalScroller = size.width > viewport.width
                 scroll.hasVerticalScroller = size.height > viewport.height
-                terminal.frame = CGRect(origin: .zero, size: size)
+                // Only a real size change may refit the grid. Reassigning the
+                // same frame after another device's geometry would resize the
+                // grid back and ask the service again, endlessly.
+                if terminal.frame.size != size { terminal.frame = CGRect(origin: .zero, size: size) }
             }
             terminal.refreshReadingDocument()
         }
@@ -183,21 +188,27 @@ struct NativeTerminalView: NSViewRepresentable {
     @MainActor final class Coordinator: NSObject, @preconcurrency TerminalViewDelegate {
         private let attachment: LocalTerminalAttachment
         private let mode: LocalAttachmentMode
+        private let activity: TerminalActivity?
         private let onFailure: (Error) -> Void
         private let onEnded: () -> Void
         private var outputTask: Task<Void, Never>?
         private var inputTask: Task<Void, Never>?
         private var resizeTask: Task<Void, Never>?
-        private var inputQueue: [Data] = []
+        private var inputQueue: [(data: Data, automatic: Bool)] = []
+        /// True while output is fed to the terminal: anything it sends then
+        /// is its own answer to a query, not typing.
+        private var feeding = false
         private var inputBytes = 0
         private var pendingSize: (Int, Int)?
         private var stopped = false
         private var serverGrid: (Int, Int)
         private weak var terminalView: TerminalView?
 
-        init(attachment: LocalTerminalAttachment, mode: LocalAttachmentMode, onFailure: @escaping (Error) -> Void, onEnded: @escaping () -> Void) {
+        init(attachment: LocalTerminalAttachment, mode: LocalAttachmentMode, activity: TerminalActivity?,
+             onFailure: @escaping (Error) -> Void, onEnded: @escaping () -> Void) {
             self.attachment = attachment
             self.mode = mode
+            self.activity = activity
             self.onFailure = onFailure
             self.onEnded = onEnded
             serverGrid = (attachment.session.columns, attachment.session.rows)
@@ -215,8 +226,11 @@ struct NativeTerminalView: NSViewRepresentable {
                             self.serverGrid = (session.columns, session.rows)
                             (view as? MacTerminalTextView)?.applyGeometry(session)
                         case .output(let data):
+                            self.feeding = true
                             view.feed(byteArray: Array(data)[...])
+                            self.feeding = false
                             (view as? MacTerminalTextView)?.refreshReadingDocument(outputChanged: true)
+                            self.activity?.outputArrived(in: view.getTerminal())
                         }
                     }
                     guard let self, !self.stopped, !Task.isCancelled else { return }
@@ -235,6 +249,7 @@ struct NativeTerminalView: NSViewRepresentable {
             outputTask?.cancel()
             inputTask?.cancel()
             resizeTask?.cancel()
+            activity?.stop()
             inputQueue.removeAll()
             inputBytes = 0
             Task { [attachment] in await attachment.disconnect() }
@@ -250,7 +265,7 @@ struct NativeTerminalView: NSViewRepresentable {
             let bytes = Data(data)
             for offset in stride(from: 0, to: bytes.count, by: 16 * 1024) {
                 let piece = bytes.subdata(in: offset..<min(offset + 16 * 1024, bytes.count))
-                inputQueue.append(piece)
+                inputQueue.append((piece, feeding))
                 inputBytes += piece.count
             }
             guard inputTask == nil else { return }
@@ -258,9 +273,9 @@ struct NativeTerminalView: NSViewRepresentable {
                 do {
                     while let self, !self.stopped, !self.inputQueue.isEmpty {
                         let piece = self.inputQueue.removeFirst()
-                        try await attachment.send(piece)
+                        try await attachment.send(piece.data, automatic: piece.automatic)
                         try Task.checkCancellation()
-                        self.inputBytes -= piece.count
+                        self.inputBytes -= piece.data.count
                     }
                     self?.inputTask = nil
                 } catch {
@@ -293,8 +308,8 @@ struct NativeTerminalView: NSViewRepresentable {
 
         func clipboardCopy(source: TerminalView, content: Data) {}
         func clipboardRead(source: TerminalView) -> Data? { nil }
-        func setTerminalTitle(source: TerminalView, title: String) {}
-        func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
+        func setTerminalTitle(source: TerminalView, title: String) { activity?.titleChanged(title) }
+        func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) { activity?.directoryChanged(directory) }
         func scrolled(source: TerminalView, position: Double) { (source as? MacTerminalTextView)?.refreshReadingDocument() }
         func rangeChanged(source: TerminalView, startY: Int, endY: Int) { (source as? MacTerminalTextView)?.refreshReadingDocument() }
         func bell(source: TerminalView) { TerminalBell.ring() }

@@ -284,6 +284,86 @@ final class RelayLiveTests: XCTestCase {
         XCTAssertEqual(listing.map(\.id), [created.id], "The other server must stay connected")
     }
 
+    /// A session invitation over the real server and relay: its grant reaches
+    /// nothing until the recipient proves the link's key inside the encrypted
+    /// channel, then only its session and permission, and nothing once the
+    /// Mac forgets it, even while the server still lists the grant.
+    func testLiveSessionInvitationReachesOneSession() async throws {
+        guard let address = ProcessInfo.processInfo.environment["WITERM_RELAY_LIVE_SERVER_URL"] else {
+            throw XCTSkip("Set WITERM_RELAY_LIVE_SERVER_URL to exercise the real relay and isolated tmux")
+        }
+        guard FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/tmux") else {
+            throw XCTSkip("A real tmux installation is required")
+        }
+        let server = try PairingServerAddress.normalized(address).absoluteString
+        let suffix = String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(10))
+        let host = try PairingClient(serverAddress: server, deviceName: "Invite Mac " + suffix, platform: .macos,
+                                     store: RelayLiveMemorySecureStore(), transport: URLSessionPairingTransport())
+        let guest = try PairingClient(serverAddress: server, deviceName: "Invite Guest " + suffix, platform: .ios,
+                                      store: RelayLiveMemorySecureStore(), transport: URLSessionPairingTransport())
+        _ = try await host.register()
+        _ = try await guest.register()
+
+        let directory = URL(fileURLWithPath: "/private/tmp/witerm-relay-invite-" + UUID().uuidString.lowercased(), isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        let configuration = try AgentConfiguration(stateDirectory: directory, shellPath: "/bin/sh")
+        let broker = try AgentBroker(configuration: configuration)
+        let coordinator = RelayHostCoordinator(stateDirectory: directory, pairings: [server: host])
+        let local = LocalAgentClient(socketURL: directory.appendingPathComponent("agent.sock"))
+        addTeardownBlock {
+            await coordinator.stop()
+            for session in (try? await local.sessions()) ?? [] { try? await local.close(sessionID: session.id) }
+            broker.stop()
+            _ = try? CommandRunner(executable: "/opt/homebrew/bin/tmux", environment: configuration.environment)
+                .run(["-S", directory.appendingPathComponent("tmux.sock").path, "kill-server"])
+            try? FileManager.default.removeItem(at: directory)
+        }
+        try broker.start()
+        let invited = try await local.create(name: "Invited " + suffix)
+        let shared = try await local.create(name: "Shared " + suffix, shared: true)
+        try RelayHostConfigurationStore(stateDirectory: directory)
+            .writeAll([RelayHostConfiguration(serverAddress: server, deviceName: "Invite Mac " + suffix, enabled: true)])
+        await coordinator.start()
+
+        // The Mac records the invitation before its link exists.
+        let created = try await host.createPairing()
+        let key = SessionInvitation.newProofKey()
+        let until = Date().addingTimeInterval(600)
+        _ = try await local.guests(adding: LocalGuestInvite(pairingID: created.pairingID, sessionID: invited.id,
+                                                            permission: .view, expiresAt: until, key: key))
+        let link = SessionInvitation.make(pairing: created, permission: .view, expiresAt: until, proofKey: key)
+        let received = try SessionInvitation(urlString: link.urlString)
+        _ = try await guest.join(received.pairingInvitation())
+        let approved = try await host.approve(try await host.pairing(id: created.pairingID), permission: .view)
+        let grant = try XCTUnwrap(approved.grant)
+        addTeardownBlock { try? await guest.revoke(grantID: grant.id) }
+        let signed = try await guest.grants().first { $0.pairingID == created.pairingID }
+        XCTAssertEqual(signed?.permission, received.permission)
+        let remote = RemoteTerminalClient(pairing: guest, grantID: grant.id)
+
+        // Before the proof, even a shared session is out of reach.
+        try await eventually("The Mac did not come online", seconds: 20) {
+            do { return try await remote.sessions().isEmpty }
+            catch RelayError.offline, RelayError.backpressure { try await Task.sleep(for: .milliseconds(500)); return false }
+        }
+        let forged = SessionInvitation.make(pairing: created, permission: .view, expiresAt: until, proofKey: SessionInvitation.newProofKey())
+        do { try await remote.redeem(forged); XCTFail("A proof without the link's key was accepted") }
+        catch RelayError.sessionUnavailable { }
+        try await remote.redeem(received)
+        let listed = try await remote.sessions()
+        XCTAssertEqual(listed.map(\.id), [invited.id], "An invitation reached more than its session")
+        XCTAssertEqual(listed.first?.access, .view)
+        do { let leaked = try await remote.attach(sessionID: shared.id, mode: .view); await leaked.disconnect(); XCTFail("An invitation reached a shared session") }
+        catch RelayError.sessionUnavailable { }
+        let watching = try await remote.attach(sessionID: invited.id, columns: invited.columns, rows: invited.rows, mode: .view, history: true)
+        try await watching.detach()
+
+        // Once the Mac forgets it, the grant reaches nothing, though the server still lists it.
+        _ = try await local.guests(removing: created.pairingID)
+        let forgotten = try await remote.sessions()
+        XCTAssertTrue(forgotten.isEmpty, "A forgotten invitation's grant fell back to another policy")
+    }
+
     func testLiveEncryptedTerminalAndLocalRevocation() async throws {
         guard let address = ProcessInfo.processInfo.environment["WITERM_RELAY_LIVE_SERVER_URL"] else {
             throw XCTSkip("Set WITERM_RELAY_LIVE_SERVER_URL to exercise the real relay and isolated tmux")
@@ -365,6 +445,10 @@ final class RelayLiveTests: XCTestCase {
         try await control.send(Data("printf 'RELAY_''\(suffix)\\n'\n".utf8))
         try await eventually("Encrypted input did not reach the real shell") { await initial.contains("RELAY_" + suffix) }
         stage = "second controller rejection"
+        // Typing alongside is this Mac's choice per device; without it, a
+        // second controller waits for the first to leave.
+        _ = try await local.deviceAccess(LocalDeviceAccess(deviceID: controlGrant.client.id, scope: .shared,
+                                                           permission: .control, coTyping: false))
         do {
             let conflict = try await remote.attach(sessionID: created.id)
             await conflict.disconnect()

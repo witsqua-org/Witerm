@@ -167,7 +167,11 @@ struct CLIRunner {
         let key = invocation.escape.map { String(UnicodeScalar($0)) }
         let hint = key.map { ", Enter then \($0). to detach" } ?? ""
         CLIOutput.standardError.write(Data("[\(mode == .view ? "viewing" : "attached to") “\(session.name)”\(hint)]\r\n".utf8))
-        let outcome = try await TerminalBridge(escape: invocation.escape).run(attachment, mode: mode)
+        let id = session.id
+        let outcome = try await TerminalBridge(escape: invocation.escape).run(attachment, mode: mode) {
+            let current = try await client.sessions().first { $0.id == id }?.sharing?.remoteTyping ?? true
+            return try await client.configure(sessionID: id, remoteTyping: !current).sharing?.remoteTyping ?? !current
+        }
         let message = outcome == .detached ? "[detached; “\(session.name)” keeps running]" : "[“\(session.name)” ended]"
         CLIOutput.standardError.write(Data((message + "\n").utf8))
         return .success

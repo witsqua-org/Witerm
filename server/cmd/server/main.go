@@ -105,7 +105,7 @@ func run(migrateOnly bool) error {
 func healthcheck() error {
 	addr := os.Getenv("HTTP_ADDR")
 	if addr == "" {
-		addr = "127.0.0.1:8080"
+		addr = "127.0.0.1:37429"
 	}
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {

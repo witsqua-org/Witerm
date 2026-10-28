@@ -72,13 +72,78 @@
     /// disconnects remote devices; the session keeps running. Returns the
     /// session with its sharing state.
     public func share(sessionID: String, shared: Bool) async throws -> LocalSessionInfo {
+      try await configure(sessionID: sessionID, shared: shared)
+    }
+
+    /// Changes who may reach a session remotely. `shared` lets every paired
+    /// device reach it; `keepPrivate` hides it even from devices allowed
+    /// every session (the two exclude each other); `remoteTyping` false
+    /// returns paired devices to view only. Each change that narrows access
+    /// disconnects the remote attachments it affects; the session keeps running.
+    @discardableResult
+    public func configure(
+      sessionID: String, shared: Bool? = nil, keepPrivate: Bool? = nil, remoteTyping: Bool? = nil
+    ) async throws -> LocalSessionInfo {
       try LocalWire.validateID(sessionID)
+      guard shared != nil || keepPrivate != nil || remoteTyping != nil,
+        !(shared == true && keepPrivate == true)
+      else { throw LocalAgentClientError.rejected(.invalidRequest) }
       let frame = try await rpc(
-        LocalAgentRequest(operation: .share, sessionID: sessionID, shared: shared))
-      guard let session = frame.session, session.id == sessionID, session.sharing?.shared == shared
+        LocalAgentRequest(
+          operation: .share, sessionID: sessionID, shared: shared, keepPrivate: keepPrivate,
+          remoteTyping: remoteTyping))
+      guard let session = frame.session, session.id == sessionID, let sharing = session.sharing,
+        shared.map({ sharing.shared == $0 }) ?? true,
+        keepPrivate.map({ sharing.keepPrivate == $0 }) ?? true,
+        remoteTyping.map({ sharing.remoteTyping == $0 }) ?? true
       else { throw LocalAgentClientError.invalidResponse }
       try LocalWire.validateSession(session)
       return session
+    }
+
+    /// Every paired device's policy on this Mac, or, with `access`, stores
+    /// that device's policy first. Narrowing a policy disconnects the
+    /// device's attachments it no longer allows.
+    @discardableResult
+    public func deviceAccess(_ access: LocalDeviceAccess? = nil) async throws -> [LocalDeviceAccess] {
+      try access.map { try LocalWire.validateID($0.deviceID) }
+      let frame = try await rpc(LocalAgentRequest(operation: .access, access: access))
+      guard let accesses = frame.accesses, accesses.count <= 64,
+        Set(accesses.map(\.deviceID)).count == accesses.count,
+        access.map({ accesses.contains($0) }) ?? true
+      else { throw LocalAgentClientError.invalidResponse }
+      return accesses
+    }
+
+    /// This Mac's invitations to single sessions, after recording `adding`
+    /// (with its proof key) or forgetting the one for `removing`.
+    @discardableResult
+    public func guests(adding: LocalGuestInvite? = nil, removing: String? = nil) async throws
+      -> [LocalGuestInvite]
+    {
+      if let adding {
+        try LocalWire.validateID(adding.pairingID)
+        try LocalWire.validateID(adding.sessionID)
+        guard adding.key?.count == 32, !adding.redeemed else {
+          throw LocalAgentClientError.rejected(.invalidRequest)
+        }
+      }
+      try removing.map(LocalWire.validateID)
+      let frame = try await rpc(LocalAgentRequest(operation: .guest, guest: adding, pairingID: removing))
+      guard let guests = frame.guests, guests.count <= 32, guests.allSatisfy({ $0.key == nil }) else {
+        throw LocalAgentClientError.invalidResponse
+      }
+      return guests
+    }
+
+    /// For the relay endpoint: checks a recipient's invitation proof for the
+    /// grant `peer` arrived on.
+    public func redeem(proof: Data, peer: LocalRemotePeer) async throws {
+      try LocalWire.validatePeer(peer)
+      guard proof.count == 32, peer.pairingID != nil, peer.publicKey != nil else {
+        throw LocalAgentClientError.rejected(.invalidRequest)
+      }
+      _ = try await rpc(LocalAgentRequest(operation: .redeem, proof: proof, peer: peer))
     }
 
     /// Changes a session's display name. Attached clients and the shell are
@@ -100,10 +165,11 @@
     }
 
     /// Attaches to a session. Only the relay endpoint passes `peer`, which
-    /// limits the attach to shared sessions.
+    /// limits the attach to what this Mac lets that device reach. `history`
+    /// is for renderers with their own scrollback, never a real terminal.
     public func attach(
       sessionID: String, columns: Int = 80, rows: Int = 24, mode: LocalAttachmentMode = .control,
-      peer: LocalRemotePeer? = nil
+      history: Bool = false, peer: LocalRemotePeer? = nil
     ) async throws -> LocalTerminalAttachment {
       try LocalWire.validateID(sessionID)
       try peer.map(LocalWire.validatePeer)
@@ -114,7 +180,7 @@
       do {
         let request = LocalAgentRequest(
           operation: .attach, sessionID: sessionID, columns: columns, rows: rows, mode: mode,
-          peer: peer)
+          history: history ? true : nil, peer: peer)
         let frame = try await connection.request(request)
         guard let session = frame.session, session.id == sessionID, frame.mode == mode else {
           throw LocalAgentClientError.invalidResponse
@@ -153,10 +219,13 @@
 
     deinit { connection.finish(throwing: nil) }
 
-    public func send(_ data: Data) async throws {
+    /// `automatic` marks the terminal's own answers to queries in its
+    /// output, which never move the session's grid the way typing does.
+    public func send(_ data: Data, automatic: Bool = false) async throws {
       guard mode == .control else { throw LocalAgentClientError.rejected(.readOnly) }
       guard data.count <= 16_384 else { throw LocalAgentClientError.rejected(.invalidRequest) }
-      _ = try await connection.request(LocalAgentRequest(operation: .input, data: data))
+      _ = try await connection.request(
+        LocalAgentRequest(operation: .input, data: data, automatic: automatic ? true : nil))
     }
 
     public func resize(columns: Int, rows: Int) async throws {
@@ -208,8 +277,7 @@
         throw LocalAgentClientError.invalidResponse
       }
       if let sharing = session.sharing {
-        guard sharing.attachments.count <= 32,
-          sharing.attachments.filter({ $0.mode == .control }).count <= 1
+        guard sharing.attachments.count <= 32, !(sharing.shared && sharing.keepPrivate)
         else { throw LocalAgentClientError.invalidResponse }
         for attachment in sharing.attachments {
           do { try attachment.device.map(validatePeer) } catch {
@@ -221,6 +289,10 @@
 
     static func validatePeer(_ peer: LocalRemotePeer) throws {
       try validateID(peer.deviceID)
+      try peer.pairingID.map(validateID)
+      if let key = peer.publicKey, PairingEncoding.publicKey(key) == nil {
+        throw LocalAgentClientError.rejected(.invalidRequest)
+      }
       guard validName(peer.name) else { throw LocalAgentClientError.rejected(.invalidRequest) }
     }
 

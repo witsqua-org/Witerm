@@ -35,6 +35,7 @@ Your terminal's size becomes the session's size.
 | Keys (after Enter) | Effect |
 |---|---|
 | `~.` | Detach. The session keeps running. |
+| `~p` | Pause or resume typing from paired devices in this session |
 | `~?` | List escapes |
 | `~~` | Type a `~` |
 
@@ -42,11 +43,11 @@ Your terminal's size becomes the session's size.
 - Detaching, suspending, closing the window, or a signal always restores your terminal.
 - If your terminal can't keep up with output, the command disconnects with a backpressure error. The session keeps running; attach again to continue.
 
-**Control.** One device controls a session at a time. If another device has it, `attach` exits with code 5 instead of taking over; use `--view` to watch. Detaching releases control at once, so a phone can take it.
+**Typing together.** `attach` types alongside the Mac app and any paired device this Mac lets type alongside it; the window takes the size of whoever typed last. A paired device that isn't allowed to type alongside waits until you detach. If such a device is typing when you attach, `attach` exits with code 5 instead of taking over; use `--view` to watch. `~p` returns paired devices to view-only for this session (and back), without detaching anyone.
 
 ## Sharing
 
-Sessions are private until shared. Sharing lets **already paired** devices list and open a session, within the access each was granted. The command never pairs or approves devices; do that in the app.
+Sharing lets **already paired** devices that are limited to shared sessions list and open a session, within the access each was granted. Devices this Mac allows every session reach it already, unless it's kept private in the app. The command never pairs or approves devices; do that in the app.
 
 `share` reports where remote access really stands:
 

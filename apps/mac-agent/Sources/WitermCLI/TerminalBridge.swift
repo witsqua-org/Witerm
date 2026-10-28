@@ -5,7 +5,7 @@ import WitermCore
 /// ssh-style escapes: the escape character counts only at the start of a
 /// line, so it can still be typed anywhere else.
 struct EscapeFilter {
-    enum Event: Equatable { case send(Data), detach, help }
+    enum Event: Equatable { case send(Data), detach, help, toggleRemoteTyping }
 
     let escape: UInt8?
     private var atLineStart = true
@@ -24,6 +24,8 @@ struct EscapeFilter {
                     flush(); events.append(.detach); return events
                 } else if byte == UInt8(ascii: "?") {
                     flush(); events.append(.help); atLineStart = true; continue
+                } else if byte == UInt8(ascii: "p") {
+                    flush(); events.append(.toggleRemoteTyping); atLineStart = true; continue
                 } else if byte == escape {
                     buffer.append(byte)
                 } else {
@@ -81,7 +83,7 @@ private final class OutcomeLatch: @unchecked Sendable {
 /// the session ends. The terminal is always restored, however it exits.
 final class TerminalBridge: @unchecked Sendable {
     enum Outcome: Equatable { case detached, ended }
-    private enum Action { case input(Data), resize(Int, Int), detach, help }
+    private enum Action { case input(Data), resize(Int, Int), detach, help, toggleRemoteTyping }
 
     private let lock = NSLock()
     private var saved = termios()
@@ -102,7 +104,10 @@ final class TerminalBridge: @unchecked Sendable {
         return clampedGrid(columns: Int(size.ws_col), rows: Int(size.ws_row))
     }
 
-    func run(_ attachment: LocalTerminalAttachment, mode: LocalAttachmentMode) async throws -> Outcome {
+    /// `toggleRemoteTyping` pauses or resumes typing from paired devices in
+    /// this session and returns whether they may type afterwards.
+    func run(_ attachment: LocalTerminalAttachment, mode: LocalAttachmentMode,
+             toggleRemoteTyping: (@Sendable () async throws -> Bool)? = nil) async throws -> Outcome {
         guard tcgetattr(STDIN_FILENO, &saved) == 0 else { throw CLIFailure(exit: .failure, code: "terminal", message: "Unable to read terminal settings.") }
         let (actions, sink) = AsyncStream<Action>.makeStream(bufferingPolicy: .unbounded)
         // Handlers exist before raw mode, so a signal can never leave it behind.
@@ -143,6 +148,15 @@ final class TerminalBridge: @unchecked Sendable {
                         if mode == .control { try await attachment.resize(columns: columns, rows: rows) }
                     case .help:
                         CLIOutput.standardOutput.write(Data(Self.helpText(escape).utf8))
+                    case .toggleRemoteTyping:
+                        // A failed change leaves the session as it was and says so.
+                        let message: String
+                        if let toggleRemoteTyping, let typing = try? await toggleRemoteTyping() {
+                            message = typing ? "[paired devices may type again]" : "[paired devices are view only in this session]"
+                        } else {
+                            message = "[remote typing unchanged]"
+                        }
+                        CLIOutput.standardOutput.write(Data("\r\n\(message)\r\n".utf8))
                     case .detach:
                         try await detach(attachment, writer: writer)
                         finished.resolve(.success(.detached))
@@ -174,7 +188,7 @@ final class TerminalBridge: @unchecked Sendable {
 
     static func helpText(_ escape: UInt8?) -> String {
         let key = escape.map { String(UnicodeScalar($0)) } ?? "~"
-        return "\r\nWiterm escapes (after Enter):\r\n  \(key).  detach; the session keeps running\r\n  \(key)\(key)  type \(key)\r\n  \(key)?  this help\r\n"
+        return "\r\nWiterm escapes (after Enter):\r\n  \(key).  detach; the session keeps running\r\n  \(key)p  pause or resume typing from paired devices\r\n  \(key)\(key)  type \(key)\r\n  \(key)?  this help\r\n"
     }
 
     // MARK: Terminal state
@@ -260,6 +274,7 @@ final class TerminalBridge: @unchecked Sendable {
                     switch event {
                     case .send(let data): sink.yield(.input(data))
                     case .help: sink.yield(.help)
+                    case .toggleRemoteTyping: sink.yield(.toggleRemoteTyping)
                     case .detach: sink.yield(.detach); return
                     }
                 }

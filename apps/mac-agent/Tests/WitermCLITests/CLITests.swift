@@ -30,6 +30,7 @@ final class CLIUnitTests: XCTestCase {
         XCTAssertEqual(filter.feed(Array("~~".utf8)), [.send(Data("~".utf8))])
         XCTAssertEqual(filter.feed(Array("\r~?".utf8)), [.send(Data("\r".utf8)), .help])
         XCTAssertEqual(filter.feed(Array("~x".utf8)), [.send(Data("~x".utf8))])
+        XCTAssertEqual(filter.feed(Array("\r~p".utf8)), [.send(Data("\r".utf8)), .toggleRemoteTyping])
         XCTAssertEqual(filter.feed(Array("\r~.ignored".utf8)), [.send(Data("\r".utf8)), .detach])
         var split = EscapeFilter(escape: UInt8(ascii: "~"))
         XCTAssertEqual(split.feed([UInt8(ascii: "~")]), [])

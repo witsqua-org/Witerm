@@ -8,6 +8,24 @@ public actor RemoteTerminalClient {
     self.grantID = grantID
   }
 
+  /// Proves this device holds a session invitation's key, once after the
+  /// Mac approves it. Until then the invitation's grant reaches nothing.
+  public func redeem(_ invitation: SessionInvitation) async throws {
+    let grant = try await pairing.trustedRelayGrant(id: grantID)
+    guard grant.pairingID == invitation.pairingID else { throw RelayError.untrusted }
+    let channel = try await RelaySecureChannel.client(pairing: pairing, grantID: grantID)
+    let rpc = RemoteRPCConnection(channel: channel)
+    await rpc.start()
+    do {
+      _ = try await rpc.request(
+        LocalAgentRequest(operation: .redeem, proof: invitation.proof(clientPublicKey: grant.client.publicKey)))
+      await rpc.close()
+    } catch {
+      await rpc.close()
+      throw RelayContext.map(error)
+    }
+  }
+
   public func sessions() async throws -> [LocalSessionInfo] {
     let channel = try await RelaySecureChannel.client(pairing: pairing, grantID: grantID)
     let rpc = RemoteRPCConnection(channel: channel)
@@ -23,9 +41,10 @@ public actor RemoteTerminalClient {
     }
   }
 
+  /// `history` asks for earlier output to fill the renderer's scrollback.
   public func attach(
     sessionID: String, columns: Int = 80, rows: Int = 24,
-    mode: LocalAttachmentMode = .control
+    mode: LocalAttachmentMode = .control, history: Bool = false
   ) async throws -> RemoteTerminalAttachment {
     guard RemoteWire.validID(sessionID), RemoteWire.validSize(columns, rows) else {
       throw RelayError.invalidMessage
@@ -39,7 +58,8 @@ public actor RemoteTerminalClient {
       let frame = try await rpc.request(
         LocalAgentRequest(
           operation: .attach,
-          sessionID: sessionID, columns: columns, rows: rows, mode: mode))
+          sessionID: sessionID, columns: columns, rows: rows, mode: mode,
+          history: history ? true : nil))
       guard let session = frame.session else { throw RelayError.invalidMessage }
       return RemoteTerminalAttachment(connection: rpc, session: session, mode: mode)
     } catch {
@@ -68,10 +88,13 @@ public final class RemoteTerminalAttachment: Sendable {
     Task { await connection.close() }
   }
 
-  public func send(_ data: Data) async throws {
+  /// `automatic` marks the terminal's own answers to queries in its
+  /// output, which never move the session's grid the way typing does.
+  public func send(_ data: Data, automatic: Bool = false) async throws {
     guard mode == .control else { throw RelayError.readOnly }
     guard data.count <= 16_384 else { throw RelayError.invalidMessage }
-    _ = try await connection.request(LocalAgentRequest(operation: .input, data: data))
+    _ = try await connection.request(
+      LocalAgentRequest(operation: .input, data: data, automatic: automatic ? true : nil))
   }
   public func resize(columns: Int, rows: Int) async throws {
     guard mode == .control else { throw RelayError.readOnly }
@@ -156,7 +179,7 @@ actor RemoteRPCConnection {
     RelayTrace.event(channel.traceID, "rpc-request-" + request.operation.rawValue)
     guard !closed else { throw terminalError ?? RelayError.transport }
     guard !detaching || request.operation == .detach else { throw RelayError.transport }
-    guard [.status, .list, .attach, .input, .resize, .detach].contains(request.operation),
+    guard [.status, .list, .attach, .input, .resize, .detach, .redeem].contains(request.operation),
       RemoteWire.validID(request.id), pending[request.id] == nil
     else { throw RelayError.invalidMessage }
     return try await withTaskCancellationHandler {
