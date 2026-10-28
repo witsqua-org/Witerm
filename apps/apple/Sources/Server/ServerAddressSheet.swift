@@ -117,6 +117,7 @@ struct ServerAddressSheet: View {
                 Label(title, systemImage: "exclamationmark.circle")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(WitermTheme.warning)
+                    .accessibilityIdentifier("addressValidationError")
             }
             if let detail = input.detail {
                 Text(detail).font(.subheadline).foregroundStyle(WitermTheme.secondary)
@@ -145,8 +146,6 @@ struct ServerAddressSheet: View {
             }
             .buttonStyle(.bordered)
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("addressValidationError")
     }
 
     private func save() {
