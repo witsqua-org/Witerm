@@ -3,6 +3,12 @@ import AppKit
 import SwiftUI
 import WitermCore
 
+/// A request to continue a session on another device; nil pairs one.
+struct ContinueRequest: Identifiable {
+    let id = UUID()
+    let sessionID: String?
+}
+
 enum MacDestination: Hashable {
     case local(String)
     case ssh(UUID)
@@ -20,11 +26,12 @@ struct MacWorkspaceView: View {
     @State private var sshUI = SSHWorkspaceUI()
     @State private var creatingSession = false
     @State private var endingSession: LocalSessionInfo?
-    @State private var sharingSession: LocalSessionInfo?
     @State private var renamingSession: LocalSessionInfo?
-    @State private var pairingDevice = false
-    @State private var invitingSession: LocalSessionInfo?
+    /// Continuing a session on another device, or pairing one without a session.
+    @State private var continuing: ContinueRequest?
     @State private var search = ""
+    @State private var remoteAccess = MacRemoteAccessModel()
+    @AppStorage(SettingsTab.key) private var settingsTab = SettingsTab.general.rawValue
 
     var body: some View {
         NavigationSplitView {
@@ -61,7 +68,9 @@ struct MacWorkspaceView: View {
             newSession: canCreateSession ? { creatingSession = true } : nil,
             newSSHConnection: sshUI.presentNew,
             importSSHHosts: sshUI.presentImport,
-            pairDevice: { pairingDevice = true },
+            continueOnDevice: { continuing = ContinueRequest(sessionID: selectedLocalSessionID) },
+            continueTitle: selectedLocalSessionID == nil ? String(localized: "Pair a Device…", bundle: .main)
+                : String(localized: "Continue on Another Device…", bundle: .main),
             refresh: { Task { await refresh() } },
             terminalNames: openTerminals.map(\.name),
             showTerminal: { index in
@@ -89,10 +98,10 @@ struct MacWorkspaceView: View {
                 terminal.rename(session, to: name, using: client)
             }
         }
-        .sheet(isPresented: $pairingDevice) { MacPairDeviceSheet(service: service) }
-        .sheet(item: $invitingSession) { session in SessionInviteView(service: service, session: session) }
-        .sheet(item: $sharingSession) { session in
-            SessionHandoffView(service: service, terminal: terminal, sessionID: session.id)
+        .sheet(item: $continuing) { request in
+            ContinueOnDeviceSheet(service: service, sessionID: request.sessionID) { id in
+                terminal.activity(for: id).summary(home: NSHomeDirectory())
+            }
         }
         .alert(String(localized: "End Terminal Session?", bundle: .main), isPresented: Binding(get: { endingSession != nil }, set: { if !$0 { endingSession = nil } })) {
             Button(String(localized: "Cancel", bundle: .main), role: .cancel) { endingSession = nil }
@@ -129,6 +138,13 @@ struct MacWorkspaceView: View {
             if case .ssh(let id) = selection, !ids.contains(id), ssh.connectingProfile?.id != id { selection = nil }
         }
         .onDisappear { ssh.disconnectAll(); terminal.stopWatching() }
+        // From a server address that turned out to be an SSH login.
+        .onReceive(NotificationCenter.default.publisher(for: .witermAddSSHHost)) { note in
+            NSApp.activate()
+            NSApp.windows.first { $0.canBecomeMain && $0.isVisible && $0.identifier?.rawValue.contains("Settings") != true }?
+                .makeKeyAndOrderFront(nil)
+            sshUI.presentNew(address: note.object as? String)
+        }
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.willSleepNotification)) { _ in
             terminal.detach()
         }
@@ -143,6 +159,11 @@ struct MacWorkspaceView: View {
             ? terminal.sessions.map { (name: $0.name, destination: MacDestination.local($0.id)) } : []
         return local + ssh.orderedProfiles().filter { ssh.session(for: $0.id) != nil }
             .map { (name: $0.name, destination: MacDestination.ssh($0.id)) }
+    }
+
+    private var selectedLocalSessionID: String? {
+        if case .local(let id) = selection { return id }
+        return nil
     }
 
     private var canCreateSession: Bool {
@@ -173,11 +194,6 @@ struct MacWorkspaceView: View {
         List(selection: $selection) {
             Section(String(localized: "This Mac", bundle: .main)) {
                 localRows
-                // Pairing lives in Settings too; this is where people look for it.
-                Button(String(localized: "Pair iPhone or iPad…", bundle: .main), systemImage: "qrcode") { pairingDevice = true }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("pairDeviceSidebar")
             }
             Section(String(localized: "SSH Hosts", bundle: .main)) {
                 ForEach(ssh.orderedProfiles(search: search)) { profile in
@@ -269,8 +285,8 @@ struct MacWorkspaceView: View {
                         Button(String(localized: "Connect", bundle: .main)) { terminal.attach(session, using: client, mode: .control) }
                         Button(String(localized: "View Only", bundle: .main)) { terminal.attach(session, using: client, mode: .view) }
                         Divider()
-                        Button(String(localized: "Continue on iPhone…", bundle: .main)) { sharingSession = session }
-                        Button(String(localized: "Share with a Link…", bundle: .main)) { invitingSession = session }
+                        Button(String(localized: "Continue on Another Device…", bundle: .main)) { continuing = ContinueRequest(sessionID: session.id) }
+                            .accessibilityIdentifier("continueOnDeviceMenu")
                         if shared {
                             Button(String(localized: "Stop Sharing", bundle: .main)) { terminal.setShared(session, false, using: client) }
                         }
@@ -312,7 +328,7 @@ struct MacWorkspaceView: View {
     private var serverFooter: some View {
         SettingsLink {
             HStack(spacing: 10) {
-                Image(systemName: servers.summarySymbol)
+                Image(systemName: servers.selected?.statusSymbol ?? "server.rack")
                     .foregroundStyle(footerTint)
                     .frame(width: 18)
                     .accessibilityHidden(true)
@@ -320,7 +336,7 @@ struct MacWorkspaceView: View {
                     Text(footerTitle)
                         .font(.callout.weight(.medium))
                         .lineLimit(1)
-                    Text(servers.summaryStatus)
+                    Text(footerStatus)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -335,19 +351,31 @@ struct MacWorkspaceView: View {
             .padding(.vertical, 10)
         }
         .buttonStyle(.plain)
+        .simultaneousGesture(TapGesture().onEnded { settingsTab = SettingsTab.devices.rawValue })
         .background(.bar)
         .overlay(alignment: .top) { Divider() }
-        .accessibilityLabel(String(localized: "Server: \(footerTitle), \(servers.summaryStatus)", bundle: .main))
+        .task { remoteAccess.load() }
+        .onChange(of: terminal.relays) { remoteAccess.load() }
+        .accessibilityLabel(String(localized: "Continuation server: \(footerTitle), \(footerStatus)", bundle: .main))
         .accessibilityHint(String(localized: "Opens Settings", bundle: .main))
         .accessibilityIdentifier("serverStatusFooter")
     }
 
+    /// The server new pairings go through, the same one Settings → Devices shows.
     private var footerTitle: String {
-        servers.servers.count == 1 ? servers.servers[0].displayName : servers.summaryTitle
+        servers.selected?.displayName ?? String(localized: "No Continuation Server", bundle: .main)
+    }
+
+    private var footerStatus: String {
+        guard let server = servers.selected else { return String(localized: "Not Set Up", bundle: .main) }
+        guard server.phase.isAvailable else { return server.statusTitle }
+        return remoteAccess.isEnabled(for: server.address)
+            ? String(localized: "Remote access on · Reachable", bundle: .main)
+            : String(localized: "Remote access off · Reachable", bundle: .main)
     }
 
     private var footerTint: Color {
-        switch servers.summaryTone {
+        switch servers.selected?.statusTone ?? .neutral {
         case .positive: WitermTheme.positive
         case .warning: WitermTheme.warning
         case .neutral: .secondary
