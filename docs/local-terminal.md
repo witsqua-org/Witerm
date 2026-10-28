@@ -18,6 +18,8 @@ xcodebuild -project apps/apple/Witerm.xcodeproj -scheme WitermMac \
 3. **Sessions** appear under **This Mac**, including ones started with `witerm new`. The list refreshes on its own.
 4. **Command line.** Settings → Command Line installs `witerm` as a link into the app ([guide](cli.md)).
 
+The `WitermMac` scheme builds `Witerm.app`, whose executable is `Contents/MacOS/Witerm`; quit a running instance by that exact path. The Swift module keeps the name `WitermMac`, so tests still `@testable import WitermMac`.
+
 ## Packaging
 
 | Piece | Location in `Witerm.app` |
