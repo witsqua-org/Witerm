@@ -7,3 +7,13 @@
 **/xcuserdata
 server/bin
 
+
+server_ssh.txt
+apple certification/
+apps/apple/Config/Signing.local.xcconfig
+deploy/tls/
+# Hosted deployment secrets and offline image archives
+tls/
+.docker-cli/
+*.tar
+*.tar.gz

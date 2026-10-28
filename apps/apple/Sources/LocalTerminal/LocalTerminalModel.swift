@@ -46,7 +46,9 @@ struct LocalTerminalIssue: Equatable {
 
 @MainActor @Observable
 final class LocalTerminalModel {
-    private(set) var sessions: [LocalSessionInfo] = []
+    private(set) var sessions: [LocalSessionInfo] = [] {
+        didSet { activities = activities.filter { id, _ in sessions.contains { $0.id == id } } }
+    }
     private(set) var selectedID: String?
     private(set) var attachment: LocalTerminalAttachment?
     private(set) var attachmentID = UUID()
@@ -61,7 +63,17 @@ final class LocalTerminalModel {
     @ObservationIgnored private var watcher: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
 
+    /// What each session was last seen doing while shown here. Memory only.
+    @ObservationIgnored private var activities: [String: TerminalActivity] = [:]
+
     var selectedSession: LocalSessionInfo? { sessions.first { $0.id == selectedID } }
+
+    func activity(for sessionID: String) -> TerminalActivity {
+        if let existing = activities[sessionID] { return existing }
+        let created = TerminalActivity()
+        activities[sessionID] = created
+        return created
+    }
     var isWorking: Bool { busy != nil }
 
     func refresh(using client: LocalAgentClient) {
@@ -129,6 +141,30 @@ final class LocalTerminalModel {
         }
     }
 
+    /// Keeps a session from every paired device, or pauses their typing in
+    /// it. Either disconnects the remote attachments it no longer allows.
+    func configure(_ session: LocalSessionInfo, keepPrivate: Bool? = nil, remoteTyping: Bool? = nil,
+                   using client: LocalAgentClient) {
+        Task { [weak self] in
+            do {
+                let updated = try await client.configure(sessionID: session.id, keepPrivate: keepPrivate, remoteTyping: remoteTyping)
+                guard let self else { return }
+                self.sessions = self.sessions.map { $0.id == updated.id ? updated : $0 }
+                let announcement: String
+                if let keepPrivate {
+                    announcement = keepPrivate ? String(localized: "Session Kept Private", bundle: .main)
+                        : String(localized: "Session Available to Paired Devices", bundle: .main)
+                } else {
+                    announcement = remoteTyping == false ? String(localized: "Remote Typing Paused", bundle: .main)
+                        : String(localized: "Remote Typing Allowed", bundle: .main)
+                }
+                AccessibilityNotification.Announcement(announcement).post()
+            } catch {
+                self?.report(error)
+            }
+        }
+    }
+
     /// Renaming changes only the display name; the shell and attachments stay.
     func rename(_ session: LocalSessionInfo, to name: String, using client: LocalAgentClient) {
         Task { [weak self] in
@@ -175,7 +211,9 @@ final class LocalTerminalModel {
             await previous?.disconnect()
             try Task.checkCancellation()
             let attachment = try await client.attach(
-                sessionID: session.id, columns: session.columns, rows: session.rows, mode: mode
+                sessionID: session.id, columns: session.columns, rows: session.rows, mode: mode,
+                // The renderer keeps its own scrollback, starting with earlier output.
+                history: true
             )
             guard !Task.isCancelled, let self, self.generation == expected else {
                 await attachment.disconnect()

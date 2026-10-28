@@ -78,6 +78,14 @@ witerm://pair?server=<URL-encoded base URL>&id=<UUID>&secret=<Base64URL>&host_ke
 - `server` must match the configured server, ignoring only trailing slash, letter case, and default port. iOS never switches servers because an invitation says so.
 - iOS pins `host_key` and rejects any response that carries a different host key.
 
+**Session invitation.** A Mac sharing one session without pairing shows instead:
+
+```text
+witerm://share?server=<URL-encoded base URL>&id=<UUID>&secret=<Base64URL>&host_key=<URL-encoded Base64 key>&access=view|control&until=<Unix seconds>&key=<Base64URL, 32 bytes>
+```
+
+The first four fields are a pairing invitation and are used exactly as above. `access` must match the permission the Mac signs, `until` is at most 24 hours ahead, and `key` never leaves the two devices (see [relay-v1](relay-v1.md)). Because the server isn't checked against saved ones, iOS asks before adding the server a link names.
+
 **Fingerprints** are the first 16 uppercase hex digits of SHA-256(public key), in groups of 4.
 
 **After approval.**

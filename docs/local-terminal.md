@@ -39,8 +39,9 @@ Production Developer ID signing and notarization haven't been done yet.
 - Closing a terminal view only detaches. **End Session** asks for confirmation, then ends the shell and its programs.
 - **Rename…** (sidebar context menu or the terminal's More menu) changes only the display name. The shell, its programs, and every attachment keep running; paired devices see the new name the next time they list sessions. `witerm rename <session> <name>` does the same.
 - Stopping the service disconnects viewers but keeps the shells. Continuity across logout, restart, or shutdown isn't promised. Sleep is covered in [Terminal experience](terminal-experience.md#sleep-and-weak-networks).
-- One controller per session. Other viewers are read-only, and there's no forced takeover.
-- Sessions are private until shared. Unsharing disconnects paired devices and keeps the shell.
+- Several clients can type in one session; the grid follows whoever typed last. Paired devices type only when this Mac's policy allows, and **Pause Remote Typing** (or `~p`) returns them to view-only. There's no forced takeover.
+- Which paired devices reach a session is this Mac's choice: per device (all sessions, or shared ones only) and per session (**Keep Private** hides it from every paired device). Narrowing either disconnects the affected devices and keeps the shell. See [Encrypted relay](relay.md#using-it).
+- The app's terminals start with up to 1,000 lines of earlier output in their scrollback ([Terminal experience](terminal-experience.md#display)).
 - Terminal output stays in local memory and sockets; it's never stored or sent to the cloud. tmux keeps its usual scrollback, and your shell may keep history as configured.
 - Clipboard escape sequences are blocked, and only http/https links you click open.
 

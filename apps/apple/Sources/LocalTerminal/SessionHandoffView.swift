@@ -14,6 +14,7 @@ struct SessionHandoffView: View {
     @State private var editing: ServerEditRequest?
     @State private var remoteAccess = MacRemoteAccessModel()
     @State private var grants: [DeviceGrant] = []
+    @State private var accesses: [LocalDeviceAccess] = []
 
     private var server: ConnectionModel? { servers.server(id: serverID) }
     private var session: LocalSessionInfo? { terminal.sessions.first { $0.id == sessionID } }
@@ -23,7 +24,12 @@ struct SessionHandoffView: View {
         return terminal.relays.contains { ServerAddressKey($0.server) == ServerAddressKey(server.address) && $0.state == .ready }
     }
     private var serverReady: Bool { server?.phase.isAvailable == true && server?.supportsRelay == true }
-    private var ready: Bool { serverReady && paired && relayReady && session?.sharing?.shared == true && service.state == .ready }
+    /// Shared, or reachable by a paired device allowed every session.
+    private var reachable: Bool {
+        guard let sharing = session?.sharing, !sharing.keepPrivate else { return false }
+        return sharing.shared || grants.contains { grant in accesses.contains { $0.deviceID == grant.client.id && $0.scope == .all } }
+    }
+    private var ready: Bool { serverReady && paired && relayReady && reachable && service.state == .ready }
 
     var body: some View {
         NavigationStack {
@@ -65,6 +71,7 @@ struct SessionHandoffView: View {
         }
         .frame(minWidth: 620, idealWidth: 680, minHeight: 700)
         .task { serverID = servers.servers.first?.id }
+        .task(id: grants.map(\.id)) { accesses = (try? await service.client?.deviceAccess()) ?? [] }
         .onChange(of: servers.servers.map(\.id)) { _, _ in
             if server == nil { serverID = servers.servers.first?.id }
         }
@@ -82,9 +89,9 @@ struct SessionHandoffView: View {
             step(String(localized: "Server connection", bundle: .main), complete: serverReady)
             step(String(localized: "Device paired", bundle: .main), complete: paired)
             step(String(localized: "Remote access ready", bundle: .main), complete: relayReady)
-            step(String(localized: "Session shared", bundle: .main), complete: session?.sharing?.shared == true)
+            step(String(localized: "Session reachable", bundle: .main), complete: reachable)
             if ready {
-                Text(String(localized: "On your iPhone or iPad, open Devices, choose this Mac, then choose this session.", bundle: .main))
+                Text(String(localized: "On your iPhone or iPad, open Terminals, choose this Mac, then choose this session.", bundle: .main))
                     .font(.subheadline).foregroundStyle(WitermTheme.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -139,17 +146,13 @@ struct SessionHandoffView: View {
                 }))
                 .disabled(service.state != .ready)
                 .accessibilityIdentifier("handoffShareSession")
-            Text(String(localized: "Paired devices use the view or control access you approved. Stopping sharing disconnects them.", bundle: .main))
+            Text(String(localized: "Devices allowed only shared sessions reach it once it's shared. Devices allowed every session already can, unless it's kept private.", bundle: .main))
                 .font(.subheadline).foregroundStyle(WitermTheme.secondary)
-            if ready, grants.contains(where: { $0.permission == .control }),
-               terminal.selectedID == session.id, terminal.attachment != nil, terminal.mode == .control {
-                Text(String(localized: "This Mac currently has control. Release it before typing from your iPhone or iPad.", bundle: .main))
-                    .font(.subheadline)
-                Button(String(localized: "Release This Mac’s Control", bundle: .main)) {
-                    if let client = service.client { terminal.attach(session, using: client, mode: .view) }
-                }
-                .disabled(terminal.isWorking)
-                .accessibilityIdentifier("handoffReleaseControl")
+            if ready, grants.contains(where: { $0.permission == .control }) {
+                // Typing is shared; no one has to leave first.
+                Text(String(localized: "Your iPhone or iPad can type while this Mac stays attached. The window takes the size of whichever device typed last.", bundle: .main))
+                    .font(.subheadline).foregroundStyle(WitermTheme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .witermCard()

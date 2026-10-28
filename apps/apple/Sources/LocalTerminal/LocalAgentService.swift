@@ -3,7 +3,14 @@ import Foundation
 import Observation
 import OSLog
 import ServiceManagement
+import SwiftUI
 import WitermCore
+
+extension EnvironmentValues {
+    /// The background service's client while it runs, for views (such as
+    /// pairing) that store this Mac's policy for a device.
+    @Entry var localAgent: LocalAgentClient?
+}
 
 @MainActor @Observable
 final class LocalAgentService {

@@ -18,10 +18,24 @@ final class ConnectionFlowTests: XCTestCase {
         return app
     }
 
+    /// Lands on Mac setup: shown at once without a server, or one tap into
+    /// Machines when a saved server does not offer remote terminals.
     private func launch(address: String = "") -> XCUIApplication {
         let app = launchApp(address: address)
+        if !address.isEmpty {
+            openMachines(app)
+            let setup = app.buttons["machinesMacSetup"]
+            XCTAssertTrue(setup.waitForExistence(timeout: 10))
+            setup.tap()
+        }
         XCTAssertTrue(app.buttons["primaryAction"].waitForExistence(timeout: 10))
         return app
+    }
+
+    private func openMachines(_ app: XCUIApplication) {
+        let tab = app.tabBars.buttons.element(boundBy: 1)
+        XCTAssertTrue(tab.waitForExistence(timeout: 10))
+        tab.tap()
     }
 
     private func openSettings(_ app: XCUIApplication) {
@@ -30,9 +44,15 @@ final class ConnectionFlowTests: XCTestCase {
         tab.tap()
     }
 
-    /// Settings lists one row per server; its status and actions are a tap away.
+    /// Settings summarizes servers in one row; its page lists one row per
+    /// server, whose status and actions are a tap away.
     private func openServer(_ app: XCUIApplication, index: Int = 0) {
         let row = app.buttons["settingsServerRow-\(index)"]
+        if !row.waitForExistence(timeout: 2) {
+            let servers = app.buttons["settingsServers"]
+            XCTAssertTrue(servers.waitForExistence(timeout: 10))
+            servers.tap()
+        }
         XCTAssertTrue(row.waitForExistence(timeout: 10))
         row.tap()
     }
@@ -61,9 +81,10 @@ final class ConnectionFlowTests: XCTestCase {
     }
 
     func testRealServerSuccess() {
-        let app = launchApp(address: "http://localhost:8080")
-        // The launch check succeeds and the relay-capable server opens Devices.
-        XCTAssertTrue(app.buttons["refreshRemoteSessions"].waitForExistence(timeout: 15))
+        let app = launchApp(address: "http://localhost:37429")
+        // The launch check succeeds and Machines lists the server's Macs.
+        openMachines(app)
+        XCTAssertTrue(app.buttons["devicePairing"].firstMatch.waitForExistence(timeout: 15))
         XCTAssertFalse(app.buttons["primaryAction"].exists)
         capture("03-macs", app: app)
         openSettings(app)
@@ -83,10 +104,10 @@ final class ConnectionFlowTests: XCTestCase {
         // once the rendered screen is actually dark.
         XCTAssertTrue(waitForDarkScreen(app), "The app did not render in dark appearance")
         capture("07-dark", app: app)
-        app.tabBars.buttons["SSH"].tap()
+        app.tabBars.buttons.element(boundBy: 0).tap()
         XCTAssertTrue(app.buttons["newSSHProfile"].waitForExistence(timeout: 5))
         XCTAssertTrue(waitForDarkScreen(app))
-        capture("07-dark-ssh", app: app)
+        capture("07-dark-terminals", app: app)
         openSettings(app)
         XCTAssertTrue(app.buttons["settingsDisplay"].waitForExistence(timeout: 5))
         XCTAssertTrue(waitForDarkScreen(app))
@@ -172,20 +193,23 @@ final class ConnectionFlowTests: XCTestCase {
     /// refused, and removing one leaves the other.
     func testSeveralServersAreUsedTogether() {
         let app = XCUIApplication()
-        app.launchArguments = serverList(["http://localhost:8080", "http://127.0.0.1:8080"])
+        app.launchArguments = serverList(["http://localhost:37429", "http://127.0.0.1:37429"])
         app.launchArguments += ["-witerm.startTask", "mac"]
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
-        XCTAssertTrue(app.buttons["refreshRemoteSessions"].waitForExistence(timeout: 15))
-        XCTAssertTrue(app.staticTexts["localhost:8080"].waitForExistence(timeout: 15))
-        XCTAssertTrue(app.staticTexts["127.0.0.1:8080"].exists)
+        openMachines(app)
+        XCTAssertTrue(app.buttons["devicePairing"].firstMatch.waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["localhost:37429"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["127.0.0.1:37429"].exists)
         let empty = app.descendants(matching: .any).matching(identifier: "remoteDevicesEmpty")
         let bothListed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "count == 2"), object: empty)
         wait(for: [bothListed], timeout: 20)
         capture("10-several-servers", app: app)
 
-        // Settings lists one row per server, then Add Server.
+        // Settings summarizes the servers; their page lists one row each, then Add Server.
         app.tabBars.buttons["Settings"].tap()
+        XCTAssertTrue(app.buttons["settingsServers"].waitForExistence(timeout: 5))
+        app.buttons["settingsServers"].tap()
         XCTAssertTrue(app.buttons["settingsServerRow-0"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["settingsServerRow-1"].exists)
         let add = app.buttons["settingsAddServer"]
@@ -195,7 +219,7 @@ final class ConnectionFlowTests: XCTestCase {
         let field = app.textFields["serverAddressField"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.tap()
-        field.typeText("http://LOCALHOST:8080/")
+        field.typeText("http://LOCALHOST:37429/")
         app.buttons["saveServerAddress"].tap()
         XCTAssertTrue(app.staticTexts["This server is already in your list."].waitForExistence(timeout: 5))
         app.buttons["Cancel"].tap()
@@ -226,7 +250,7 @@ final class ConnectionFlowTests: XCTestCase {
     }
 
     private func openPairing() -> XCUIApplication {
-        let app = launchApp(address: "http://localhost:8080")
+        let app = launchApp(address: "http://localhost:37429")
         openSettings(app)
         openServer(app)
         let entry = app.buttons["settingsDevicePairing"]
@@ -299,7 +323,7 @@ final class ConnectionFlowTests: XCTestCase {
         parts.scheme = "witerm"
         parts.host = "pair"
         parts.queryItems = [
-            URLQueryItem(name: "server", value: "http://localhost:8080"),
+            URLQueryItem(name: "server", value: "http://localhost:37429"),
             URLQueryItem(name: "id", value: "00000000-0000-4000-8000-000000000002"),
             URLQueryItem(name: "secret", value: String(repeating: "A", count: 43)),
             URLQueryItem(name: "host_key", value: Data(repeating: 1, count: 32).base64EncodedString())

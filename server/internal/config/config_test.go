@@ -10,7 +10,7 @@ func TestRequiredDatabaseAndMigrationOptIn(t *testing.T) {
 	}
 	values["DATABASE_URL"] = "postgres://localhost/witerm"
 	cfg, err := load(getenv)
-	if err != nil || cfg.MigrateOnStart || cfg.HTTPAddr != "127.0.0.1:8080" {
+	if err != nil || cfg.MigrateOnStart || cfg.HTTPAddr != "127.0.0.1:37429" {
 		t.Fatalf("unexpected defaults: %+v, %v", cfg, err)
 	}
 	values["MIGRATE_ON_START"] = "invalid"

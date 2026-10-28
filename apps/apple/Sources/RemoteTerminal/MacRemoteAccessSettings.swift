@@ -83,7 +83,7 @@ struct MacRemoteAccessCard: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(String(localized: "Allow Remote Access", bundle: .main))
                         .font(.headline)
-                    Text(String(localized: "Paired iPhone and iPad devices can connect to the sessions you share on this Mac.", bundle: .main))
+                    Text(String(localized: "Lets paired iPhone and iPad reach the sessions you allow, through this server.", bundle: .main))
                         .font(.subheadline)
                         .foregroundStyle(WitermTheme.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -100,7 +100,7 @@ struct MacRemoteAccessCard: View {
                 .accessibilityIdentifier("allowRemoteConnections")
             }
             if model.isEnabled(for: serverAddress) {
-                IconText(String(localized: "Devices must be paired and authorized to view or control the terminal.", bundle: .main), systemImage: "checkmark.shield")
+                IconText(String(localized: "Each device reaches only what you choose under Paired Devices.", bundle: .main), systemImage: "checkmark.shield")
                     .font(.subheadline)
                     .foregroundStyle(WitermTheme.secondary)
             }

@@ -32,8 +32,9 @@ Witerm reaches a terminal in one of two ways:
 - **Explicit pairing.** A Mac invitation, a fingerprint check on iOS, and approval on the Mac (view-only or control).
 - **End-to-end encryption.** Noise XX, bound to both paired identities. The server routes ciphertext and can't read or forge it.
 - **The Mac decides.** It rechecks its local grant on every connection and request, and while idle. A local revocation closes live channels even if the server still lists the grant.
-- **Private until shared.** Paired devices see only shared sessions, and sharing never raises a device's access.
-- **One controller per session.** Others must choose view-only; nobody takes control by force.
+- **The Mac chooses what each device reaches.** Per device: all sessions or shared ones only, typing or not. Per session: kept private from everyone. This policy only narrows a signed grant, and devices paired before it existed reach shared sessions only.
+- **Typing together, never taking over.** Several devices can type; the grid follows whoever typed last. The Mac can pause remote typing at any time; nobody takes control by force.
+- **Invitations reach one session.** A session invitation's grant reaches nothing until the recipient proves a key the server never saw, then only that session until it expires.
 - **No silent loss.** A full buffer closes the connection so the client reattaches and redraws. Terminal bytes are never dropped quietly.
 
 ## Status
@@ -45,8 +46,12 @@ Witerm reaches a terminal in one of two ways:
 | Mac sessions that survive app exit, service restart, and sleep | Done |
 | Encrypted relay: view, control, handoff, revocation | Done |
 | Per-session sharing and the `witerm` command | Done |
+| Per-device access policy, private sessions, typing together | Done |
+| Session invitations without pairing | Done |
+| iOS background grace and automatic reconnect | Done |
 | Direct SSH: host keys, Ed25519 and passwords, jump hosts, SFTP, forwarding | Done |
 | Remote session create or close, forced takeover, accounts | Not planned yet |
+| Opening `witerm://` links from other apps | Future |
 | tmux control mode, multi-window mapping, deep links | Future |
 
 What has actually been tested: [Verification status](verification.md).

@@ -2,9 +2,9 @@
 
 ## Grid size
 
-The controller sets a session's size: 20–500 columns and 5–200 rows. Viewers follow without reconnecting.
+A session is 20–500 columns by 5–200 rows. Several devices can type in it at once; the grid is that of whoever typed last (or the first to attach), and everyone else follows without reconnecting. The grid changes hands only after its owner has paused for 2 seconds, and a terminal's automatic answers to queries never count as typing, so opening a session on the phone doesn't shrink the Mac's window. A typing device that doesn't own the grid shows the owner's grid, scrollable like a viewer's, until it types; the Mac answers its resize requests with the grid in use and applies them when it types.
 
-**When the controller resizes**, the Mac:
+**When the grid changes**, the Mac:
 
 1. sends every attached device a `geometry` event, ahead of the redraw at the new size;
 2. resizes each viewer's PTY (tmux sees SIGWINCH);
@@ -26,6 +26,23 @@ Mac and iOS share **Terminal Display** settings: text size from 11 to 32 pt (iOS
 **Switching terminals.** The Terminal menu lists open terminals: ⌘1–⌘9 show one, ⇧⌘] and ⇧⌘[ step through them. On the Mac, these are sessions on this Mac followed by connected SSH hosts; on iPad, connected SSH hosts.
 
 **Color schemes.** System (the platform's text colors), Graphite, Paper, and Ocean. Each scheme has a light and a dark variant and follows the system appearance; there's no in-app light/dark switch. Enhanced contrast, from the setting or the system's Increase Contrast, overrides the scheme. In every scheme, body text reaches at least 13:1 and every ANSI color programs use for text reaches 4.5:1 against the background; `WitermMacTerminalTests` checks both. Changing the scheme repaints colors only: it never changes the grid or its contents. Reduce Transparency applies to the surrounding interface.
+
+**Scrollback.** The Mac and iOS renderers keep their own scrollback. When one attaches, the Mac sends up to 1,000 lines (128 KiB) of the session's earlier output, with colors, above tmux's redraw of the live screen, and keeps tmux off the outer alternate screen so new output scrolls into it. While a full-screen program runs, only its screen is shown. `witerm attach` in a real terminal is unchanged.
+
+**Touch (iPhone and iPad).**
+
+| Gesture | Effect |
+|---|---|
+| Drag | Scrolls the output. In a program that asked for the mouse, with typing allowed, it goes to the program. A grid wider than the screen pans one direction at a time. |
+| Long press | Selects the word under your finger; keep dragging to extend. Lifting shows Copy, Select Line, Select All, and Paste where typing is allowed. Works in view-only terminals too. |
+| Double / triple tap | Selects a word / line. |
+| Tap | Shows the keyboard when typing is allowed, or clears a selection. |
+| Pinch | Changes the text size once your fingers lift. |
+| Swipe from the left edge | Back: from a terminal to its sessions, from sessions to Terminals. A Mac terminal stays connected until the Mac confirms it released control. |
+
+**Keyboard row.** Esc, Ctrl, Tab, and the arrows come first, so they fit an iPhone's width; then Ctrl+C, Paste, Snippets, symbols, and Home/End/PgUp/PgDn. Arrows and page keys repeat while held. A row you reordered in Settings → Keyboard Row is kept.
+
+**Header.** On iPhone the navigation bar names the session, with the Mac and whether you can type underneath; the keyboard, typing, and More buttons sit beside it. iPad keeps the terminal header.
 
 **Find.** On the Mac, Edit → Find… (⌘F), Find Next (⌘G), Find Previous (⇧⌘G), and Use Selection for Find (⌘E) open SwiftTerm's find bar over the focused terminal. On iPhone and iPad, **Find in Terminal** (also ⌘F with a hardware keyboard) shows a find bar under the terminal header with a match count. Search covers the scrollback held by this view; it selects and scrolls only your view and never sends input or resizes the session. A full-screen program's alternate screen isn't scrolled.
 
@@ -53,7 +70,7 @@ Mac and iOS share **Terminal Display** settings: text size from 11 to 32 pt (iOS
 Before the Mac sleeps, the service closes relay connections but keeps tmux and the shells. On wake, it reloads remote-access settings and listens again.
 
 - Preparing for sleep takes at most 2 seconds and never blocks it.
-- Mac views reattach after wake; iOS reconnects to the same session.
+- Mac views reattach after wake; iOS reconnects to the same session on its own when it returns to the foreground or the network comes back.
 - Input is never resent. Logout, restart, and shutdown aren't covered.
 
 Weak-network tests add delay, jitter, and read stalls to test connections only; they aren't system-level packet-loss tests. To prove input wasn't replayed, a test confirms the input ran once, reconnects, and checks it still ran exactly once.

@@ -63,6 +63,7 @@ struct SSHProfileForm: View {
     @State private var errors: [Field: String] = [:]
     @State private var importingKey = false
     @State private var importingKeyHost: UUID?
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     init(profile: SSHProfile?, credentials: [UUID: SSHCredential], purpose: SSHFormPurpose,
          onSave: @escaping (SSHProfile, [UUID: SSHCredential], Set<UUID>) async throws -> Void,
@@ -218,9 +219,7 @@ struct SSHProfileForm: View {
             .accessibilityIdentifier("sshHostAddress")
             .onChange(of: draft.wrappedValue.address) { _, _ in errors[.address(draft.wrappedValue.id)] = nil; resetChangedEndpoint(draft) }
         if case .success(let value) = draft.wrappedValue.parsed {
-            Text(String(localized: "User \(value.username) · Host \(value.hostname) · Port \(String(value.port))", bundle: .main))
-                .font(.caption).foregroundStyle(WitermTheme.secondary)
-                .accessibilityIdentifier("sshAddressSummary")
+            AddressChips(parsed: value)
         } else if errors[.address(draft.wrappedValue.id)] == nil {
             Text(String(localized: "Add :port after the host if it isn't 22.", bundle: .main))
                 .font(.caption).foregroundStyle(WitermTheme.secondary)
@@ -236,22 +235,31 @@ struct SSHProfileForm: View {
         .pickerStyle(.segmented)
         .accessibilityIdentifier("sshAuthentication")
         if draft.wrappedValue.useKey {
-            Text(String(localized: "OpenSSH Private Key", bundle: .main)).font(.subheadline)
-            Text(String(localized: "Use an OpenSSH private key in Ed25519 format, or generate one here. RSA keys aren't supported because they would be signed with SHA-1.", bundle: .main))
+            // Two ways to get a key, side by side; the chosen one is outlined.
+            (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 10)) : AnyLayout(HStackLayout(alignment: .top, spacing: 10))) {
+                KeyChoiceCard(title: String(localized: "New Key", bundle: .main),
+                              detail: String(localized: "Made on this device. Copy the public key to the server.", bundle: .main),
+                              systemImage: "key.fill", selected: draft.wrappedValue.generatedPublicKey != nil) {
+                    let day = Date.now.formatted(.iso8601.year().month().day())
+                    let key = SSHKeyGenerator.ed25519(comment: "witerm-\(day)")
+                    draft.wrappedValue.generated = key
+                    draft.wrappedValue.privateKey = key.privateKey
+                    draft.wrappedValue.passphrase = ""
+                    draft.wrappedValue.showingPrivateKey = false
+                    errors[.credential(draft.wrappedValue.id)] = nil
+                }
+                .accessibilityIdentifier("sshGenerateKey")
+                KeyChoiceCard(title: String(localized: "Existing Key", bundle: .main),
+                              detail: String(localized: "Import an Ed25519 OpenSSH key file.", bundle: .main),
+                              systemImage: "square.and.arrow.down",
+                              selected: !draft.wrappedValue.privateKey.isEmpty && draft.wrappedValue.generatedPublicKey == nil) {
+                    importingKeyHost = draft.wrappedValue.id; importingKey = true
+                }
+                .accessibilityIdentifier("sshImportKey")
+            }
+            .buttonStyle(.plain)
+            Text(String(localized: "RSA keys aren't supported because they would be signed with SHA-1.", bundle: .main))
                 .font(.footnote).foregroundStyle(.secondary)
-            Button(String(localized: "Import Private Key File", bundle: .main), systemImage: "square.and.arrow.down") {
-                importingKeyHost = draft.wrappedValue.id; importingKey = true
-            }
-            Button(String(localized: "Generate New Key", bundle: .main), systemImage: "key.fill") {
-                let day = Date.now.formatted(.iso8601.year().month().day())
-                let key = SSHKeyGenerator.ed25519(comment: "witerm-\(day)")
-                draft.wrappedValue.generated = key
-                draft.wrappedValue.privateKey = key.privateKey
-                draft.wrappedValue.passphrase = ""
-                draft.wrappedValue.showingPrivateKey = false
-                errors[.credential(draft.wrappedValue.id)] = nil
-            }
-            .accessibilityIdentifier("sshGenerateKey")
             if let publicKey = draft.wrappedValue.generatedPublicKey {
                 generatedKeyDetails(publicKey, remember: draft.wrappedValue.remember)
             }
@@ -264,9 +272,9 @@ struct SSHProfileForm: View {
                     .sshLiteralInput()
                 Button(String(localized: "Hide Private Key", bundle: .main)) { draft.wrappedValue.showingPrivateKey = false }
             } else {
-                Text(draft.wrappedValue.privateKey.isEmpty ? String(localized: "No Private Key Loaded", bundle: .main) : String(localized: "Private Key Loaded", bundle: .main))
-                    .foregroundStyle(.secondary)
-                Button(String(localized: "Enter or Edit Private Key", bundle: .main)) { draft.wrappedValue.showingPrivateKey = true }
+                // The cards say which key is in use; pasting stays available.
+                Button(draft.wrappedValue.privateKey.isEmpty ? String(localized: "Paste a Key Instead", bundle: .main)
+                       : String(localized: "Enter or Edit Private Key", bundle: .main)) { draft.wrappedValue.showingPrivateKey = true }
             }
             SecureField(String(localized: "Private Key Passphrase (Optional)", bundle: .main), text: draft.passphrase)
         } else {
@@ -390,5 +398,63 @@ extension View {
         #else
         self
         #endif
+    }
+}
+
+/// What the address field understood, as chips that read as one sentence.
+private struct AddressChips: View {
+    let parsed: SSHAddressInput.Parsed
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
+        let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
+            : AnyLayout(HStackLayout(spacing: 6))
+        layout {
+            chip(String(localized: "User", bundle: .main), parsed.username)
+            chip(String(localized: "Host", bundle: .main), parsed.hostname)
+            chip(String(localized: "Port", bundle: .main), String(parsed.port))
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(String(localized: "User \(parsed.username) · Host \(parsed.hostname) · Port \(String(parsed.port))", bundle: .main))
+        .accessibilityIdentifier("sshAddressSummary")
+    }
+
+    private func chip(_ label: String, _ value: String) -> some View {
+        (Text(label + " ").foregroundStyle(WitermTheme.secondary) + Text(verbatim: value).fontWeight(.semibold))
+            .font(.caption)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(WitermTheme.statusFill, in: .capsule)
+    }
+}
+
+/// One way to sign in with a key; outlined when it is the one in use.
+private struct KeyChoiceCard: View {
+    let title: String
+    let detail: String
+    let systemImage: String
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 4) {
+                Label(title, systemImage: systemImage).font(.subheadline.weight(.semibold))
+                    .foregroundStyle(WitermTheme.ink)
+                Text(detail).font(.caption).foregroundStyle(WitermTheme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .topLeading)
+            .padding(10)
+            .background(WitermTheme.surface, in: .rect(cornerRadius: 12))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(selected ? WitermTheme.accent : WitermTheme.divider, lineWidth: selected ? 2 : 1)
+            }
+            .contentShape(.rect(cornerRadius: 12))
+        }
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }

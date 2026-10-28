@@ -4,7 +4,7 @@ import SwiftUI
 /// The selected Settings tab. Other views set it before opening Settings to
 /// land on a specific tab.
 enum SettingsTab: String {
-    case general, terminal, snippets, commandLine
+    case general, terminal, snippets, devices, commandLine
     static let key = "witerm.settingsTab"
 }
 
@@ -28,12 +28,55 @@ struct MacSettingsView: View {
                 .frame(width: 560, height: 560)
                 .tabItem { Label(String(localized: "Snippets", bundle: .main), systemImage: "text.badge.plus") }
                 .tag(SettingsTab.snippets.rawValue)
+            MacDevicesSettings(service: service)
+                .frame(width: 620, height: 640)
+                .tabItem { Label(String(localized: "Devices", bundle: .main), systemImage: "iphone.and.arrow.forward") }
+                .tag(SettingsTab.devices.rawValue)
             CommandLineToolSettings()
                 .frame(width: 560, height: 560)
                 .tabItem { Label(String(localized: "Command Line", bundle: .main), systemImage: "apple.terminal") }
                 .tag(SettingsTab.commandLine.rawValue)
         }
         .witermTint()
+    }
+}
+
+/// Pairing and remote access, per server: an admin task, so it lives in
+/// Settings rather than among the terminals in the sidebar.
+private struct MacDevicesSettings: View {
+    let service: LocalAgentService
+    @Environment(ServerList.self) private var servers
+    @State private var serverID: ConnectionModel.ID?
+
+    private var server: ConnectionModel? { servers.server(id: serverID) ?? servers.servers.first }
+
+    @AppStorage(SettingsTab.key) private var tab = SettingsTab.general.rawValue
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if servers.servers.isEmpty {
+                ContentUnavailableView {
+                    Label(String(localized: "Set Up a Server", bundle: .main), systemImage: "server.rack")
+                } description: {
+                    Text(String(localized: "Pairing and remote access use your Witerm server. Add its address in General.", bundle: .main))
+                } actions: {
+                    Button(String(localized: "Open General", bundle: .main)) { tab = SettingsTab.general.rawValue }
+                        .accessibilityIdentifier("openServerSettings")
+                }
+            } else if servers.servers.count > 1 {
+                Picker(String(localized: "Server", bundle: .main), selection: Binding(
+                    get: { server?.id }, set: { serverID = $0 })) {
+                    ForEach(servers.servers) { Text($0.displayName).tag(Optional($0.id)) }
+                }
+                .accessibilityIdentifier("devicesServerPicker")
+                .padding(.horizontal, 32)
+                .padding(.top, 20)
+            }
+            if let server {
+                MacDevicesView(service: service, server: server)
+                    .id(server.id)
+            }
+        }
     }
 }
 

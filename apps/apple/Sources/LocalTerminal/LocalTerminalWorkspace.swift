@@ -16,6 +16,7 @@ struct LocalTerminalDetail: View {
     @AppStorage(TerminalColorScheme.key) private var terminalPalette = TerminalColorScheme.system
     @AppStorage("witerm.terminalAnnounceOutput") private var terminalAnnounceOutput = false
     @State private var showingHandoff = false
+    @State private var showingInvite = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -40,6 +41,11 @@ struct LocalTerminalDetail: View {
         .background(WitermTheme.canvas)
         .navigationTitle(model.selectedSession?.name ?? String(localized: "Local Terminal", bundle: .main))
         .onDisappear { model.detach() }
+        .sheet(isPresented: $showingInvite) {
+            if let session = model.selectedSession {
+                SessionInviteView(service: service, session: session)
+            }
+        }
         .sheet(isPresented: $showingHandoff) {
             if let session = model.selectedSession {
                 SessionHandoffView(service: service, terminal: model, sessionID: session.id)
@@ -74,16 +80,24 @@ struct LocalTerminalDetail: View {
                     .accessibilityIdentifier("detachLocalTerminal")
                     .help(String(localized: "Leave this session; it keeps running", bundle: .main))
                 Menu(String(localized: "More", bundle: .main), systemImage: "ellipsis") {
+                    Button(String(localized: "Share with a Link…", bundle: .main), systemImage: "qrcode") { showingInvite = true }
+                        .accessibilityIdentifier("inviteLocalSessionMenu")
                     Button(String(localized: "Rename…", bundle: .main), systemImage: "pencil") { renameSession(session) }
                         .accessibilityIdentifier("renameLocalSessionMenu")
+                    RemoteAccessMenuItems(session: session) { keepPrivate, typing in
+                        model.configure(session, keepPrivate: keepPrivate, remoteTyping: typing, using: client)
+                    }
                     Button(String(localized: "End Session", bundle: .main), systemImage: "xmark.circle", role: .destructive) { endSession(session) }
                 }
                 .menuStyle(.borderlessButton)
                 .help(String(localized: "Terminal Actions", bundle: .main))
             }
             .buttonStyle(.borderless)
-            if let sharing = session.sharing, sharing.shared {
-                SessionSharingBar(sharing: sharing, relays: model.relays)
+            // Shown whenever paired devices can or do reach this session.
+            if let sharing = session.sharing, sharing.shared || sharing.attachments.contains(where: { $0.device != nil }) {
+                SessionSharingBar(sharing: sharing, relays: model.relays) {
+                    model.configure(session, remoteTyping: !sharing.remoteTyping, using: client)
+                }
                 Divider()
             }
             NativeTerminalView(
@@ -93,6 +107,7 @@ struct LocalTerminalDetail: View {
                 preferredColorScheme: systemColorScheme,
                 palette: terminalPalette,
                 announceOutput: terminalAnnounceOutput,
+                activity: model.activity(for: session.id),
                 onFailure: { model.attachmentFailed($0, id: attachmentID) },
                 onEnded: { model.attachmentEnded(id: attachmentID, client: client) }
             )
@@ -172,6 +187,8 @@ struct LocalOverview: View {
 private struct SessionSharingBar: View {
     let sharing: LocalSessionSharing
     let relays: [LocalRelayStatus]
+    /// Pauses or resumes typing from paired devices.
+    let toggleRemoteTyping: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
@@ -185,13 +202,24 @@ private struct SessionSharingBar: View {
                 .foregroundStyle(WitermTheme.secondary)
                 .lineLimit(2)
                 .truncationMode(.tail)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("sessionSharingStatus")
             Spacer(minLength: 0)
+            // A quick way to stop remote input without ending anyone's view.
+            if !sharing.remoteTyping || remoteDevices.contains(where: { $0.mode == .control }) {
+                Button(sharing.remoteTyping ? String(localized: "Pause Remote Typing", bundle: .main)
+                       : String(localized: "Allow Remote Typing", bundle: .main),
+                       systemImage: sharing.remoteTyping ? "hand.raised" : "keyboard",
+                       action: toggleRemoteTyping)
+                    .buttonStyle(.borderless)
+                    .font(.callout)
+                    .accessibilityIdentifier("toggleRemoteTyping")
+                    .help(String(localized: "Paired devices keep watching; this Mac keeps typing", bundle: .main))
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 7)
         .background(WitermTheme.statusFill)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("sessionSharingStatus")
     }
 
     private var remoteDevices: [LocalAttachmentInfo] { sharing.attachments.filter { $0.device != nil } }
@@ -202,13 +230,16 @@ private struct SessionSharingBar: View {
             let names = remoteDevices.map { attachment in
                 let name = attachment.device?.name ?? ""
                 return attachment.mode == .control
-                    ? String(localized: "\(name) has control", bundle: .main)
+                    ? String(localized: "\(name) can type", bundle: .main)
                     : String(localized: "\(name) is viewing", bundle: .main)
             }
-            return String(localized: "Shared · \(names.joined(separator: ", "))", bundle: .main)
+            return String(localized: "Remote · \(names.joined(separator: ", "))", bundle: .main)
+        }
+        if !sharing.remoteTyping {
+            return String(localized: "Remote typing is paused. Paired devices can only watch.", bundle: .main)
         }
         if relays.isEmpty {
-            return String(localized: "Shared, but remote access is off. Turn on Allow Remote Access in Paired Devices.", bundle: .main)
+            return String(localized: "Shared, but remote access is off. Turn on Allow Remote Access in Settings > Devices.", bundle: .main)
         }
         return ready
             ? String(localized: "Shared · Paired devices can open it", bundle: .main)
@@ -411,6 +442,26 @@ struct NewLocalSessionSheet: View {
         }
         onCreate(name)
         dismiss()
+    }
+}
+
+/// Per-session remote access in a menu: keeping a session from every paired
+/// device, and pausing their typing.
+struct RemoteAccessMenuItems: View {
+    let session: LocalSessionInfo
+    /// (keepPrivate, remoteTyping): the one that changed is non-nil.
+    let configure: (Bool?, Bool?) -> Void
+
+    var body: some View {
+        let sharing = session.sharing
+        Toggle(String(localized: "Keep Private", bundle: .main), isOn: Binding(
+            get: { sharing?.keepPrivate == true }, set: { configure($0, nil) }))
+            .help(String(localized: "Hide this session from every paired device", bundle: .main))
+            .accessibilityIdentifier("keepSessionPrivate")
+        Toggle(String(localized: "Pause Remote Typing", bundle: .main), isOn: Binding(
+            get: { sharing?.remoteTyping == false }, set: { configure(nil, !$0) }))
+            .disabled(sharing?.keepPrivate == true)
+            .accessibilityIdentifier("pauseRemoteTyping")
     }
 }
 #endif

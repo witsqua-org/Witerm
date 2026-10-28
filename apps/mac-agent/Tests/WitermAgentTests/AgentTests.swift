@@ -475,6 +475,240 @@ final class AgentTests: XCTestCase {
         try await client.close(sessionID: hidden.id)
     }
 
+    /// Paired devices reach what this Mac's policy allows; several writers
+    /// type together, the grid follows whoever typed last, and pausing remote
+    /// typing or keeping a session private narrows access at once.
+    func testSharedTypingFollowsTypistAndPolicyNarrowsAccess() async throws {
+        guard FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/tmux") else { throw XCTSkip("tmux is required") }
+        let url = try directory()
+        let configuration = try AgentConfiguration(stateDirectory: url, shellPath: "/bin/sh")
+        let broker = try AgentBroker(configuration: configuration)
+        try broker.start()
+        defer {
+            broker.stop()
+            _ = try? CommandRunner(executable: "/opt/homebrew/bin/tmux", environment: configuration.environment)
+                .run(["-S", url.appendingPathComponent("tmux.sock").path, "kill-server"])
+        }
+        let client = LocalAgentClient(socketURL: url.appendingPathComponent("agent.sock"))
+        let session = try await client.create(name: "Together", columns: 80, rows: 24)
+        let phone = LocalRemotePeer(deviceID: UUID().uuidString.lowercased(), name: "Phone")
+
+        // Without a policy a paired device reaches shared sessions only.
+        let unlisted = try await client.sessions(peer: phone)
+        XCTAssertTrue(unlisted.isEmpty)
+        let everything = LocalDeviceAccess(deviceID: phone.deviceID, scope: .all, permission: .control)
+        let stored = try await client.deviceAccess(everything)
+        XCTAssertEqual(stored, [everything])
+        var info = stat()
+        XCTAssertEqual(lstat(url.appendingPathComponent("device-access.json").path, &info), 0)
+        XCTAssertEqual(info.st_mode & 0o7777, 0o600)
+        let listed = try await client.sessions(peer: phone)
+        XCTAssertEqual(listed.map(\.id), [session.id])
+        XCTAssertEqual(listed.first?.access, .control)
+        XCTAssertNil(listed.first?.sharing)
+
+        // The Mac and the phone both have control; the phone sees the Mac's grid until it types.
+        let mac = try await client.attach(sessionID: session.id, columns: 80, rows: 24)
+        let macOutput = Capture()
+        let macReader = Task { for try await data in mac.output { await macOutput.append(data) } }
+        defer { macReader.cancel() }
+        let remote = try await client.attach(sessionID: session.id, columns: 40, rows: 20, peer: phone)
+        XCTAssertEqual(remote.session.columns, 80)
+        let remoteCapture = TerminalGeometryCapture()
+        let remoteEvents = remote.events
+        let remoteReader = Task.detached {
+            do { for try await event in remoteEvents { try await remoteCapture.append(event) } }
+            catch { await remoteCapture.finish(error: error); return }
+            await remoteCapture.finish()
+        }
+        defer { remoteReader.cancel() }
+        try await remote.resize(columns: 40, rows: 20)
+        for _ in 0..<100 where await remoteCapture.geometries().isEmpty { try await Task.sleep(for: .milliseconds(20)) }
+        let shown = await remoteCapture.geometries().last
+        XCTAssertEqual(shown?.columns, 80, "A writer that doesn't own the grid must be shown the one in use")
+        let attachments = try await client.sessions().first { $0.id == session.id }?.sharing?.controllers.count
+        XCTAssertEqual(attachments, 2)
+
+        try await remote.send(Data("printf 'PHONE_''SIZE:%s\\n' \"$(stty size)\"\n".utf8))
+        try await waitFor("PHONE_SIZE:20 40", capture: macOutput)
+        // A terminal's automatic answers (to tmux's queries) never take the grid.
+        try await Task.sleep(for: .seconds(AgentBroker.ownerHold + 0.3))
+        try await mac.send(Data("\u{1b}[?1;2c".utf8), automatic: true)
+        try await remote.send(Data("printf 'STILL_''PHONE:%s\\n' \"$(stty size)\"\n".utf8))
+        try await waitFor("STILL_PHONE:20 40", capture: macOutput)
+        // Typing right after the owner keeps its grid: interleaved keys never
+        // resize the session back and forth.
+        try await mac.send(Data("printf 'HELD_''SIZE:%s\\n' \"$(stty size)\"\n".utf8))
+        try await waitFor("HELD_SIZE:20 40", capture: macOutput)
+        try await Task.sleep(for: .seconds(AgentBroker.ownerHold + 0.3))
+        try await mac.send(Data("printf 'MAC_''SIZE:%s\\n' \"$(stty size)\"\n".utf8))
+        try await waitFor("MAC_SIZE:24 80", capture: macOutput)
+
+        // Pausing remote typing returns the phone to view only; the Mac keeps typing.
+        let paused = try await client.configure(sessionID: session.id, remoteTyping: false)
+        XCTAssertEqual(paused.sharing?.remoteTyping, false)
+        for _ in 0..<100 where !(await remoteCapture.finished) { try await Task.sleep(for: .milliseconds(20)) }
+        let pausedEnded = await remoteCapture.finished
+        XCTAssertTrue(pausedEnded, "A paired writer kept typing after remote typing was paused")
+        let pausedList = try await client.sessions(peer: phone)
+        XCTAssertEqual(pausedList.first?.access, .view)
+        do { let denied = try await client.attach(sessionID: session.id, peer: phone); await denied.disconnect(); XCTFail("Paused session gave a paired device control") }
+        catch LocalAgentClientError.rejected(.readOnly) { }
+        let watching = try await client.attach(sessionID: session.id, mode: .view, peer: phone)
+        await watching.disconnect()
+        try await mac.send(Data("printf 'STILL_''TYPING\\n'\n".utf8))
+        try await waitFor("STILL_TYPING", capture: macOutput)
+        _ = try await client.configure(sessionID: session.id, remoteTyping: true)
+
+        // A device that doesn't type alongside others waits for the Mac to leave.
+        _ = try await client.deviceAccess(LocalDeviceAccess(deviceID: phone.deviceID, scope: .all, permission: .control, coTyping: false))
+        do { let busy = try await client.attach(sessionID: session.id, peer: phone); await busy.disconnect(); XCTFail("A device without shared typing joined a controlled session") }
+        catch LocalAgentClientError.rejected(.sessionBusy) { }
+
+        // Keeping a session private hides it even from a device allowed every session.
+        let kept = try await client.configure(sessionID: session.id, keepPrivate: true)
+        XCTAssertEqual(kept.sharing?.keepPrivate, true)
+        let hidden = try await client.sessions(peer: phone)
+        XCTAssertTrue(hidden.isEmpty)
+        do { let leaked = try await client.attach(sessionID: session.id, mode: .view, peer: phone); await leaked.disconnect(); XCTFail("A private session was reachable") }
+        catch LocalAgentClientError.rejected(.notFound) { }
+        // Sharing it again ends keeping it private.
+        let reshared = try await client.share(sessionID: session.id, shared: true)
+        XCTAssertEqual(reshared.sharing?.keepPrivate, false)
+        try await mac.detach()
+        try await client.close(sessionID: session.id)
+    }
+
+    /// An invitation's grant reaches nothing until its proof checks out,
+    /// then only its one session, within its permission, until it expires.
+    func testInvitationReachesOneSessionAfterProofUntilExpiry() async throws {
+        guard FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/tmux") else { throw XCTSkip("tmux is required") }
+        let url = try directory()
+        let configuration = try AgentConfiguration(stateDirectory: url, shellPath: "/bin/sh")
+        let broker = try AgentBroker(configuration: configuration)
+        try broker.start()
+        defer {
+            broker.stop()
+            _ = try? CommandRunner(executable: "/opt/homebrew/bin/tmux", environment: configuration.environment)
+                .run(["-S", url.appendingPathComponent("tmux.sock").path, "kill-server"])
+        }
+        let client = LocalAgentClient(socketURL: url.appendingPathComponent("agent.sock"))
+        let invited = try await client.create(name: "Invited")
+        let other = try await client.create(name: "Other", shared: true)
+        let pairingID = UUID().uuidString.lowercased()
+        let key = SessionInvitation.newProofKey()
+        let guestKey = Data(repeating: 7, count: 32).base64EncodedString()
+        let guest = LocalRemotePeer(deviceID: UUID().uuidString.lowercased(), name: "Guest", pairingID: pairingID, publicKey: guestKey)
+        let recorded = try await client.guests(adding: LocalGuestInvite(
+            pairingID: pairingID, sessionID: invited.id, permission: .view, expiresAt: Date().addingTimeInterval(4), key: key))
+        XCTAssertEqual(recorded.map(\.pairingID), [pairingID])
+        XCTAssertNil(recorded.first?.key, "An invitation key left the service")
+        var info = stat()
+        XCTAssertEqual(lstat(url.appendingPathComponent("guests.json").path, &info), 0)
+        XCTAssertEqual(info.st_mode & 0o7777, 0o600)
+
+        // Before the proof, even a shared session is out of reach.
+        let before = try await client.sessions(peer: guest)
+        XCTAssertTrue(before.isEmpty)
+        do { try await client.redeem(proof: Data(count: 32), peer: guest); XCTFail("A wrong proof redeemed an invitation") }
+        catch LocalAgentClientError.rejected(.notFound) { }
+        // A proof for another device's key fails too.
+        let stolen = SessionInvitation.proof(key: key, pairingID: pairingID, clientPublicKey: Data(repeating: 9, count: 32).base64EncodedString())
+        do { try await client.redeem(proof: stolen, peer: guest); XCTFail("A proof for another key redeemed an invitation") }
+        catch LocalAgentClientError.rejected(.notFound) { }
+        try await client.redeem(proof: SessionInvitation.proof(key: key, pairingID: pairingID, clientPublicKey: guestKey), peer: guest)
+        do { try await client.redeem(proof: SessionInvitation.proof(key: key, pairingID: pairingID, clientPublicKey: guestKey), peer: guest); XCTFail("An invitation was redeemed twice") }
+        catch LocalAgentClientError.rejected(.notFound) { }
+
+        let after = try await client.sessions(peer: guest)
+        XCTAssertEqual(after.map(\.id), [invited.id], "An invitation reached more than its session")
+        XCTAssertEqual(after.first?.access, .view)
+        do { let leaked = try await client.attach(sessionID: other.id, mode: .view, peer: guest); await leaked.disconnect(); XCTFail("An invitation reached another session") }
+        catch LocalAgentClientError.rejected(.notFound) { }
+        do { let typing = try await client.attach(sessionID: invited.id, peer: guest); await typing.disconnect(); XCTFail("A view invitation gained control") }
+        catch LocalAgentClientError.rejected(.readOnly) { }
+
+        // Expiry closes a live attachment without anyone asking.
+        let watching = try await client.attach(sessionID: invited.id, mode: .view, peer: guest)
+        let capture = TerminalGeometryCapture()
+        let events = watching.events
+        let reader = Task.detached {
+            do { for try await event in events { try await capture.append(event) } }
+            catch { await capture.finish(error: error); return }
+            await capture.finish()
+        }
+        defer { reader.cancel() }
+        for _ in 0..<200 where !(await capture.finished) { try await Task.sleep(for: .milliseconds(50)) }
+        let ended = await capture.finished
+        XCTAssertTrue(ended, "An expired invitation kept its attachment")
+        let expired = try await client.sessions(peer: guest)
+        XCTAssertTrue(expired.isEmpty)
+        let remaining = try await client.guests(removing: pairingID)
+        XCTAssertTrue(remaining.isEmpty)
+        try await client.close(sessionID: invited.id)
+        try await client.close(sessionID: other.id)
+    }
+
+    func testAlternateScreenFilterRemovesTmuxSwitchesAcrossChunks() {
+        let filter = AlternateScreenFilter()
+        XCTAssertEqual(filter.filter(Data("a\u{1b}[?1049hb".utf8)), Data("ab".utf8))
+        // A switch split between reads is held back, then removed whole.
+        XCTAssertEqual(filter.filter(Data("c\u{1b}[?10".utf8)), Data("c".utf8))
+        XCTAssertEqual(filter.filter(Data("49ld".utf8)), Data("d".utf8))
+        // Anything else that merely starts the same way passes through.
+        XCTAssertEqual(filter.filter(Data("\u{1b}[?1".utf8)), Data())
+        XCTAssertEqual(filter.filter(Data("h".utf8)), Data("\u{1b}[?1h".utf8))
+        XCTAssertEqual(filter.filter(Data("\u{1b}[31mred".utf8)), Data("\u{1b}[31mred".utf8))
+    }
+
+    /// A renderer with its own scrollback gets earlier output above tmux's
+    /// redraw, and never the switch to the alternate screen.
+    func testHistoryPrefillsEarlierOutputForScrollback() async throws {
+        guard FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/tmux") else { throw XCTSkip("tmux is required") }
+        let url = try directory()
+        let configuration = try AgentConfiguration(stateDirectory: url, shellPath: "/bin/sh")
+        let broker = try AgentBroker(configuration: configuration)
+        try broker.start()
+        defer {
+            broker.stop()
+            _ = try? CommandRunner(executable: "/opt/homebrew/bin/tmux", environment: configuration.environment)
+                .run(["-S", url.appendingPathComponent("tmux.sock").path, "kill-server"])
+        }
+        let client = LocalAgentClient(socketURL: url.appendingPathComponent("agent.sock"))
+        let session = try await client.create(name: "History", columns: 80, rows: 10)
+        let writer = try await client.attach(sessionID: session.id, columns: 80, rows: 10)
+        let written = Capture()
+        let writerReader = Task { for try await data in writer.output { await written.append(data) } }
+        defer { writerReader.cancel() }
+        // Forty numbered lines on a ten-row screen push the first ones into history.
+        try await writer.send(Data("i=1; while [ $i -le 40 ]; do echo EARLY_LINE_$i; i=$((i+1)); done; echo HISTORY_''DONE\n".utf8))
+        try await waitFor("HISTORY_DONE", capture: written)
+        try await writer.detach()
+
+        let reader = try await client.attach(sessionID: session.id, columns: 80, rows: 10, mode: .view, history: true)
+        let shown = Capture()
+        let shownReader = Task { for try await data in reader.output { await shown.append(data) } }
+        defer { shownReader.cancel() }
+        try await waitFor("HISTORY_DONE", capture: shown)
+        let text = await shown.text()
+        let first = try XCTUnwrap(text.range(of: "EARLY_LINE_1\u{1b}"))
+        let redraw = try XCTUnwrap(text.range(of: "HISTORY_DONE"))
+        XCTAssertLessThan(first.lowerBound, redraw.lowerBound, "Earlier output must come before the live screen")
+        XCTAssertFalse(text.contains("\u{1b}[?1049h"), "A scrollback renderer was switched to the alternate screen")
+        await reader.disconnect()
+
+        // A plain attach (such as the command line in a real terminal) is unchanged.
+        let plain = try await client.attach(sessionID: session.id, columns: 80, rows: 10, mode: .view)
+        let plainShown = Capture()
+        let plainReader = Task { for try await data in plain.output { await plainShown.append(data) } }
+        defer { plainReader.cancel() }
+        try await waitFor("HISTORY_DONE", capture: plainShown)
+        let plainText = await plainShown.text()
+        XCTAssertFalse(plainText.contains("EARLY_LINE_1\u{1b}"))
+        await plain.disconnect()
+        try await client.close(sessionID: session.id)
+    }
+
     func testCreateStartsInDirectoryAndNamesItsSession() async throws {
         guard FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/tmux") else { throw XCTSkip("tmux is required") }
         let url = try directory()
@@ -591,11 +825,9 @@ final class AgentTests: XCTestCase {
         defer { reader.cancel() }
         try await control.send(Data("printf 'AGENT_''READY\\n'\n".utf8))
         try await waitFor("AGENT_READY", capture: capture)
-        do {
-            let second = try await client.attach(sessionID: created.id)
-            await second.disconnect()
-            XCTFail("second controller was accepted")
-        } catch LocalAgentClientError.rejected(.sessionBusy) { }
+        // This Mac's own clients (the app and the command line) type together.
+        let second = try await client.attach(sessionID: created.id)
+        try await second.detach()
         let observer = try await client.attach(sessionID: created.id, columns: 91, rows: 31, mode: .view)
         let observerCapture = Capture()
         let observerReader = Task { for try await data in observer.output { await observerCapture.append(data) } }
@@ -787,10 +1019,10 @@ final class AgentTests: XCTestCase {
         }
         do { try await first.resize(columns: 80, rows: 24); XCTFail("A viewer resized the shared window") }
         catch LocalAgentClientError.rejected(.readOnly) { }
-        do {
-            let conflict = try await local.attach(sessionID: session.id, columns: 80, rows: 24)
-            await conflict.disconnect(); XCTFail("A second controller forced takeover")
-        } catch LocalAgentClientError.rejected(.sessionBusy) { }
+        // A second controller joins without taking over the grid until it types.
+        let joined = try await local.attach(sessionID: session.id, columns: 80, rows: 24)
+        XCTAssertEqual(joined.session.columns, 104)
+        try await joined.detach()
         let runner = CommandRunner(executable: "/opt/homebrew/bin/tmux", environment: configuration.environment)
         let alternate = try runner.run(["-S", url.appendingPathComponent("tmux.sock").path,
             "display-message", "-p", "-t", "witerm-" + session.id, "#{alternate_on}"])

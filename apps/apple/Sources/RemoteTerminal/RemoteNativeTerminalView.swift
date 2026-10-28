@@ -58,6 +58,11 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         private let mode: LocalAttachmentMode
         private var session: LocalSessionInfo
         private var frozenGrid: (columns: Int, rows: Int)?
+        /// While another device that types sets the session's grid, this
+        /// controlling view shows that grid (scrollable, like a viewer) until
+        /// it types and its own size applies.
+        private var followedGrid: (columns: Int, rows: Int)?
+        private var reportedFit: (columns: Int, rows: Int)?
         private var highContrast = false
         private var paletteDark: Bool?
         private var palette = TerminalColorScheme.system
@@ -86,6 +91,9 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             scroll.addSubview(terminal)
             scroll.alwaysBounceHorizontal = false
             scroll.alwaysBounceVertical = false
+            // A drag pans one way at a time, so panning a wide grid never
+            // also scrolls the output.
+            scroll.isDirectionalLockEnabled = true
             scroll.contentInsetAdjustmentBehavior = .never
             addSubview(scroll)
             addSubview(readingView)
@@ -97,6 +105,18 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             readingView.pointToGrid = { [weak self] point in self?.readingPointToGrid(point) ?? CGPoint(x: -1, y: -1) }
             readingView.page = { [weak self] in self?.pageReading(forward: $0) ?? false }
             readingView.panHorizontal = { [weak self] in self?.panReading(forward: $0) ?? false }
+            let pinch = UIPinchGestureRecognizer(target: self, action: #selector(pinched(_:)))
+            addGestureRecognizer(pinch)
+        }
+
+        /// Pinching changes the saved text size once the fingers lift, so a
+        /// controlled session is resized once rather than at every step.
+        @objc private func pinched(_ pinch: UIPinchGestureRecognizer) {
+            guard pinch.state == .ended else { return }
+            let defaults = UserDefaults.standard
+            let current = defaults.object(forKey: TerminalFontSize.key) as? Double ?? TerminalFontSize.standard
+            let next = TerminalFontSize.clamped((current * Double(pinch.scale)).rounded())
+            if next != current { defaults.set(next, forKey: TerminalFontSize.key) }
         }
 
         required init?(coder: NSCoder) { nil }
@@ -115,6 +135,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
                 terminal.frame = fixedGridFrame()
                 preserveGrid(grid)
             } else {
+                reportedFit = nil
                 let grid = terminal.getOptimalFrameSize()
                 let columns = max(1, terminal.getTerminal().cols)
                 let rows = max(1, terminal.getTerminal().rows)
@@ -127,7 +148,33 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
                 ))
             }
             scroll.contentSize = terminal.frame.size
+            // A grid that shrank (such as after following a wider one) must
+            // not leave the view scrolled past its new edges.
+            let maximum = CGPoint(x: max(0, scroll.contentSize.width - scroll.bounds.width),
+                                  y: max(0, scroll.contentSize.height - scroll.bounds.height))
+            if scroll.contentOffset.x > maximum.x || scroll.contentOffset.y > maximum.y {
+                scroll.contentOffset = CGPoint(x: min(scroll.contentOffset.x, maximum.x), y: min(scroll.contentOffset.y, maximum.y))
+            }
+            if followedGrid != nil, frozenGrid == nil {
+                // Keep the service told of this view's own size, which applies once it types.
+                let fit = fitGrid
+                if reportedFit.map({ $0 != fit }) ?? true {
+                    reportedFit = fit
+                    terminal.terminalDelegate?.sizeChanged(source: terminal, newCols: fit.columns, newRows: fit.rows)
+                }
+            }
             refreshReadingDocument()
+        }
+
+        /// The grid this view shows at its own size, within the protocol's
+        /// limits, computed as SwiftTerm does (whole cells that fit). A cell
+        /// size recovered by division can be a hair off, so a size that is an
+        /// exact multiple still counts as fitting.
+        private var fitGrid: (columns: Int, rows: Int) {
+            let cell = cellSize
+            guard cell.width > 0, cell.height > 0 else { return (session.columns, session.rows) }
+            func whole(_ length: CGFloat, _ unit: CGFloat) -> Int { Int((length / unit) * (1 + 1e-9)) }
+            return (min(500, max(20, whole(bounds.width, cell.width))), min(200, max(5, whole(bounds.height, cell.height))))
         }
 
         func setInteractive(_ enabled: Bool) {
@@ -153,7 +200,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         }
 
         private var fixedGrid: (columns: Int, rows: Int)? {
-            mode == .view ? (session.columns, session.rows) : frozenGrid
+            mode == .view ? (session.columns, session.rows) : frozenGrid ?? followedGrid
         }
 
         private func preserveGrid(_ grid: (columns: Int, rows: Int)) {
@@ -206,6 +253,10 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         func applyGeometry(_ geometry: LocalSessionInfo) {
             session = geometry
             if mode == .view || frozenGrid != nil { frozenGrid = (geometry.columns, geometry.rows) }
+            else if !bounds.isEmpty {
+                let fit = fitGrid
+                followedGrid = fit == (geometry.columns, geometry.rows) ? nil : (geometry.columns, geometry.rows)
+            }
             readingView.clearReadingSelection()
             setNeedsLayout()
             layoutIfNeeded()
@@ -268,12 +319,14 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         }
     }
 
-    @MainActor final class TerminalInputView: TerminalView {
+    @MainActor final class TerminalInputView: TerminalView, @preconcurrency UIEditMenuInteractionDelegate {
         private let mode: LocalAttachmentMode
         private var inputEnabled: Bool
         var inputDestination = ""
         private var pasteToken: UUID?
         private weak var pasteReview: UIViewController?
+        private var editMenu: UIEditMenuInteraction?
+        private var focusTapRecognizer: UITapGestureRecognizer?
         var acceptsInput: Bool { mode == .control && inputEnabled }
 
         init(mode: LocalAttachmentMode, session: LocalSessionInfo, fontSize: CGFloat, isInteractive: Bool) {
@@ -284,6 +337,133 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
                        options: TerminalOptions(cols: session.columns, rows: session.rows))
             inputDestination = session.name
             inputAccessoryView = MobileTerminalAccessory(terminal: self)
+            installTouchModel()
+        }
+
+        // MARK: Touch
+
+        /// Drag scrolls the output (SwiftTerm's own scrolling). A long press
+        /// selects the word under the finger and dragging extends it; lifting
+        /// shows Copy and the other edit actions. A tap brings up the keyboard
+        /// when typing is allowed, or clears a selection. Only a controlling
+        /// terminal passes touches to programs that ask for the mouse.
+        private func installTouchModel() {
+            // SwiftTerm's long press only opens a menu, and needs the keyboard focus a
+            // read-only terminal never has.
+            for recognizer in gestureRecognizers ?? [] where recognizer is UILongPressGestureRecognizer {
+                recognizer.isEnabled = false
+            }
+            let press = UILongPressGestureRecognizer(target: self, action: #selector(selectionPress(_:)))
+            press.minimumPressDuration = 0.35
+            addGestureRecognizer(press)
+            let tap = UITapGestureRecognizer(target: self, action: #selector(focusTap(_:)))
+            for recognizer in gestureRecognizers ?? [] {
+                if let other = recognizer as? UITapGestureRecognizer, other.numberOfTapsRequired == 2 { tap.require(toFail: other) }
+            }
+            addGestureRecognizer(tap)
+            focusTapRecognizer = tap
+            let menu = UIEditMenuInteraction(delegate: self)
+            addInteraction(menu)
+            editMenu = menu
+            allowMouseReporting = acceptsInput
+        }
+
+        /// The buffer position under a point in this view's coordinates,
+        /// which scroll with the output.
+        func bufferPosition(at point: CGPoint) -> Position {
+            let core = getTerminal()
+            let frame = getOptimalFrameSize()
+            let cell = CGSize(width: frame.width / CGFloat(max(1, core.cols)), height: frame.height / CGFloat(max(1, core.rows)))
+            let column = Int(point.x / max(1, cell.width)), row = Int(point.y / max(1, cell.height))
+            let lastRow = core.getTopVisibleRow() + core.rows - 1
+            return Position(col: min(max(0, column), core.cols - 1), row: min(max(0, row), lastRow))
+        }
+
+        /// Starts a selection at the word under `point`; the far end then follows the finger.
+        func beginSelection(at point: CGPoint) {
+            editMenu?.dismissMenu()
+            selection.selectWordOrExpression(at: bufferPosition(at: point), in: getTerminal().buffer)
+            selection.selectionMode = .character
+            selection.pivot = selection.start
+            setNeedsDisplay()
+        }
+
+        func extendSelection(to point: CGPoint) {
+            guard selection.active, let pivot = selection.pivot else { return }
+            var position = bufferPosition(at: point)
+            // The selection's end is exclusive; include the character under
+            // the finger when dragging forward.
+            if (position.row, position.col) >= (pivot.row, pivot.col) {
+                position.col = min(position.col + 1, getTerminal().cols)
+            }
+            selection.pivotExtend(bufferPosition: position)
+            setNeedsDisplay()
+        }
+
+        @objc private func selectionPress(_ press: UILongPressGestureRecognizer) {
+            let point = press.location(in: self)
+            switch press.state {
+            case .began:
+                beginSelection(at: point)
+                UISelectionFeedbackGenerator().selectionChanged()
+            case .changed:
+                extendSelection(to: point)
+            case .ended:
+                editMenu?.presentEditMenu(with: UIEditMenuConfiguration(identifier: nil, sourcePoint: point))
+            default: break
+            }
+        }
+
+        /// The focus tap only clears a selection or brings up the keyboard;
+        /// with the keyboard up, SwiftTerm's own tap handles links and mouse clicks.
+        override func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
+            if recognizer === focusTapRecognizer { return selection.active || (acceptsInput && !isFirstResponder) }
+            return super.gestureRecognizerShouldBegin(recognizer)
+        }
+
+        @objc private func focusTap(_ tap: UITapGestureRecognizer) {
+            guard tap.state == .ended else { return }
+            if selection.active {
+                selection.selectNone()
+                editMenu?.dismissMenu()
+                setNeedsDisplay()
+            } else if acceptsInput, !isFirstResponder {
+                _ = becomeFirstResponder()
+            }
+        }
+
+        /// The edit actions offered after a selection: Copy and selecting
+        /// more always; Paste only where typing is allowed.
+        func editActions() -> [UIAction] {
+            var actions: [UIAction] = []
+            if selection.active {
+                actions.append(UIAction(title: String(localized: "Copy", bundle: .main), image: UIImage(systemName: "doc.on.doc")) { [weak self] _ in
+                    guard let self else { return }
+                    UIPasteboard.general.string = self.selection.getSelectedText()
+                    self.selection.selectNone()
+                    self.setNeedsDisplay()
+                })
+                actions.append(UIAction(title: String(localized: "Select Line", bundle: .main)) { [weak self] _ in
+                    guard let self else { return }
+                    self.selection.select(row: self.selection.start.row)
+                    self.setNeedsDisplay()
+                })
+            }
+            actions.append(UIAction(title: String(localized: "Select All", bundle: .main)) { [weak self] _ in
+                self?.selection.selectAll()
+                self?.setNeedsDisplay()
+            })
+            if acceptsInput, UIPasteboard.general.hasStrings {
+                actions.append(UIAction(title: String(localized: "Paste", bundle: .main), image: UIImage(systemName: "doc.on.clipboard")) { [weak self] _ in
+                    self?.paste(nil)
+                })
+            }
+            return actions
+        }
+
+        func editMenuInteraction(_ interaction: UIEditMenuInteraction, menuFor configuration: UIEditMenuConfiguration,
+                                 suggestedActions: [UIMenuElement]) -> UIMenu? {
+            UIMenu(children: editActions())
         }
 
         required init?(coder: NSCoder) { nil }
@@ -295,6 +475,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
 
         func disableInput() {
             inputEnabled = false
+            allowMouseReporting = false
             controlModifier = false
             pasteToken = nil
             pasteReview?.dismiss(animated: false)
@@ -392,7 +573,10 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         private var outputTask: Task<Void, Never>?
         private var inputTask: Task<Void, Never>?
         private var resizeTask: Task<Void, Never>?
-        private var inputQueue: [Data] = []
+        private var inputQueue: [(data: Data, automatic: Bool)] = []
+        /// True while output is fed to the terminal: anything it sends then
+        /// is its own answer to a query, not typing.
+        private var feeding = false
         private var inputBytes = 0
         private var pendingSize: (Int, Int)?
         private var resizing = false
@@ -427,6 +611,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
 
         func start(_ view: TerminalInputView) {
             terminal = view
+            stabilizeTestCursor(view)
             outputTask = Task { [weak self, weak view, attachment] in
                 do {
                     for try await event in attachment.events {
@@ -437,7 +622,10 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
                             self.serverGrid = (session.columns, session.rows)
                             view.applyGeometry(session)
                         case .output(let data):
+                            self.feeding = true
                             view.feed(byteArray: Array(data)[...])
+                            self.feeding = false
+                            self.stabilizeTestCursor(view)
                             view.readingChanged?(true)
                         }
                     }
@@ -450,6 +638,19 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
                 }
             }
         }
+
+        /// UI tests that type ask for a steady caret: a blinking one is an
+        /// endless animation, so XCTest never sees the app idle. Reapplied
+        /// after output, which (through tmux) may reset the cursor style.
+        private func stabilizeTestCursor(_ view: TerminalView) {
+            #if DEBUG
+            if Self.steadyTestCursor { view.getTerminal().setCursorStyle(.steadyBlock) }
+            #endif
+        }
+
+        #if DEBUG
+        private static let steadyTestCursor = ProcessInfo.processInfo.arguments.contains("--witerm-ui-test-steady-terminal-cursor")
+        #endif
 
         func requestKeyboardToggle(_ request: Int, terminal: TerminalInputView) {
             guard request != keyboardRequest else { return }
@@ -501,7 +702,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             let bytes = Data(data)
             for offset in stride(from: 0, to: bytes.count, by: 16 * 1024) {
                 let piece = bytes.subdata(in: offset..<min(offset + 16 * 1024, bytes.count))
-                inputQueue.append(piece)
+                inputQueue.append((piece, feeding))
                 inputBytes += piece.count
             }
             guard inputTask == nil else { return }
@@ -510,10 +711,10 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
                 do {
                     while let self, !self.stopped, self.isInteractive, !self.inputQueue.isEmpty {
                         let piece = self.inputQueue.removeFirst()
-                        try await attachment.send(piece)
+                        try await attachment.send(piece.data, automatic: piece.automatic)
                         try Task.checkCancellation()
                         guard !self.stopped, self.isInteractive else { break }
-                        self.inputBytes -= piece.count
+                        self.inputBytes -= piece.data.count
                     }
                 } catch {
                     guard !Task.isCancelled, self?.isInteractive == true else { return }

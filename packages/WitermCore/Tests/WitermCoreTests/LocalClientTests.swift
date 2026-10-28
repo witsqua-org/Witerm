@@ -495,3 +495,46 @@
     }
   }
 #endif
+
+#if os(macOS)
+final class RemoteAccessFixtureTests: XCTestCase {
+  func testSharedRemoteAccessFixtureDecodes() throws {
+    struct Fixture: Decodable {
+      let peer_list_response: LocalAgentFrame
+      let local_share_request: LocalAgentRequest
+      let local_session: LocalSessionInfo
+      let access_request: LocalAgentRequest
+      let access_response: LocalAgentFrame
+    }
+    var root = URL(fileURLWithPath: #filePath)
+    for _ in 0..<5 { root.deleteLastPathComponent() }
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    let fixture = try decoder.decode(
+      Fixture.self,
+      from: Data(contentsOf: root.appendingPathComponent("protocol/fixtures/remote-access-v1.json")))
+    let sessions = try XCTUnwrap(fixture.peer_list_response.sessions)
+    XCTAssertEqual(sessions.map(\.access), [.control, .view])
+    XCTAssertTrue(sessions.allSatisfy { $0.sharing == nil })
+    try sessions.forEach(RemoteWire.validate)
+    XCTAssertEqual(fixture.local_share_request.operation, .share)
+    XCTAssertEqual(fixture.local_share_request.keepPrivate, false)
+    XCTAssertEqual(fixture.local_share_request.remoteTyping, false)
+    XCTAssertNil(fixture.local_share_request.shared)
+    // Typing is shared: two controllers is valid.
+    try LocalWire.validateSession(fixture.local_session)
+    XCTAssertEqual(fixture.local_session.sharing?.controllers.count, 2)
+    XCTAssertEqual(fixture.local_session.sharing?.remoteTyping, true)
+    let access = try XCTUnwrap(fixture.access_request.access)
+    XCTAssertEqual(access, LocalDeviceAccess(deviceID: "99999999-9999-4999-8999-999999999999", scope: .all, permission: .control))
+    XCTAssertEqual(fixture.access_response.accesses, [access])
+    // Sharing from a service before these fields existed still decodes.
+    let legacy = try decoder.decode(
+      LocalSessionSharing.self, from: Data(#"{"shared":true,"attachments":[]}"#.utf8))
+    XCTAssertEqual(legacy, LocalSessionSharing(shared: true, attachments: []))
+    let encoded = try JSONEncoder().encode(LocalDeviceAccess.default(for: access.deviceID))
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    XCTAssertEqual(Set(object.keys), ["device_id", "scope", "permission", "co_typing"])
+  }
+}
+#endif

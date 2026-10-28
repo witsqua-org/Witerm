@@ -12,3 +12,7 @@ coverage.out
 *.log
 apps/apple/Config/Signing.local.xcconfig
 
+
+# Private server deployment credentials
+/server_ssh.txt
+/deploy/tls/
