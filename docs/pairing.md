@@ -1,16 +1,17 @@
 # Device Pairing
 
-Pairing lets an iPhone or iPad reach a Mac's sessions. It creates a signed, revocable **grant** between two device identities. A grant alone never opens a terminal: the Mac still checks its own records and runs an encrypted handshake first ([Encrypted relay](relay.md)).
+Pairing lets another device reach a Mac's sessions. It creates a signed, revocable **grant** between two device identities. A grant alone never opens a terminal: the Mac still checks its own records and runs an encrypted handshake first ([Encrypted relay](relay.md)).
 
 Wire format: [pairing-v1](../protocol/pairing-v1.md).
 
 ## How it works
 
-1. **Mac** (File → Pair iPhone or iPad…, ⌥⌘P, or the button under This Mac in the sidebar; also Settings → Devices) makes a 5-minute invitation with a one-time secret and the Mac's public key, shown as a QR code and as copyable text.
-2. **iOS** (Continue from My Mac, Pair a Device under Machines, or Settings → Servers and Pairing → a server → Device Pairing) scans or pastes it. iOS checks that it names the current server, pins the Mac's key, and shows the Mac's fingerprint. Scanning only fills in the invitation; it never opens a link or joins on its own.
-3. **iOS** sends the request. This creates a *pending* pairing and grants nothing.
-4. **Mac** shows the device's name and fingerprint. You choose view-only or control, and whether it reaches all sessions on this Mac or only those you share, and approve. The Mac signs the approval, binding the pairing, both keys, and the permission; the session choice is this Mac's own policy and can be changed later under Settings → Devices ([Encrypted relay](relay.md#using-it)).
-5. Both devices verify the signature before storing the grant in the Keychain.
+1. **Mac** (Continue on Another Device… from a session's header, context menu or File menu, ⌥⌘P; or Settings → Devices → Pair a Device…) makes a 5-minute invitation with a one-time secret and the Mac's public key, shown as a QR code and as copyable text, through the continuation server chosen in Settings → Devices. The screen names that server.
+2. **iOS** (Continue from Another Device, on first use or in Devices) scans or pastes it. The invitation names its server; a server the phone doesn't have is added only when the person taps Request Access. iOS pins the Mac's key and shows the Mac's code. Scanning only fills in the invitation; it never opens a link or joins on its own.
+3. **iOS** sends the request. This creates a *pending* pairing and grants nothing. The phone shows its own code while it waits.
+4. **Mac** shows the device's name and code. You choose whether it can type, and what it can open: only the session you started from (the default), sessions you choose, or all sessions on this Mac, and approve. The Mac signs the approval, binding the pairing, both keys, and the permission; the session choice is this Mac's own policy and can be changed later under Settings → Devices ([Encrypted relay](relay.md#using-it)).
+5. **iOS** opens the session at once when the device can open exactly one; otherwise it lists them.
+6. Both devices verify the signature before storing the grant in the Keychain.
 
 Either device can revoke a grant at any time.
 

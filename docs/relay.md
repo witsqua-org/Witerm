@@ -1,29 +1,30 @@
 # Encrypted Relay
 
-The relay lets a paired iPhone or iPad use the Mac sessions it's allowed to reach, and lets someone open one session from an invitation link without pairing. The server authenticates devices and routes traffic. Only the two devices can read terminal contents. Sessions keep running in the Mac's private tmux server whatever happens to the relay.
+The relay lets a paired device use the Mac sessions it's allowed to reach, and lets someone open one session from an invitation link without pairing. The server authenticates devices and routes traffic. Only the two devices can read terminal contents. Sessions keep running in the Mac's private tmux server whatever happens to the relay.
 
 Contracts: [relay-v1](../protocol/relay-v1.md) for the relay, [local-agent-v1](../protocol/local-agent-v1.md) for the terminal messages carried inside it.
 
 ## Using it
 
-1. Pair the devices through the same server ([Device pairing](pairing.md)). When approving, choose view-only or control, and whether the device reaches **all sessions** on this Mac or **only sessions you share**.
-2. On the Mac, start the local service and turn on **Allow Remote Access** in Settings → Devices. It is off by default.
-3. On iOS, open Terminals, pick the Mac, then pick a session.
+On the Mac, **Continue on Another Device…** in a session's header, context menu, or File menu (⌥⌘P) walks through these steps one at a time and skips the ones already done:
 
-On the Mac, **Continue on iPhone…** in a session's header or context menu walks through these steps as a checklist.
+1. **Server.** Start the local service and turn on **Allow Remote Access** through the continuation server. It is off by default.
+2. **Device.** Choose a paired device (allowing it this session if it can't open it yet), pair a new one ([Device pairing](pairing.md)), or invite someone else's device to this session only.
+3. **Approve.** For a new device, compare its code and choose what it can open: **only this session** (the default), **sessions you choose**, or **all sessions**, and whether it can type.
+4. **Open.** On iOS the session opens as soon as pairing finishes; an already paired device finds it under Terminals → the Mac.
 
 **What a device reaches.** This Mac keeps its own policy for each paired device (Settings → Devices, under each device):
 
 | Setting | Effect |
 |---|---|
-| Sessions: All sessions | Every session except those kept private |
-| Sessions: Shared sessions only | Only sessions you share (`witerm share`, **Share**) |
+| Can open: All sessions on this Mac | Every session except those kept private |
+| Can open: Sessions I choose | The listed sessions, plus any shared with every paired device (`witerm share`) |
 | Can type | Off makes the device view-only here, even with a control grant |
 | Type while this Mac is attached | Off makes it wait until no one else is typing |
 
-The policy can only narrow the signed grant: a view-only grant never gains control. Devices paired before this policy existed reach shared sessions only. Narrowing a policy disconnects the attachments it no longer allows.
+The policy can only narrow the signed grant: a view-only grant never gains control. Devices paired before this policy existed reach shared sessions only. When a session ends it leaves every device's list, so a later session never inherits that access. Narrowing a policy disconnects the attachments it no longer allows.
 
-**Per session.** **Keep Private** (session context menu or the terminal's More menu) hides a session from every paired device. Sharing a session ends keeping it private, and the reverse. **Stop Sharing** (or `witerm unshare`) disconnects only the devices that can no longer reach it. The Mac's terminal header shows which devices are attached and whether they can type.
+**Per session.** **Keep Private** (session context menu or the terminal's More menu) hides a session from every paired device, even ones that list it. Sharing a session ends keeping it private, and the reverse. **Stop Sharing** (or `witerm unshare`), shown for sessions shared with every paired device, disconnects only the devices that can no longer reach it. The Mac's terminal header shows which devices are attached and whether they can type.
 
 **Typing together.** Several devices can type in one session at once: this Mac's app and `witerm` always can, and a paired device can when its policy allows it. The window takes the size of whoever typed last; the others see that grid (scrollable on iPhone) until they type. **Pause Remote Typing** in the Mac's terminal header (or `~p` in `witerm attach`) returns paired devices to view-only for that session until you allow it again; nobody takes over by force. A device whose policy doesn't allow typing alongside gets "Session Is Being Controlled" and can watch.
 
@@ -33,11 +34,11 @@ The policy can only narrow the signed grant: a view-only grant never gains contr
 
 ## Session invitations
 
-A Mac can share one session with someone whose device isn't paired: **Share with a Link…** in the session's context menu or the terminal's More menu.
+A Mac can share one session with someone whose device isn't paired: **Continue on Another Device…** → **Someone Else's Device**.
 
 1. Choose **View only** or **Can type**, and how long access lasts (1, 8, or 24 hours). Access also ends when the session ends.
-2. The Mac shows a QR code and a `witerm://share?…` link. Keep the window open until they join (within 5 minutes).
-3. On iOS: Machines → **Open Shared Session…**, scan or paste. If the link names a server the phone doesn't have, it asks before adding it.
+2. The Mac shows a QR code and a `witerm://share?…` link. Keep the sheet open until they join (within 5 minutes).
+3. On iOS: **Continue from Another Device**, scan or paste. If the link names a server the phone doesn't have, it asks before adding it. The session opens once joined.
 4. A view-only invitation is approved as soon as someone joins. A typing invitation waits for you to approve that device's name and fingerprint.
 
 **How it stays limited.** An invitation uses the normal pairing endpoints, so the Mac still signs the grant, but:
