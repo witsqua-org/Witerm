@@ -205,13 +205,15 @@ final class AgentBroker: @unchecked Sendable {
         switch request.operation {
         case .status: reply(status: LocalAgentStatus(tmuxAvailable: engine.available, relays: relays?.snapshot() ?? []))
         case .list:
+            let sessions = try engine.sessions()
+            try forgetEndedSessions(live: Set(sessions.map(\.id)))
             if let remote = try peer() {
                 // A paired device sees only the sessions it may reach and what
                 // it may do there, never who else is attached.
-                reply(sessions: try engine.sessions().filter { reachable($0.id, by: remote) }
+                reply(sessions: sessions.filter { reachable($0.id, by: remote) }
                     .map { $0.forPeer(access: remoteAccess($0.id, for: remote)) })
             } else {
-                reply(sessions: try engine.sessions().map { withSharing($0) })
+                reply(sessions: sessions.map { withSharing($0) })
             }
         case .create:
             guard connection.child == nil, let name = request.name, validDisplayName(name) else { throw AgentFailure(.invalidRequest) }
@@ -235,7 +237,12 @@ final class AgentBroker: @unchecked Sendable {
         case .access:
             guard connection.child == nil, request.peer == nil else { throw AgentFailure(.invalidRequest) }
             if let access = request.access {
-                guard validSessionID(access.deviceID) else { throw AgentFailure(.invalidRequest) }
+                guard validSessionID(access.deviceID), access.sessionIDs.count <= 64,
+                      Set(access.sessionIDs).count == access.sessionIDs.count else { throw AgentFailure(.invalidRequest) }
+                // Only live sessions can be listed, so access never waits for
+                // a session that doesn't exist yet.
+                let live = Set(try engine.sessions().map(\.id))
+                guard access.sessionIDs.allSatisfy(live.contains) else { throw AgentFailure(.invalidRequest) }
                 var next = accessPolicies
                 next[access.deviceID] = access
                 guard next.count <= 64 else { throw AgentFailure(.invalidRequest) }
@@ -293,6 +300,7 @@ final class AgentBroker: @unchecked Sendable {
             let id = try sessionID()
             try engine.close(id)
             remoteTypingPaused.remove(id)
+            try forgetEndedSessions(live: Set(try engine.sessions().map(\.id)))
             reply()
             for attached in connections.values where attached.sessionID == id {
                 attached.finish(afterFlush: true, emitClosed: true)
@@ -433,7 +441,19 @@ final class AgentBroker: @unchecked Sendable {
     private func reachable(_ id: String, by peer: LocalRemotePeer) -> Bool {
         guard !engine.keptPrivate.contains(id) else { return false }
         if let invite = invite(peer) { return invite.redeemed && invite.sessionID == id && invite.expiresAt > Date() }
-        return engine.shared.contains(id) || policy(peer).scope == .all
+        return engine.shared.contains(id) || policy(peer).lists(id)
+    }
+
+    /// Removes ended sessions from every device's list, so a later session
+    /// can never inherit access meant for one that is gone.
+    private func forgetEndedSessions(live: Set<String>) throws {
+        var next = accessPolicies
+        for (device, access) in accessPolicies where access.sessionIDs.contains(where: { !live.contains($0) }) {
+            next[device] = access.reaching(access.scope, sessions: access.sessionIDs.filter(live.contains))
+        }
+        guard next != accessPolicies else { return }
+        try state.saveDeviceAccess(next)
+        accessPolicies = next
     }
 
     /// The most a paired device may do in a session under this Mac's policy.

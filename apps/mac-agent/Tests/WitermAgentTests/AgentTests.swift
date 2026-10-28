@@ -649,6 +649,52 @@ final class AgentTests: XCTestCase {
         try await client.close(sessionID: other.id)
     }
 
+    /// A policy can list single sessions; listing only live sessions is
+    /// allowed, and an ended session leaves every list.
+    func testListedSessionsReachOnlyThemAndEndedOnesAreForgotten() async throws {
+        guard FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/tmux") else { throw XCTSkip("tmux is required") }
+        let url = try directory()
+        let configuration = try AgentConfiguration(stateDirectory: url, shellPath: "/bin/sh")
+        let broker = try AgentBroker(configuration: configuration)
+        try broker.start()
+        defer {
+            broker.stop()
+            _ = try? CommandRunner(executable: "/opt/homebrew/bin/tmux", environment: configuration.environment)
+                .run(["-S", url.appendingPathComponent("tmux.sock").path, "kill-server"])
+        }
+        let client = LocalAgentClient(socketURL: url.appendingPathComponent("agent.sock"))
+        let chosen = try await client.create(name: "Chosen")
+        let other = try await client.create(name: "Other")
+        let shared = try await client.create(name: "Shared", shared: true)
+        let phone = LocalRemotePeer(deviceID: UUID().uuidString.lowercased(), name: "Phone")
+
+        do {
+            _ = try await client.deviceAccess(LocalDeviceAccess(deviceID: phone.deviceID, scope: .shared, permission: .view,
+                                                                sessionIDs: [UUID().uuidString.lowercased()]))
+            XCTFail("A policy listed a session that doesn't exist")
+        } catch LocalAgentClientError.rejected(.invalidRequest) { }
+
+        let listed = LocalDeviceAccess(deviceID: phone.deviceID, scope: .shared, permission: .view, sessionIDs: [chosen.id])
+        let stored = try await client.deviceAccess(listed)
+        XCTAssertEqual(stored, [listed])
+        let reached = try await client.sessions(peer: phone)
+        XCTAssertEqual(Set(reached.map(\.id)), [chosen.id, shared.id], "Listed and shared sessions only")
+        do { let leaked = try await client.attach(sessionID: other.id, mode: .view, peer: phone); await leaked.disconnect(); XCTFail("An unlisted session was reached") }
+        catch LocalAgentClientError.rejected(.notFound) { }
+
+        // Keeping a listed session private still hides it.
+        _ = try await client.configure(sessionID: chosen.id, keepPrivate: true)
+        let hidden = try await client.sessions(peer: phone)
+        XCTAssertEqual(hidden.map(\.id), [shared.id])
+        _ = try await client.configure(sessionID: chosen.id, keepPrivate: false)
+
+        try await client.close(sessionID: chosen.id)
+        let remaining = try await client.deviceAccess()
+        XCTAssertEqual(remaining.first?.sessionIDs, [], "An ended session stayed listed")
+        try await client.close(sessionID: other.id)
+        try await client.close(sessionID: shared.id)
+    }
+
     func testAlternateScreenFilterRemovesTmuxSwitchesAcrossChunks() {
         let filter = AlternateScreenFilter()
         XCTAssertEqual(filter.filter(Data("a\u{1b}[?1049hb".utf8)), Data("ab".utf8))

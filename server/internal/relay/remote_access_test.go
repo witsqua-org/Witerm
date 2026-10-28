@@ -22,15 +22,8 @@ func TestSharedRemoteAccessFixture(t *testing.T) {
 				Sharing *json.RawMessage `json:"sharing"`
 			} `json:"sessions"`
 		} `json:"peer_list_response"`
-		Access struct {
-			Operation string `json:"operation"`
-			Access    struct {
-				DeviceID   string `json:"device_id"`
-				Scope      string `json:"scope"`
-				Permission string `json:"permission"`
-				CoTyping   *bool  `json:"co_typing"`
-			} `json:"access"`
-		} `json:"access_request"`
+		Access       accessRequest `json:"access_request"`
+		ListedAccess accessRequest `json:"access_listed_request"`
 	}
 	if err := json.Unmarshal(bytes, &fixture); err != nil {
 		t.Fatal(err)
@@ -44,9 +37,30 @@ func TestSharedRemoteAccessFixture(t *testing.T) {
 			t.Fatal("invalid peer session access")
 		}
 	}
-	access := fixture.Access.Access
-	if fixture.Access.Operation != "access" || !validID(access.DeviceID) || (access.Scope != "all" && access.Scope != "shared") ||
-		(access.Permission != "view" && access.Permission != "control") || access.CoTyping == nil {
-		t.Fatal("invalid device access fixture")
+	for _, request := range []accessRequest{fixture.Access, fixture.ListedAccess} {
+		access := request.Access
+		if request.Operation != "access" || !validID(access.DeviceID) || (access.Scope != "all" && access.Scope != "shared") ||
+			(access.Permission != "view" && access.Permission != "control") || access.CoTyping == nil {
+			t.Fatal("invalid device access fixture")
+		}
+		for _, id := range access.SessionIDs {
+			if !validID(id) {
+				t.Fatal("invalid listed session")
+			}
+		}
 	}
+	if len(fixture.Access.Access.SessionIDs) != 0 || len(fixture.ListedAccess.Access.SessionIDs) != 1 {
+		t.Fatal("listed sessions are optional and explicit")
+	}
+}
+
+type accessRequest struct {
+	Operation string `json:"operation"`
+	Access    struct {
+		DeviceID   string   `json:"device_id"`
+		Scope      string   `json:"scope"`
+		Permission string   `json:"permission"`
+		CoTyping   *bool    `json:"co_typing"`
+		SessionIDs []string `json:"session_ids"`
+	} `json:"access"`
 }

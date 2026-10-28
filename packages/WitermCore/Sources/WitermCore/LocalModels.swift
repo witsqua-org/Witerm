@@ -123,17 +123,39 @@ public struct LocalDeviceAccess: Codable, Sendable, Equatable, Identifiable {
   public let permission: LocalAttachmentMode
   /// Whether this device may type while others (such as this Mac) also have control.
   public let coTyping: Bool
+  /// Sessions this device may reach besides shared ones. Ignored when
+  /// `scope` is `.all`; empty in policies stored before it existed.
+  public let sessionIDs: [String]
 
   public var id: String { deviceID }
 
   public init(
-    deviceID: String, scope: LocalSessionScope, permission: LocalAttachmentMode, coTyping: Bool = true
+    deviceID: String, scope: LocalSessionScope, permission: LocalAttachmentMode, coTyping: Bool = true,
+    sessionIDs: [String] = []
   ) {
     self.deviceID = deviceID
     self.scope = scope
     self.permission = permission
     self.coTyping = coTyping
+    self.sessionIDs = sessionIDs
   }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    deviceID = try container.decode(String.self, forKey: .deviceID)
+    scope = try container.decode(LocalSessionScope.self, forKey: .scope)
+    permission = try container.decode(LocalAttachmentMode.self, forKey: .permission)
+    coTyping = try container.decode(Bool.self, forKey: .coTyping)
+    sessionIDs = try container.decodeIfPresent([String].self, forKey: .sessionIDs) ?? []
+  }
+
+  /// The same policy reaching a different set of listed sessions.
+  public func reaching(_ scope: LocalSessionScope, sessions: [String]) -> LocalDeviceAccess {
+    LocalDeviceAccess(deviceID: deviceID, scope: scope, permission: permission, coTyping: coTyping, sessionIDs: sessions)
+  }
+
+  /// Whether this policy alone, without sharing, reaches the session.
+  public func lists(_ sessionID: String) -> Bool { scope == .all || sessionIDs.contains(sessionID) }
 
   /// A paired device without an entry, such as one paired before this Mac
   /// kept a policy: shared sessions only, up to its grant, typing alongside.
@@ -145,6 +167,7 @@ public struct LocalDeviceAccess: Codable, Sendable, Equatable, Identifiable {
     case scope, permission
     case deviceID = "device_id"
     case coTyping = "co_typing"
+    case sessionIDs = "session_ids"
   }
 }
 
