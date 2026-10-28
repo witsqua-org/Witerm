@@ -99,8 +99,9 @@ struct WorkspaceActions {
     var newSession: (() -> Void)?
     var newSSHConnection: () -> Void
     var importSSHHosts: (() -> Void)?
-    /// Opens a new pairing invitation's QR code (Mac).
-    var pairDevice: (() -> Void)? = nil
+    /// Continues the selected session on another device, or pairs one (Mac).
+    var continueOnDevice: (() -> Void)? = nil
+    var continueTitle = ""
     var refresh: () -> Void
     /// Open terminals in sidebar order; the first nine get ⌘1–⌘9.
     var terminalNames: [String] = []
@@ -132,9 +133,9 @@ struct WitermCommands: Commands {
                 .disabled(actions?.importSSHHosts == nil)
             #if os(macOS)
             Divider()
-            Button(String(localized: "Pair iPhone or iPad…", bundle: .main)) { actions?.pairDevice?() }
+            Button(actions?.continueTitle ?? String(localized: "Continue on Another Device…", bundle: .main)) { actions?.continueOnDevice?() }
                 .keyboardShortcut("p", modifiers: [.command, .option])
-                .disabled(actions?.pairDevice == nil)
+                .disabled(actions?.continueOnDevice == nil)
             #endif
         }
         CommandGroup(before: .toolbar) {
