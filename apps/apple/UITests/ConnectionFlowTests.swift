@@ -94,9 +94,7 @@ final class ConnectionFlowTests: XCTestCase {
         XCTAssertTrue(app.buttons["serverAddressAddSSH"].exists)
         XCTAssertFalse(app.buttons["saveServerAddress"].isEnabled)
         capture("02-ssh-login", app: app)
-        field.press(forDuration: 1.2)
-        if app.menuItems["全选"].waitForExistence(timeout: 2) { app.menuItems["全选"].tap() }
-        field.typeText(XCUIKeyboardKey.delete.rawValue)
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "deploy@build.example.com".count))
         field.typeText("test.witerm.dev")
         let understood = app.descendants(matching: .any)["serverAddressInterpretation"].firstMatch
         XCTAssertTrue(understood.waitForExistence(timeout: 5))
