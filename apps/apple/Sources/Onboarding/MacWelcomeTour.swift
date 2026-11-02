@@ -47,52 +47,49 @@ struct MacWelcomeTour: View {
     private var last: Bool { page == pages.count - 1 }
 
     var body: some View {
-        VStack(spacing: 0) {
+        // A fixed height, so changing pages never resizes the sheet.
+        SheetScaffold(nil, width: .compact, height: 320) {
             let current = pages[page]
-            VStack(spacing: 14) {
+            VStack(spacing: WitermMetrics.Space.m) {
                 Image(systemName: current.symbol)
                     .font(.system(size: 44, weight: .regular))
                     .foregroundStyle(WitermTheme.ink)
                     .frame(height: 56)
                     .accessibilityHidden(true)
                 Text(current.title)
-                    .font(.title2.weight(.semibold))
+                    .font(WitermType.heroTitle)
                     .multilineTextAlignment(.center)
                     .accessibilityAddTraits(.isHeader)
                     .accessibilityIdentifier("welcomeTourTitle")
                 Text(current.line)
-                    .font(.body)
+                    .font(WitermType.rowTitle)
                     .foregroundStyle(WitermTheme.secondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
-                if page == 1 { serviceControl.padding(.top, 4) }
+                if page == 1 { serviceControl.padding(.top, WitermMetrics.Space.xs) }
             }
-            .padding(.horizontal, 36)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.horizontal, WitermMetrics.Space.l)
+            .frame(maxWidth: .infinity, minHeight: 220)
             .id(page)
             .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 5)))
-
-            HStack(spacing: 12) {
-                Button(String(localized: "Skip", bundle: .main)) { close(finished: false) }
-                    .keyboardShortcut(.cancelAction)
-                    .accessibilityIdentifier("welcomeTourSkip")
-                Spacer()
-                PageDots(count: pages.count, current: page) { show($0) }
-                Spacer()
-                Button(last ? String(localized: "Get Started", bundle: .main) : String(localized: "Next", bundle: .main)) {
-                    if last { close(finished: true) } else { move(1) }
-                }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
-                .accessibilityIdentifier("welcomeTourPrimary")
+        } leading: {
+            Button(String(localized: "Skip", bundle: .main)) { close(finished: false) }
+                .keyboardShortcut(.cancelAction)
+                .focusEffectDisabled(false)
+                .accessibilityIdentifier("welcomeTourSkip")
+        } trailing: {
+            PageDots(count: pages.count, current: page) { show($0) }
+                .padding(.trailing, WitermMetrics.Space.s)
+            Button(last ? String(localized: "Get Started", bundle: .main) : String(localized: "Next", bundle: .main)) {
+                if last { close(finished: true) } else { move(1) }
             }
-            .controlSize(.large)
-            .padding(.horizontal, 20)
-            .padding(.vertical, 14)
+            .buttonStyle(.borderedProminent)
+            .keyboardShortcut(.defaultAction)
+            .focusEffectDisabled(false)
+            .accessibilityIdentifier("welcomeTourPrimary")
         }
-        .frame(width: 440, height: 320)
-        .background(WitermTheme.surface)
-        .witermTint()
+        // The sheet itself takes the arrow keys; its own focus ring is hidden,
+        // its buttons keep theirs for Full Keyboard Access.
         .focusable()
         .focusEffectDisabled()
         .onKeyPress(.rightArrow) { move(1) ? .handled : .ignored }
@@ -156,12 +153,15 @@ private struct PageDots: View {
         HStack(spacing: 0) {
             ForEach(0..<count, id: \.self) { index in
                 Button { show(index) } label: {
+                    // The current page filled; the others as rings in the
+                    // secondary ink, which keeps 3:1 on both appearances.
                     Circle()
-                        .fill(index == current ? WitermTheme.ink : WitermTheme.secondary.opacity(0.35))
-                        .frame(width: 6, height: 6)
+                        .fill(index == current ? WitermTheme.ink : .clear)
+                        .overlay { if index != current { Circle().strokeBorder(WitermTheme.secondary, lineWidth: 1) } }
+                        .frame(width: 7, height: 7)
                         .frame(width: 18, height: 18)
                         .contentShape(Rectangle())
-                        .witermHover(cornerRadius: 9)
+                        .witermHover(cornerRadius: WitermMetrics.Radius.s)
                 }
                 .buttonStyle(.plain)
                 .help(String(localized: "Page \(index + 1) of \(count)", bundle: .main))

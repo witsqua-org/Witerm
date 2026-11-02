@@ -57,7 +57,10 @@ extension LocalSessionInfo {
     /// iPhone", "Watching on iPad", and "Typing in another window" for a
     /// second typist on this Mac (such as `witerm attach`). `here` is how this
     /// window has it open, if it does, so its own attachment isn't counted.
-    func elsewhere(here: LocalAttachmentMode?) -> [String] {
+    /// `switchedFrom` is how this window had it open just before a switch
+    /// between typing and watching, while the listing may still show that
+    /// earlier attachment: it's this window's own, never another one's.
+    func elsewhere(here: LocalAttachmentMode?, switchedFrom: LocalAttachmentMode? = nil) -> [String] {
         let attachments = sharing?.attachments ?? []
         var typing: [String] = [], watching: [String] = [], seen = Set<String>()
         // A device typing anywhere counts as typing, whatever else it has open.
@@ -66,7 +69,8 @@ extension LocalSessionInfo {
             if attachment.mode == .control { typing.append(device.name) } else { watching.append(device.name) }
         }
         var phrases = typing.map { String(localized: "Typing on \($0)", bundle: .main) }
-        let localTypists = attachments.filter { $0.device == nil && $0.mode == .control }.count - (here == .control ? 1 : 0)
+        let own = (here == .control ? 1 : 0) + (switchedFrom == .control && here != .control ? 1 : 0)
+        let localTypists = attachments.filter { $0.device == nil && $0.mode == .control }.count - own
         if localTypists > 0 { phrases.append(String(localized: "Typing in another window", bundle: .main)) }
         phrases += watching.map { String(localized: "Watching on \($0)", bundle: .main) }
         return phrases
@@ -82,6 +86,10 @@ final class LocalTerminalModel {
     private(set) var attachment: LocalTerminalAttachment?
     private(set) var attachmentID = UUID()
     private(set) var mode = LocalAttachmentMode.control
+    /// The mode this window had before its last switch between typing and
+    /// watching, until a listing fetched after the switch replaces the one
+    /// that still shows the earlier attachment. Never someone else's.
+    private(set) var switchedFrom: LocalAttachmentMode?
     private(set) var busy: String?
     private(set) var issue: LocalTerminalIssue?
     private(set) var tmuxAvailable = true
@@ -146,6 +154,9 @@ final class LocalTerminalModel {
     }
 
     private func quietRefresh(_ client: LocalAgentClient) async {
+        // A listing that starts after a switch finished is current.
+        let settled = attachment != nil && !isWorking
+        defer { if settled, !isWorking { switchedFrom = nil } }
         guard !isWorking, let status = try? await client.status() else { return }
         let relays = status.relays ?? []
         if relays != self.relays { self.relays = relays }
@@ -217,10 +228,16 @@ final class LocalTerminalModel {
     func focusTerminal() { focusRequest += 1 }
 
     /// The first free "Terminal N" name; renaming is always available later.
+    /// A number is taken in either language, so a Chinese "终端 2" never
+    /// appears beside an English "Terminal 2", or "终端 1" beside "Terminal 1".
     var nextSessionName: String {
-        let taken = Set(sessions.map(\.name))
-        let number = (1...).first { !taken.contains(String(localized: "Terminal \($0)", bundle: .main)) } ?? 1
-        return String(localized: "Terminal \(number)", bundle: .main)
+        Self.nextName(taken: Set(sessions.map(\.name))) { String(localized: "Terminal \($0)", bundle: .main) }
+    }
+
+    static func nextName(taken: Set<String>, localized: (Int) -> String) -> String {
+        let number = (1...).first { !taken.contains(localized($0)) && !taken.contains("Terminal \($0)")
+            && !taken.contains("终端 \($0)") } ?? 1
+        return localized(number)
     }
 
     func create(name: String, using client: LocalAgentClient) {
@@ -254,6 +271,7 @@ final class LocalTerminalModel {
         let previous = attachment
         attachment = nil
         attachmentID = UUID()
+        switchedFrom = nil
         selectedID = session.id
         self.mode = mode
         ended = false
@@ -279,13 +297,21 @@ final class LocalTerminalModel {
         selectedID == session.id && attachment != nil ? mode : nil
     }
 
+    /// Where else the session is open, never counting this window's own
+    /// attachment, including the one it just switched away from.
+    func elsewhere(_ session: LocalSessionInfo) -> [String] {
+        session.elsewhere(here: openMode(session), switchedFrom: selectedID == session.id ? switchedFrom : nil)
+    }
+
     /// Start Typing and Stop Typing on the terminal shown here. The shell and
     /// its screen stay; only whether keys are sent changes.
     func setTyping(_ typing: Bool, using client: LocalAgentClient) {
         guard let session = selectedSession, attachment != nil else { return }
         let next: LocalAttachmentMode = typing ? .control : .view
         guard next != mode else { return }
+        let previous = mode
         attach(session, using: client, mode: next)
+        switchedFrom = previous
         AccessibilityNotification.Announcement(typing ? String(localized: "Typing", bundle: .main)
                                                : String(localized: "Watching", bundle: .main)).post()
     }

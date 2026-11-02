@@ -130,9 +130,17 @@ struct SSHPresentations: ViewModifier {
             .sheet(item: $model.trustPrompt, onDismiss: {
                 if ui.visible { model.resumeTrustedAttempt() }
             }) { prompt in
+                #if os(macOS)
+                MacSSHTrustSheet(prompt: prompt, model: model)
+                #else
                 SSHTrustView(prompt: prompt, model: model)
+                #endif
             }
+            #if os(macOS)
+            .sheet(item: $ui.files) { session in MacSFTPBrowser(connection: session.connection) }
+            #else
             .sheet(item: $ui.files) { session in SSHFilesView(connection: session.connection) }
+            #endif
             .sheet(item: $ui.forwarding) { session in SSHForwardingView(connection: session.connection) }
             .sheet(isPresented: $ui.appearance) { TerminalAppearanceSettings() }
             .sheet(isPresented: $ui.importing) { SSHConfigImportView(model: model) }

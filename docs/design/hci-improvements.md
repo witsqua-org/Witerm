@@ -285,3 +285,47 @@ Three requests from the Round 8 review, on 2026-11-03: unpair from the iPhone, s
 | Paired device row | no menu; info button | no menu; Unpair in Device Details | A destructive action one level down, with its confirmation. |
 
 **Still to check with a Mac (joint run):** Typing on *device* in the title while watching (now asserted in `MacContinuityFlowTests`), Unpair from the iPhone against the real relay server (the Mac should drop the device), and a refused Start Typing naming who types.
+
+## Round 11: Mac
+
+The production pass from the [Mac audit](audit-mac.md), on the shared design system (`WitermTheme`, `WitermMetrics`, `WitermType`, `WitermSymbols`), on 2026-11-03. Before and after captures, in light (through the DEBUG-only `-witerm.debug.appearance` hook), dark and Chinese, are in `.build/screenshots/audit-mac/` (`live/` before, `after/` after).
+
+| Area | Before | After |
+|---|---|---|
+| Sheet actions | Five patterns: large capsules, a glass bottom bar plus a toolbar Cancel, toolbar roles, inline, full-width | One `SheetScaffold`: destructive and secondary leading, Cancel (Esc) and the primary (Return, except trust decisions) trailing, regular size |
+| Mac sheet sizes | 7 sizes for Mac-owned sheets | 3 widths (400, 520, 600); forms fit their content, multi-step flows keep one height |
+| Literal design values in Mac-owned files (distinct) | spacing 14, padding 13, radii 6, fonts 17 | spacing 1 (`0`), padding 0, radii 0, fonts 1 (the tour's 44 pt symbol); 193 token uses |
+| Fixed-height Forms in sheets | 6 | 0 (group boxes with their own height) |
+| Switches in Settings | Grey-on-dark ink tint in Devices, green elsewhere | System accent everywhere |
+
+| # | Finding | Change | Main code |
+|---|---|---|---|
+| 1 | M-01 | The scannable image is the **QR code** (Show QR Code, Making a QR code…, step QR Code); **code** is only the compared fingerprint. | [ContinueOnDeviceSheet](../../apps/apple/Sources/Continuity/ContinueOnDeviceSheet.swift) |
+| 2 | M-02 | The sidebar footer is a button that selects Devices and then opens Settings, so VoiceOver and Full Keyboard Access land on Devices too. | [MacWorkspaceView](../../apps/apple/Sources/LocalTerminal/MacWorkspaceView.swift) |
+| 3 | M-03, M-05, M-13, M-20, M-27 | `SheetScaffold` for the Open On ▸ sheet, the device Edit sheet, Relay Servers, Rename, the Welcome Tour, the SSH trust sheet and SFTP; the SSH form keeps one footer. Esc cancels and never rejects; Reject has no shortcut. The first step's title names the terminal, without a separate caption. | [SheetScaffold](../../apps/apple/Sources/Design/SheetScaffold.swift) |
+| 4 | M-04 | A Mac trust sheet: the key to compare, Cancel (Esc) and Trust and Connect trailing, no Return. | [MacSSHTrustSheet](../../apps/apple/Sources/SSH/MacSSHTrustSheet.swift) |
+| 5 | M-06 | No app tint on Settings or system controls in sheets; Mac switches use the system accent. | [MacSettingsView](../../apps/apple/Sources/Server/MacSettingsView.swift), [SelectableCard](../../apps/apple/Sources/Design/SelectableCard.swift) |
+| 6 | M-07 | The footer says Offline without a network, and "Can't reach the relay server" after 10 s of Connecting…; Settings → Devices and the Open On ▸ sheet show the offline banner. | [MacWorkspaceView](../../apps/apple/Sources/LocalTerminal/MacWorkspaceView.swift), [MacDevicesView](../../apps/apple/Sources/Pairing/MacDevicesView.swift) |
+| 7 | M-08 | Approve offers "Also unpair the older “*name*”" (on by default) for a pairing with a device of the same name and kind; older pairings end only after the approval succeeds. The same identity's grant still ends first (the server allows one per pair), and if approving then fails it says so: Pairing Not Replaced, show a new QR code. | [DevicePairingModel](../../apps/apple/Sources/Pairing/DevicePairingModel.swift) |
+| 8 | M-09 | SFTP on the Mac: a table with selection, double-click to open a folder or download a file, a context menu (Open, Download, Delete…), drag out to Finder, drop in to upload, and a breadcrumb. Same rules: one transfer at a time, cancellable, private temporary folder, never recursive, delete confirmed. | [MacSFTPBrowser](../../apps/apple/Sources/SSH/MacSFTPBrowser.swift) |
+| 9 | M-38 | After Stop Typing or Start Typing, this window's earlier attachment is never counted as "Typing in another window" while the listing catches up. | [LocalTerminalModel](../../apps/apple/Sources/LocalTerminal/LocalTerminalModel.swift) |
+| 10 | M-15, M-16 | Tour dots: the current page filled, the others outlined in the secondary ink (3:1 or more); its buttons keep focus rings. `SelectableCard` replaces both choice cards: selected fill and 1.5 pt border, hover never on the selected card, the `.isSelected` trait. | [MacWelcomeTour](../../apps/apple/Sources/Onboarding/MacWelcomeTour.swift), [SelectableCard](../../apps/apple/Sources/Design/SelectableCard.swift) |
+| 11 | M-21, M-22, M-23, M-31, M-41 | The SSH host page has Connect, Edit… and More in one row under the window title. Disconnect asks first only when the last line isn't a prompt, and a chosen Disconnect returns to the plain page. Favorite is a checkmark, and tooltips say what happens. | [SSHHostDetail](../../apps/apple/Sources/SSH/SSHHostDetail.swift) |
+| 12 | M-17, M-18, M-19, M-24, M-25, M-26, M-39, M-40 | Sentence case for toggles; 远程访问 for remote access; "relay server", never "server" alone; no repeated Relay Server header; distinct Settings tab icons; the link symbol for pairing; a separate `step.open` key (打开); new terminals numbered across both languages. | [round11-strings-mac.json](round11-strings-mac.json) |
+
+**Not changed:**
+- **M-29.** More Options stays a custom disclosure row, because the shared form's tests click it by identifier. Its animation now follows Reduce Motion (M-28).
+- **M-26 (part).** Add SSH Host keeps `network`, because `terminal` is New Terminal's symbol in the same + menu.
+- **M-32.** Settings stays one 640 × 600 size, by decision.
+- **M-33.** Increase Contrast borders need a token in `WitermTheme`.
+- **M-34 (part).** The offline banner, the Import introduction and the snippets footer are shared iOS text.
+- **M-35.** Ask Siri is the system's.
+- **M-37.** SSH errors are shared model strings.
+- **Shared toolbar sheets.** The snippet editor, Import, the relay server address, Host Keys and Port Forwarding keep the system's toolbar placements, which macOS draws as bottom-trailing buttons.
+
+**Verification:**
+- **Unit tests:** `WitermMacTerminalTests` (29, with the new `MacProductionPassTests` for M-38, M-40 and when Disconnect asks).
+- **On this round's signed build:** `LocalSessionFlowTests`, `ContinueFlowTests.testContinueSheetStartsAtTheFirstUnfinishedStep`, `SSHConfigurationTests`, both `SSHHostFlowTests` (disposable OpenSSH fixture), both `WelcomeTourTests` (English and Chinese), and `AuditScreenshotTests` (light, dark and Chinese) pass.
+- **iOS:** builds (`CODE_SIGNING_ALLOWED=NO`).
+- **Not run:** `SSHHostManagementTests`, which needs a trusted host left by an earlier native run.
+- **Not reachable:** the Approve and device Edit sheets. No device is paired with the relay server, and pairing one needs a phone (the joint run).

@@ -98,7 +98,7 @@ private struct SnippetEditor: View {
                         .accessibilityIdentifier("snippetText")
                     Toggle(String(localized: "Press Return After Inserting", bundle: .main), isOn: $snippet.runsImmediately)
                         .disabled(snippet.isMultiline)
-                        .tint(WitermTheme.positive)
+                        .witermSwitchTint()
                 } footer: {
                     Text(snippet.isMultiline
                          ? String(localized: "Multiline snippets are inserted like a paste and never press Return. On iPhone and iPad they're shown for review first.", bundle: .main)

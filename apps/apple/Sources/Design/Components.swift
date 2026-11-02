@@ -377,14 +377,13 @@ import AppKit
 /// have no native hover, and for sidebar rows: a faint fill behind the
 /// element. Native bordered buttons, toolbar items, and menus already respond
 /// and don't use it. No feedback while disabled or inactive (a selected row);
-/// a 150 ms fade, or none with Reduce Motion; twice as strong with Increase
-/// Contrast. Hover never reveals anything that isn't already on screen.
+/// a 150 ms fade, or none with Reduce Motion; `WitermTheme.hoverFill`, stronger
+/// with Increase Contrast. Hover never reveals anything that isn't already on screen.
 private struct WitermHover: ViewModifier {
     var cornerRadius: CGFloat
     /// How far the fill reaches past the element, such as to a row's edges.
     var outset: CGSize = .zero
     var isActive = true
-    var strength = 0.08
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorSchemeContrast) private var contrast
@@ -396,7 +395,7 @@ private struct WitermHover: ViewModifier {
             .contentShape(.rect(cornerRadius: cornerRadius, style: .continuous))
             .background {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(Color.primary.opacity(hovering && isEnabled && isActive ? (contrast == .increased ? strength * 2 : strength) : 0))
+                    .fill(hovering && isEnabled && isActive ? WitermTheme.hoverFill(increasedContrast: contrast == .increased) : .clear)
                     .padding(.horizontal, -outset.width)
                     .padding(.vertical, -outset.height)
                     .allowsHitTesting(false)
@@ -465,13 +464,16 @@ private struct WitermLinkPointer: ViewModifier {
 
 extension View {
     /// Hover feedback for a custom clickable element; see `WitermHover`.
-    func witermHover(cornerRadius: CGFloat = 8) -> some View { modifier(WitermHover(cornerRadius: cornerRadius)) }
+    func witermHover(cornerRadius: CGFloat = WitermMetrics.Radius.m, active: Bool = true) -> some View {
+        modifier(WitermHover(cornerRadius: cornerRadius, isActive: active))
+    }
 
     /// Hover for a sidebar row: a lighter fill than selection, in the
     /// selection's shape, and none on the selected row. List selection,
     /// dragging, context menus, and keyboard use are untouched.
     func witermRowHover(selected: Bool) -> some View {
-        modifier(WitermHover(cornerRadius: 6, outset: CGSize(width: 8, height: 4), isActive: !selected, strength: 0.06))
+        modifier(WitermHover(cornerRadius: WitermMetrics.Radius.s,
+                            outset: CGSize(width: WitermMetrics.Space.s, height: WitermMetrics.Space.xs), isActive: !selected))
     }
 
     /// The pointing hand over a link or link-like text control.

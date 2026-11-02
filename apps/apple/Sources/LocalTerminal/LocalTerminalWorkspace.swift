@@ -105,12 +105,12 @@ struct LocalTerminalDetail: View {
                       : String(localized: "Remote typing is paused. Click to allow it.", bundle: .main))
             }
             // Icon only: the sheet starts at its device step.
-            Button(String(localized: "Open on another device", bundle: .main), systemImage: "laptopcomputer.and.iphone") {
+            Button(String(localized: "Open on another device", bundle: .main), systemImage: WitermSymbols.openOn) {
                 continueSession(session)
             }
             .accessibilityIdentifier("shareLocalSession")
-            .help(String(localized: "Open on another device", bundle: .main))
-            Menu(String(localized: "More", bundle: .main), systemImage: "ellipsis.circle") {
+            .help(String(localized: "Open “\(session.name)” on a paired device or a new one", bundle: .main))
+            Menu(String(localized: "More", bundle: .main), systemImage: WitermSymbols.more) {
                 TypingMenuItems(mode: model.mode) { model.setTyping($0, using: client) }
                 Button(String(localized: "Leave", bundle: .main), systemImage: "rectangle.portrait.and.arrow.right", action: model.detach)
                     .accessibilityIdentifier("detachLocalTerminal")
@@ -136,7 +136,7 @@ struct LocalTerminalDetail: View {
         var parts: [String] = []
         if model.mode == .view { parts.append(String(localized: "Watching", bundle: .main)) }
         guard let sharing = session.sharing else { return parts.joined(separator: " · ") }
-        let elsewhere = session.elsewhere(here: model.mode)
+        let elsewhere = model.elsewhere(session)
         if !elsewhere.isEmpty {
             parts += elsewhere
         } else if sharing.keepPrivate {
@@ -160,11 +160,11 @@ struct LocalTerminalDetail: View {
             Label(model.ended ? String(localized: "Terminal Ended", bundle: .main) : String(localized: "Still Running", bundle: .main), systemImage: "terminal")
         } actions: {
             if !model.ended {
-                HStack(spacing: 12) {
-                    PrimaryButton(LocalTerminalHelp.open, systemImage: "keyboard") { model.attach(session, using: client, mode: .control) }
+                HStack(spacing: WitermMetrics.Space.m) {
+                    PrimaryButton(LocalTerminalHelp.open, systemImage: WitermSymbols.typing) { model.attach(session, using: client, mode: .control) }
                         .accessibilityIdentifier("reconnectLocalTerminal")
                         .help(String(localized: "Open it here and type", bundle: .main))
-                    Button(String(localized: "Watch", bundle: .main), systemImage: "eye") { model.attach(session, using: client, mode: .view) }
+                    Button(String(localized: "Watch", bundle: .main), systemImage: WitermSymbols.watching) { model.attach(session, using: client, mode: .view) }
                         .buttonStyle(.bordered)
                         .witermControl()
                         .accessibilityIdentifier("viewLocalTerminal")
@@ -197,8 +197,8 @@ struct LocalOverview: View {
                     ContentUnavailableView {
                         Label(model.sessions.isEmpty ? String(localized: "No Terminals Yet", bundle: .main) : String(localized: "Choose a Terminal", bundle: .main), systemImage: "terminal")
                     } actions: {
-                        VStack(spacing: 20) {
-                            HStack(spacing: 12) {
+                        VStack(spacing: WitermMetrics.Space.xl) {
+                            HStack(spacing: WitermMetrics.Space.m) {
                                 PrimaryButton(String(localized: "New Terminal", bundle: .main), action: newSession)
                                     .disabled(!canCreate)
                                     .help(LocalTerminalHelp.newTerminal)
@@ -257,18 +257,18 @@ private struct LocalStatusBanners: View {
         if let issue = model.issue, service.state == .ready {
             IssueBanner(issue.title, message: issue.recovery) {
                 if issue.canViewReadOnly, let session = model.selectedSession, let client = service.client {
-                    Button(String(localized: "Watch", bundle: .main), systemImage: "eye") { model.attach(session, using: client, mode: .view) }
+                    Button(String(localized: "Watch", bundle: .main), systemImage: WitermSymbols.watching) { model.attach(session, using: client, mode: .view) }
                         .disabled(model.isWorking)
                 }
             }
             .accessibilityIdentifier("localTerminalError")
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .padding(.horizontal, WitermMetrics.Space.l)
+            .padding(.vertical, WitermMetrics.Space.m)
         }
         if let busy = model.busy, model.attachment != nil {
             ActivityRow(busy)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 4)
+                .padding(.horizontal, WitermMetrics.Space.l)
+                .padding(.vertical, WitermMetrics.Space.xs)
             Divider()
         }
     }
@@ -279,9 +279,9 @@ private struct LocalProgressView: View {
     let cancel: () -> Void
 
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: WitermMetrics.Space.m) {
             ProgressView()
-            Text(label).font(.subheadline).foregroundStyle(WitermTheme.secondary)
+            Text(label).font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
             Button(String(localized: "Cancel", bundle: .main), action: cancel)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -332,13 +332,13 @@ private struct LocalDependencyView: View {
         ContentUnavailableView {
             Label(String(localized: "tmux Required", bundle: .main), systemImage: "terminal")
         } actions: {
-            VStack(spacing: 16) {
+            VStack(spacing: WitermMetrics.Space.l) {
                 Text("brew install tmux")
-                    .font(.system(.body, design: .monospaced))
+                    .font(WitermType.code)
                     .textSelection(.enabled)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(WitermTheme.statusFill, in: .rect(cornerRadius: 8))
+                    .padding(.horizontal, WitermMetrics.Space.m)
+                    .padding(.vertical, WitermMetrics.Space.s)
+                    .background(WitermTheme.statusFill, in: .rect(cornerRadius: WitermMetrics.Radius.m, style: .continuous))
                 PrimaryButton(String(localized: "Check Again", bundle: .main)) { model.refresh(using: client) }
             }
         }
@@ -360,32 +360,29 @@ struct RenameSessionSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(String(localized: "Rename Terminal", bundle: .main)).font(.headline)
-            TextField(String(localized: "Name", bundle: .main), text: $name)
-                .textFieldStyle(.roundedBorder)
-                .labelsHidden()
-                .onSubmit(rename)
-                .onChange(of: name) { invalid = false }
-                .accessibilityLabel(String(localized: "Terminal Name", bundle: .main))
-                .accessibilityIdentifier("localSessionName")
-            if invalid {
-                Text(String(localized: "Use 1–64 characters without control characters.", bundle: .main))
-                    .font(.subheadline).foregroundStyle(WitermTheme.warning)
+        SheetScaffold(String(localized: "Rename Terminal", bundle: .main), width: .compact) {
+            VStack(alignment: .leading, spacing: WitermMetrics.Space.s) {
+                TextField(String(localized: "Name", bundle: .main), text: $name)
+                    .textFieldStyle(.roundedBorder)
+                    .labelsHidden()
+                    .onSubmit(rename)
+                    .onChange(of: name) { invalid = false }
+                    .accessibilityLabel(String(localized: "Terminal Name", bundle: .main))
+                    .accessibilityIdentifier("localSessionName")
+                if invalid {
+                    Text(String(localized: "Use 1–64 characters without control characters.", bundle: .main))
+                        .font(WitermType.rowDetail).foregroundStyle(WitermTheme.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
-            HStack {
-                Spacer()
-                Button(String(localized: "Cancel", bundle: .main), role: .cancel) { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                PrimaryButton(String(localized: "Rename", bundle: .main), action: rename)
-                    .keyboardShortcut(.defaultAction)
-                    .accessibilityIdentifier("renameLocalSession")
-            }
-            .witermControl()
+        } trailing: {
+            Button(String(localized: "Cancel", bundle: .main), role: .cancel) { dismiss() }
+                .keyboardShortcut(.cancelAction)
+            Button(String(localized: "Rename", bundle: .main), action: rename)
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .accessibilityIdentifier("renameLocalSession")
         }
-        .padding(WitermMetrics.pagePadding)
-        .frame(width: 360)
-        .witermTint()
     }
 
     private func rename() {

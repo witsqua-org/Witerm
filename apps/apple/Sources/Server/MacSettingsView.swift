@@ -11,8 +11,12 @@ enum SettingsTab: String {
 struct MacSettingsView: View {
     let service: LocalAgentService
     @AppStorage(SettingsTab.key) private var tab = SettingsTab.general.rawValue
+    /// Settings is its own scene, so it watches the network itself.
+    @State private var network = NetworkStatus()
 
     var body: some View {
+        // No app tint: switches, radios, checkboxes and links keep the
+        // system accent, as in other Mac apps' settings.
         TabView(selection: $tab) {
             MacGeneralSettings(service: service)
                 .settingsPane()
@@ -21,23 +25,23 @@ struct MacSettingsView: View {
             Form { TerminalAppearanceSections() }
                 .formStyle(.grouped)
                 .settingsPane()
-                .tabItem { Label(String(localized: "Terminal", bundle: .main), systemImage: "terminal") }
+                .tabItem { Label(String(localized: "Terminal", bundle: .main), systemImage: "textformat.size") }
                 .tag(SettingsTab.terminal.rawValue)
             Form { SnippetSections() }
                 .formStyle(.grouped)
                 .settingsPane()
-                .tabItem { Label(String(localized: "Snippets", bundle: .main), systemImage: "text.badge.plus") }
+                .tabItem { Label(String(localized: "Snippets", bundle: .main), systemImage: "text.insert") }
                 .tag(SettingsTab.snippets.rawValue)
             MacDevicesView(service: service)
                 .settingsPane()
-                .tabItem { Label(String(localized: "Devices", bundle: .main), systemImage: "laptopcomputer.and.iphone") }
+                .tabItem { Label(String(localized: "Devices", bundle: .main), systemImage: WitermSymbols.openOn) }
                 .tag(SettingsTab.devices.rawValue)
             CommandLineToolSettings()
                 .settingsPane()
-                .tabItem { Label(String(localized: "Command Line", bundle: .main), systemImage: "apple.terminal") }
+                .tabItem { Label(String(localized: "Command Line", bundle: .main), systemImage: "chevron.left.forwardslash.chevron.right") }
                 .tag(SettingsTab.commandLine.rawValue)
         }
-        .witermTint()
+        .environment(network)
     }
 }
 
@@ -74,7 +78,7 @@ private struct MacGeneralSettings: View {
                     Spacer()
                 }
                 if let issue = service.issue {
-                    Text(issue).font(.subheadline).foregroundStyle(WitermTheme.warning)
+                    Text(issue).font(WitermType.rowDetail).foregroundStyle(WitermTheme.warning)
                 }
             }
         }

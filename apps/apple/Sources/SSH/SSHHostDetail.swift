@@ -11,6 +11,8 @@ struct SSHHostDetail: View {
     let profile: SSHProfile
     @Bindable var model: SSHWorkspaceModel
     let ui: SSHWorkspaceUI
+    /// A Disconnect waiting for confirmation, because a program is running.
+    @State private var confirmingDisconnect: SSHSession?
 
     private var isConnecting: Bool { model.connectingProfile?.id == profile.id }
 
@@ -25,60 +27,75 @@ struct SSHHostDetail: View {
                     .toolbar {
                         ToolbarItemGroup(placement: .primaryAction) {
                             Button(String(localized: "SFTP Files", bundle: .main), systemImage: "folder") { ui.files = session }
-                                .help(String(localized: "SFTP Files", bundle: .main))
+                                .help(String(localized: "Browse and transfer files on \(String(profile.name))", bundle: .main))
                                 .accessibilityIdentifier("sshFiles")
                             Button(String(localized: "Port Forwarding", bundle: .main), systemImage: "arrow.left.arrow.right") { ui.forwarding = session }
-                                .help(String(localized: "Port Forwarding", bundle: .main))
+                                .help(String(localized: "Forward a port through \(String(profile.name))", bundle: .main))
                                 .accessibilityIdentifier("sshForwarding")
-                            Button(String(localized: "Disconnect", bundle: .main), systemImage: "xmark.circle") { model.disconnect(session) }
+                            Button(String(localized: "Disconnect", bundle: .main), systemImage: WitermSymbols.disconnect) { disconnect(session) }
                                 .help(String(localized: "Disconnect; the remote shell ends", bundle: .main))
                                 .accessibilityIdentifier("sshDisconnect")
                         }
                     }
             } else {
-                ScrollView { overview.readableContent(padding: 32) }
+                ScrollView { overview.readableContent(padding: WitermMetrics.Space.xxl) }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(WitermTheme.canvas)
         .navigationTitle(profile.name)
-        // Where typing goes, while it goes somewhere.
-        .navigationSubtitle(model.session(for: profile.id) == nil ? "" : profile.endpointSummary)
+        // The address while not connected; where typing goes while it does.
+        .navigationSubtitle(profile.endpointSummary)
+        .alert(String(localized: "Disconnect from “\(String(profile.name))”?", bundle: .main),
+               isPresented: Binding(get: { confirmingDisconnect != nil }, set: { if !$0 { confirmingDisconnect = nil } })) {
+            Button(String(localized: "Cancel", bundle: .main), role: .cancel) {}
+            Button(String(localized: "Disconnect", bundle: .main), role: .destructive) {
+                if let session = confirmingDisconnect { model.disconnectChosen(session) }
+            }
+            .accessibilityIdentifier("sshConfirmDisconnect")
+        } message: {
+            Text(String(localized: "The program running there stops, with the remote shell.", bundle: .main))
+        }
     }
 
-    private var overview: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .center, spacing: 12) {
-                IconTile(systemImage: "terminal", tint: profile.identityHue)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(profile.name)
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(WitermTheme.ink)
-                        .textSelection(.enabled)
-                    Text(verbatim: profile.endpointSummary)
-                        .font(.system(.subheadline, design: .monospaced))
-                        .foregroundStyle(WitermTheme.secondary)
-                        .textSelection(.enabled)
-                }
-                Spacer(minLength: 12)
-                actionsMenu
-            }
+    /// At a shell prompt, disconnect at once; with a program running (the
+    /// last line isn't a prompt), confirm first, because it can't be undone.
+    private func disconnect(_ session: SSHSession) {
+        if Self.atPrompt(session.activity.lastLine) {
+            model.disconnectChosen(session)
+        } else {
+            confirmingDisconnect = session
+        }
+    }
 
+    static func atPrompt(_ line: String?) -> Bool {
+        guard let line = line?.trimmingCharacters(in: .whitespaces), let last = line.last else { return true }
+        return "$#%>❯".contains(last)
+    }
+
+    /// The host's own actions in one row; the window title already names it,
+    /// and its subtitle gives the address.
+    private var overview: some View {
+        VStack(alignment: .leading, spacing: WitermMetrics.Space.l) {
             if model.issueProfileID == profile.id || model.issueProfileID == nil {
                 SSHIssueBanner(model: model, ui: ui, profile: profile)
             }
 
             if isConnecting {
                 ActivityRow(String(localized: "Connecting to \(String(profile.name))…", bundle: .main), cancel: model.cancelConnecting)
-                    .witermCard(padding: 16)
+                    .witermCard(padding: WitermMetrics.Space.l)
             } else {
                 if let reason = model.disconnected[profile.id] {
-                    Label(String(localized: "Disconnected", bundle: .main), systemImage: "bolt.horizontal.circle")
-                        .font(.headline)
-                    Text(reason).font(.subheadline).foregroundStyle(WitermTheme.secondary)
+                    VStack(alignment: .leading, spacing: WitermMetrics.Space.xs) {
+                        Label(String(localized: "Disconnected", bundle: .main), systemImage: WitermSymbols.disconnected)
+                            .font(WitermType.cardTitle)
+                        Text(reason).font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
-                HStack(spacing: 12) {
-                    PrimaryButton(model.disconnected[profile.id] == nil ? String(localized: "Connect", bundle: .main) : String(localized: "Reconnect", bundle: .main), systemImage: "play.fill", tint: profile.identityHue) {
+                HStack(spacing: WitermMetrics.Space.m) {
+                    IconTile(systemImage: WitermSymbols.sshHost, tint: profile.identityHue)
+                    PrimaryButton(model.disconnected[profile.id] == nil ? String(localized: "Connect", bundle: .main) : String(localized: "Reconnect", bundle: .main), tint: profile.identityHue) {
                         ui.open(profile, model: model)
                     }
                     .disabled(model.connecting)
@@ -89,30 +106,32 @@ struct SSHHostDetail: View {
                         .witermControl()
                         .disabled(model.connecting)
                         .accessibilityIdentifier("sshEditProfile")
+                    actionsMenu
                 }
             }
 
-            // A direct route is already the address above.
+            // A direct route is already the address in the subtitle.
             if !profile.jumpHosts.isEmpty { route }
         }
     }
 
     private var actionsMenu: some View {
         Menu {
-            Button(model.isFavorite(profile) ? String(localized: "Remove from Favorites", bundle: .main) : String(localized: "Add to Favorites", bundle: .main), systemImage: "star") { model.toggleFavorite(profile) }
+            Toggle(String(localized: "Favorite", bundle: .main),
+                   isOn: Binding(get: { model.isFavorite(profile) }, set: { _ in model.toggleFavorite(profile) }))
             Button(String(localized: "Host Keys", bundle: .main), systemImage: "key") { ui.inspectKeys(profile) }
             Divider()
             Button(String(localized: "Delete Host…", bundle: .main), systemImage: "trash", role: .destructive) { ui.remove(profile) }
                 .accessibilityIdentifier("sshDeleteHostMenu")
         } label: {
-            Label(String(localized: "More", bundle: .main), systemImage: "ellipsis.circle")
+            Label(String(localized: "More", bundle: .main), systemImage: WitermSymbols.more)
         }
         .help(String(localized: "Favorites, host keys, and deleting this host", bundle: .main))
         .menuStyle(.borderlessButton)
         .fixedSize()
         // A borderless menu has no hover of its own.
-        .padding(.horizontal, 6).padding(.vertical, 3)
-        .witermHover(cornerRadius: 6)
+        .padding(.horizontal, WitermMetrics.Space.s).padding(.vertical, WitermMetrics.Space.xs)
+        .witermHover(cornerRadius: WitermMetrics.Radius.s)
         .accessibilityLabel(String(localized: "Actions for \(String(profile.name))", bundle: .main))
         .accessibilityIdentifier("sshProfileActions-\(profile.id.uuidString)")
     }
@@ -121,8 +140,8 @@ struct SSHHostDetail: View {
     private var route: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(String(localized: "Route", bundle: .main))
-                .font(.headline)
-                .padding(.bottom, 12)
+                .font(WitermType.cardTitle)
+                .padding(.bottom, WitermMetrics.Space.m)
             routeStop(String(localized: "This Mac", bundle: .main), detail: nil, systemImage: "laptopcomputer",
                       tint: WitermTheme.accent, last: false)
             ForEach(Array(profile.jumpHosts.enumerated()), id: \.element.id) { index, host in
@@ -131,37 +150,37 @@ struct SSHHostDetail: View {
                           systemImage: "arrow.triangle.branch", tint: WitermTheme.secondary, last: false)
             }
             routeStop(String(localized: "Target Host", bundle: .main), detail: profile.endpointSummary,
-                      systemImage: "server.rack", tint: profile.identityHue, last: true)
+                      systemImage: WitermSymbols.relayServer, tint: profile.identityHue, last: true)
         }
         .witermCard()
         .accessibilityElement(children: .combine)
     }
 
     private func routeStop(_ title: String, detail: String?, systemImage: String, tint: Color, last: Bool) -> some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: WitermMetrics.Space.m) {
             VStack(spacing: 0) {
                 Image(systemName: systemImage)
-                    .font(.callout)
+                    .font(WitermType.rowDetail)
                     .foregroundStyle(tint)
                     .frame(width: 28, height: 28)
-                    .background(tint.opacity(0.12), in: .circle)
+                    .background(WitermTheme.tint(tint), in: .circle)
                 if !last {
                     Rectangle()
-                        .fill(WitermTheme.divider)
-                        .frame(width: 1, height: 18)
+                        .fill(WitermTheme.hairline)
+                        .frame(width: 1, height: 16)
                 }
             }
             .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.subheadline.weight(.medium))
+            VStack(alignment: .leading, spacing: WitermMetrics.Space.xxs) {
+                Text(title).font(WitermType.rowTitle)
                 if let detail {
                     Text(verbatim: detail)
-                        .font(.caption.monospaced())
+                        .font(WitermType.codeInline)
                         .foregroundStyle(WitermTheme.secondary)
                         .textSelection(.enabled)
                 }
             }
-            .padding(.top, 4)
+            .padding(.top, WitermMetrics.Space.xs)
         }
     }
 }
