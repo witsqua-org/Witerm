@@ -37,10 +37,15 @@ public struct LocalSessionInfo: Codable, Sendable, Equatable, Identifiable {
   /// Present only in a `list` response for a paired device: the most that
   /// device may do in this session.
   public let access: LocalAttachmentMode?
+  /// Present only in a `list` response for a device paired with this Mac (not
+  /// an invitation's guest): the others who can type here right now, so it can
+  /// say where typing is. Absent from older services.
+  public let writers: [LocalWriterInfo]?
 
   public init(
     id: String, name: String, createdAt: Date, columns: Int, rows: Int,
-    sharing: LocalSessionSharing? = nil, access: LocalAttachmentMode? = nil
+    sharing: LocalSessionSharing? = nil, access: LocalAttachmentMode? = nil,
+    writers: [LocalWriterInfo]? = nil
   ) {
     self.id = id
     self.name = name
@@ -49,6 +54,7 @@ public struct LocalSessionInfo: Codable, Sendable, Equatable, Identifiable {
     self.rows = rows
     self.sharing = sharing
     self.access = access
+    self.writers = writers
   }
 
   /// The same session without local-only details.
@@ -57,12 +63,16 @@ public struct LocalSessionInfo: Codable, Sendable, Equatable, Identifiable {
   }
 
   /// The same session as a paired device sees it.
-  public func forPeer(access: LocalAttachmentMode) -> LocalSessionInfo {
-    LocalSessionInfo(id: id, name: name, createdAt: createdAt, columns: columns, rows: rows, access: access)
+  public func forPeer(access: LocalAttachmentMode, writers: [LocalWriterInfo]? = nil) -> LocalSessionInfo {
+    LocalSessionInfo(id: id, name: name, createdAt: createdAt, columns: columns, rows: rows, access: access,
+                     writers: writers)
   }
 
+  /// The same session limited to watching, keeping who can type.
+  public var watchOnly: LocalSessionInfo { forPeer(access: .view, writers: writers) }
+
   enum CodingKeys: String, CodingKey {
-    case id, name, columns, rows, sharing, access
+    case id, name, columns, rows, sharing, access, writers
     case createdAt = "created_at"
   }
 }
@@ -180,6 +190,16 @@ public struct LocalAttachmentInfo: Codable, Sendable, Equatable {
     self.mode = mode
     self.device = device
   }
+}
+
+/// Someone else who can type in a session, as a paired device sees it: only
+/// a name, never their keys or pairing.
+public struct LocalWriterInfo: Codable, Sendable, Equatable {
+  /// The other paired device's name; nil for this Mac itself (its app, a
+  /// second window, or the `witerm` command).
+  public let name: String?
+
+  public init(name: String?) { self.name = name }
 }
 
 /// The paired device a relayed request acts for. Only the Mac's relay

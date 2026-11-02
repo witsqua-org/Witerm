@@ -327,7 +327,7 @@ actor RelayTerminalBridge {
                 case .list:
                     // The Mac's policy can only narrow the signed grant.
                     let sessions = try await local.sessions(peer: peer(grant)).map {
-                        grant.permission == .control ? $0 : $0.forPeer(access: .view)
+                        grant.permission == .control ? $0 : $0.watchOnly
                     }
                     try await reply(request, sessions: sessions); await awaitPeerClose(); return
                 case .attach:
