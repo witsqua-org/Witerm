@@ -317,14 +317,15 @@ struct RemoteTerminalWorkspace: View {
                 if !model.isInteractive { connectionOverlay }
             }
             // While watching a terminal this device could type in, list it
-            // again every few seconds so the title keeps saying who types.
-            // Stops when typing, leaving, or in the background; slows down
-            // while the list can't be had.
+            // again every 10 seconds so the title keeps saying who types.
+            // Each list opens a relay tunnel and the server allows a device
+            // 30 a minute, so this stays at 6. Stops when typing, leaving, or
+            // in the background; slows down while the list can't be had.
             .task(id: pollsWriters) {
                 guard pollsWriters else { return }
-                var delay = 3.0
+                var delay = 10.0
                 while !Task.isCancelled {
-                    delay = await model.refreshWriters() ? 3 : min(delay * 2, 30)
+                    delay = await model.refreshWriters() ? 10 : min(delay * 2, 60)
                     try? await Task.sleep(for: .seconds(delay))
                 }
             }
