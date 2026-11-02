@@ -351,6 +351,15 @@ final class SSHWorkspaceModel {
         session.close()
     }
 
+    #if os(macOS)
+    /// A Disconnect the person chose (Mac): the host goes back to its calm
+    /// page with Connect, not the dropped-connection reason.
+    func disconnectChosen(_ session: SSHSession) {
+        disconnect(session)
+        disconnected[session.id] = nil
+    }
+    #endif
+
     func disconnectAll(forBackground: Bool = false) {
         cancelConnecting()
         let open = sessions

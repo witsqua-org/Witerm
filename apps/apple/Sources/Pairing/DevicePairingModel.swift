@@ -6,6 +6,10 @@ import WitermCore
 import UIKit
 #endif
 
+/// Re-pairing ended the device's earlier pairing, then approving the new one
+/// failed: the device is no longer paired until it pairs again.
+struct PairingReplacementFailure: Error {}
+
 struct PairingIssue {
     let title: String
     let recovery: String
@@ -13,7 +17,10 @@ struct PairingIssue {
 
     init(_ error: Error) {
         integrityFailure = (error as? PairingClientError) == .invalidProof
-        if let error = error as? PairingClientError {
+        if error is PairingReplacementFailure {
+            title = String(localized: "Pairing Not Replaced", bundle: .main)
+            recovery = String(localized: "Its earlier access ended, but the new pairing wasn’t approved. Show a new QR code to pair it again.", bundle: .main)
+        } else if let error = error as? PairingClientError {
             switch error {
             case .insecureTransport:
                 title = String(localized: "Pairing Requires a Secure Connection", bundle: .main)
@@ -165,14 +172,26 @@ final class DevicePairingModel {
         return grants.first { $0.client.id == requester.id || $0.host.id == requester.id }
     }
 
-    func approve(permission: PairingPermission) {
+    /// Approves the pending request. `older` are pairings with the same device
+    /// under an earlier identity (same name and kind); they end only after
+    /// this approval succeeds, so a failure never leaves the device unpaired.
+    func approve(permission: PairingPermission, alsoUnpair older: [DeviceGrant] = []) {
         guard mayApprove, let pairing else { return }
         let replaced = existingGrantForRequest
         run(String(localized: "Approving pairing…", bundle: .main)) { client in
-            // Re-pairing replaces the device's current access: end it first,
-            // or the server refuses a second grant between the same devices.
+            // The same identity's current grant has to end first: the server
+            // allows one active grant per pair of identities. If approving
+            // then fails, say so plainly, with the way back.
             if let replaced { try await client.revoke(grantID: replaced.id, pairingID: replaced.pairingID) }
-            let result = try await client.approve(pairing, permission: permission)
+            let result: DevicePairing
+            do {
+                result = try await client.approve(pairing, permission: permission)
+            } catch where replaced != nil && !(error is CancellationError) {
+                throw PairingReplacementFailure()
+            }
+            for grant in older where grant.id != replaced?.id {
+                try? await client.revoke(grantID: grant.id, pairingID: grant.pairingID)
+            }
             let grants = try await client.grants()
             return .refreshed(result, grants)
         }

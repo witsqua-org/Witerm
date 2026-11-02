@@ -42,7 +42,7 @@ import XCTest
         let app = launch(path)
         let suffix = connectNewHost(fixture, in: app)
         capture(app, "mac-ssh-terminal")
-        app.buttons["sshDisconnect"].click()
+        disconnect(in: app)
         XCTAssertTrue(app.buttons["sshConnectProfile"].waitForExistence(timeout: 10))
         capture(app, "mac-ssh-host")
         removeHost(suffix: suffix, fixture: fixture, in: app)
@@ -74,13 +74,13 @@ import XCTest
         run("echo again-$((5*9))", expect: "again-45", in: app)
         capture(app, "mac-ssh-first-again")
 
-        app.buttons["sshDisconnect"].click()
+        disconnect(in: app)
         XCTAssertTrue(app.buttons["sshConnectProfile"].waitForExistence(timeout: 10))
         XCTAssertTrue(row(second, in: app).value.map { "\($0)" }?.contains("connected") == true,
                       "Disconnecting one host must leave the other connected")
         row(second, in: app).click()
         waitFor(terminal, contains: "second-56")
-        app.buttons["sshDisconnect"].click()
+        disconnect(in: app)
         XCTAssertTrue(app.buttons["sshConnectProfile"].waitForExistence(timeout: 10))
 
         removeHost(suffix: firstID, fixture: first, in: app)
@@ -89,6 +89,13 @@ import XCTest
     }
 
     // MARK: Steps
+
+    /// Disconnect; it asks first only while a program (not the prompt) runs.
+    private func disconnect(in app: XCUIApplication) {
+        app.buttons["sshDisconnect"].click()
+        let confirm = app.buttons["sshConfirmDisconnect"]
+        if confirm.waitForExistence(timeout: 1) { confirm.click() }
+    }
 
     private func row(_ fixture: Fixture, in app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any).matching(NSPredicate(

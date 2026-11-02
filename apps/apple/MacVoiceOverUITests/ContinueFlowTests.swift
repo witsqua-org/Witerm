@@ -67,13 +67,15 @@ final class ContinueFlowTests: XCTestCase {
         // remote access. Past it, with nothing paired, it goes straight to
         // the code for a new device, and Back offers the other choices.
         RunLoop.current.run(until: Date().addingTimeInterval(3))
-        XCTAssertTrue(["Connect This Mac", "Choose a Device", "Scan with the Other Device"].contains(title.label), title.label)
+        // The device step's title names the terminal: Open “name” on Another Device.
+        let deviceStep = "Open “\(row.label)” on Another Device"
+        XCTAssertTrue(["Connect This Mac", deviceStep, "Scan with the Other Device"].contains(title.label), title.label)
         if title.label == "Scan with the Other Device" {
             app.buttons["continueBack"].click()
-            let device = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Choose a Device"), object: title)
+            let device = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", deviceStep), object: title)
             XCTAssertEqual(XCTWaiter.wait(for: [device], timeout: 5), .completed, title.label)
         }
-        if title.label == "Choose a Device" {
+        if title.label == deviceStep {
             XCTAssertTrue(app.descendants(matching: .any)["continueNewDevice"].firstMatch.exists)
             XCTAssertTrue(app.descendants(matching: .any)["continueGuest"].firstMatch.exists)
         }

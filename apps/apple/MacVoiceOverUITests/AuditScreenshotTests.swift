@@ -93,6 +93,35 @@ final class AuditScreenshotTests: XCTestCase {
 
     // MARK: Test
 
+    /// Cleanup after an interrupted run: deletes only SSH hosts these tests
+    /// make ("Audit Host …", "SSH Mac Fixture …") and ends only "Audit …"
+    /// terminals. Opt-in: WITERM_HCI_FIXED_APP and WITERM_AUDIT_CLEANUP=1.
+    func testDeleteLeftoverAuditHostsAndTerminals() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let path = environment["WITERM_HCI_FIXED_APP"], environment["WITERM_AUDIT_CLEANUP"] == "1" else {
+            throw XCTSkip("Set WITERM_HCI_FIXED_APP and WITERM_AUDIT_CLEANUP=1")
+        }
+        app = XCUIApplication(url: URL(fileURLWithPath: path))
+        app.launchArguments = launchArguments()
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(mainWindow.waitForExistence(timeout: 15))
+        pause(2)
+        endTerminals(named: "Audit ")
+        let hosts = app.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier BEGINSWITH %@ AND (label BEGINSWITH %@ OR label BEGINSWITH %@)",
+            "sshProfileRow-", "Audit Host ", "SSH Mac Fixture "))
+        for _ in 0..<6 {
+            let row = hosts.firstMatch
+            guard row.exists else { break }
+            row.rightClick()
+            guard app.menuItems["sshDeleteHostMenu"].waitForExistence(timeout: 3) else { app.typeKey(.escape, modifierFlags: []); break }
+            app.menuItems["sshDeleteHostMenu"].click()
+            _ = row.waitForNonExistence(timeout: 10)
+        }
+        XCTAssertFalse(hosts.firstMatch.exists, "A test host is still listed")
+    }
+
     func testCaptureAuditScreens() throws {
         continueAfterFailure = true
         executionTimeAllowance = 1800
@@ -122,6 +151,9 @@ final class AuditScreenshotTests: XCTestCase {
         arguments += variant.hasPrefix("zh") ? ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
                                              : ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         arguments += ["-AppleInterfaceStyle", variant.hasSuffix("dark") ? "Dark" : "Light"]
+        // A DEBUG-only test hook (docs/verification.md); a launch argument
+        // alone can't override a dark system appearance.
+        arguments += ["-witerm.debug.appearance", variant.hasSuffix("dark") ? "dark" : "light"]
         return arguments
     }
 
@@ -406,6 +438,8 @@ final class AuditScreenshotTests: XCTestCase {
                     shot("49-menu-ssh-connected")
                     app.typeKey(.escape, modifierFlags: [])
                     any("sshDisconnect").click()
+                    let confirm = app.buttons["sshConfirmDisconnect"]
+                    if confirm.waitForExistence(timeout: 1) { confirm.click() }
                     _ = any("sshConnectProfile").waitForExistence(timeout: 10)
                 }
             } else {

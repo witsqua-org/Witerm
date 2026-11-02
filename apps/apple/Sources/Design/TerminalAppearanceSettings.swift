@@ -49,7 +49,7 @@ struct TerminalDisplaySections: View {
             }
             .accessibilityIdentifier("terminalColorScheme")
             TerminalSchemePreview(scheme: palette, highContrast: highContrast)
-            Toggle("Increase terminal contrast", isOn: $highContrast).tint(WitermTheme.positive)
+            Toggle("Increase terminal contrast", isOn: $highContrast).witermSwitchTint()
                 .accessibilityIdentifier("terminalHighContrast")
             Button(String(localized: "Restore Display Defaults", bundle: .main)) {
                 fontSize = TerminalFontSize.standard
@@ -73,7 +73,7 @@ struct TerminalFeedbackSections: View {
 
     var body: some View {
         Section {
-            Toggle("Ring the terminal bell", isOn: $bell).tint(WitermTheme.positive)
+            Toggle("Ring the terminal bell", isOn: $bell).witermSwitchTint()
                 .accessibilityIdentifier("terminalBell")
         } header: {
             Text("Bell")
@@ -85,7 +85,7 @@ struct TerminalFeedbackSections: View {
             #endif
         }
         Section {
-            Toggle("Announce output updates", isOn: $announceOutput).tint(WitermTheme.positive)
+            Toggle("Announce output updates", isOn: $announceOutput).witermSwitchTint()
                 .accessibilityIdentifier("terminalAnnounceOutput")
         } header: {
             Text("VoiceOver")
