@@ -494,9 +494,13 @@ struct ContinueOnDeviceSheet: View {
 
     @ViewBuilder private var approveStep: some View {
         if let client = pairing?.pairing?.client {
+            // Not selectable: on macOS 27.2 a selectable Text with padding and
+            // a background under a custom accessibility label sent the label
+            // lookup into endless recursion and crashed the app whenever
+            // VoiceOver or a UI test read this step. The code is compared by
+            // eye, and VoiceOver reads it from the label.
             Text(PairingFingerprint.display(publicKey: client.publicKey))
                 .font(.system(.title3, design: .monospaced))
-                .textSelection(.enabled)
                 .padding(.horizontal, 14).padding(.vertical, 10)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(WitermTheme.statusFill, in: .rect(cornerRadius: 10, style: .continuous))

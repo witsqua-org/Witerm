@@ -4,7 +4,9 @@ import XCTest
 
 /// Opt-in acceptance with an iPhone (or simulator) through a real server,
 /// run together with `MacContinuityFlowTests` on the phone. The two runs
-/// meet through files in WITERM_E2E_DIR. Creates one fresh session, continues
+/// exchange signals through `scripts/e2e-signal-server.py` when
+/// WITERM_E2E_SIGNALS names it (the simulator may not be allowed to read this
+/// runner's container), otherwise through files in WITERM_E2E_DIR. Creates one fresh session, continues
 /// it on the phone (pairing it for that session only, with typing), types
 /// alongside it, then ends the session and revokes that pairing. Nothing
 /// else is touched; remote access through the server must already be on. The
@@ -12,7 +14,8 @@ import XCTest
 /// its own to `witerm-e2e` in its temporary folder.
 @MainActor
 final class PhoneContinuityFlowTests: XCTestCase {
-    private var folder: URL!
+    private var folder: URL?
+    private var signals: E2ESignals?
     private let outbox = FileManager.default.temporaryDirectory.appendingPathComponent("witerm-e2e", isDirectory: true)
     private var app: XCUIApplication!
 
@@ -21,13 +24,18 @@ final class PhoneContinuityFlowTests: XCTestCase {
     }
 
     private func signal(_ name: String, _ text: String = "") {
+        signals?.put(name, text)
         try? Data(text.utf8).write(to: outbox.appendingPathComponent(name), options: .atomic)
     }
 
     private func awaitSignal(_ name: String, timeout: TimeInterval) -> String? {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if let data = try? Data(contentsOf: folder.appendingPathComponent(name)) { return String(decoding: data, as: UTF8.self) }
+            if let signals {
+                if let text = signals.get(name) { return text }
+            } else if let folder, let data = try? Data(contentsOf: folder.appendingPathComponent(name)) {
+                return String(decoding: data, as: UTF8.self)
+            }
             RunLoop.current.run(until: Date().addingTimeInterval(0.5))
         }
         return nil
@@ -47,11 +55,13 @@ final class PhoneContinuityFlowTests: XCTestCase {
     func testPairAndTypeAlongsidePhone() throws {
         continueAfterFailure = false
         let environment = ProcessInfo.processInfo.environment
-        guard let path = environment["WITERM_HCI_FIXED_APP"], let directory = environment["WITERM_E2E_DIR"],
-              let server = environment["WITERM_E2E_SERVER"], let host = URL(string: server)?.host else {
-            throw XCTSkip("Set WITERM_HCI_FIXED_APP, WITERM_E2E_DIR and WITERM_E2E_SERVER")
+        guard let path = environment["WITERM_HCI_FIXED_APP"], let server = environment["WITERM_E2E_SERVER"],
+              let host = URL(string: server)?.host,
+              environment["WITERM_E2E_SIGNALS"] != nil || environment["WITERM_E2E_DIR"] != nil else {
+            throw XCTSkip("Set WITERM_HCI_FIXED_APP, WITERM_E2E_SERVER, and WITERM_E2E_SIGNALS or WITERM_E2E_DIR")
         }
-        folder = URL(fileURLWithPath: directory)
+        folder = environment["WITERM_E2E_DIR"].map { URL(fileURLWithPath: $0) }
+        signals = environment["WITERM_E2E_SIGNALS"].flatMap(URL.init(string:)).map(E2ESignals.init)
         try? FileManager.default.removeItem(at: outbox)
         try FileManager.default.createDirectory(at: outbox, withIntermediateDirectories: true)
         app = XCUIApplication(url: URL(fileURLWithPath: path))
@@ -80,9 +90,23 @@ final class PhoneContinuityFlowTests: XCTestCase {
                 guard let app else { return }
                 // A sheet left open by a failure would block the menu.
                 for button in ["continueCancel", "continueDone"] where app.buttons[button].exists { app.buttons[button].click() }
+                // Settings, left open by the revoke step, covers the session list.
+                let settings = app.windows.matching(identifier: "com_apple_SwiftUI_Settings_window").firstMatch
+                for _ in 0..<3 where settings.exists {
+                    settings.buttons[XCUIIdentifierCloseWindow].firstMatch.click()
+                    RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+                }
+                app.activate()
                 guard row.waitForExistence(timeout: 3) else { return }
-                row.rightClick()
-                app.menuItems["endSessionMenu"].click()
+                if row.isHittable {
+                    row.rightClick()
+                    app.menuItems["endSessionMenu"].click()
+                } else if app.windows.matching(NSPredicate(format: "title == %@", name)).firstMatch.exists {
+                    // The row can be out of reach; Terminal → End Session acts
+                    // on the selected session, which the title shows is this one.
+                    app.menuBars.menuBarItems["Terminal"].click()
+                    app.menuBars.menuItems["End Session"].click()
+                } else { return }
                 let confirm = app.buttons["action-button-1"]
                 if confirm.waitForExistence(timeout: 5) { confirm.click() }
             }
@@ -115,7 +139,8 @@ final class PhoneContinuityFlowTests: XCTestCase {
             app.buttons["continuePrimary"].click()
         }
         XCTAssertTrue(copy.waitForExistence(timeout: 30), "The sheet didn't show a code")
-        XCTAssertTrue(app.sheets.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", host)).firstMatch.exists,
+        // The server line combines its name and Change… into one element.
+        XCTAssertTrue(app.sheets.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", host)).firstMatch.exists,
                       "The code step didn't name its server")
         shot("02-code")
         NSPasteboard.general.clearContents()
@@ -173,5 +198,33 @@ final class PhoneContinuityFlowTests: XCTestCase {
         XCTAssertTrue(confirm.waitForExistence(timeout: 5))
         confirm.click()
         RunLoop.current.run(until: Date().addingTimeInterval(2))
+    }
+}
+
+/// Signals exchanged with the phone's runner through the loopback server in
+/// `scripts/e2e-signal-server.py`: PUT stores one, GET returns it or 404.
+struct E2ESignals {
+    let base: URL
+
+    private final class Box: @unchecked Sendable { var text: String? }
+
+    func put(_ name: String, _ text: String) {
+        var request = URLRequest(url: base.appendingPathComponent("signal/\(name)"))
+        request.httpMethod = "PUT"
+        request.httpBody = Data(text.utf8)
+        let done = DispatchSemaphore(value: 0)
+        URLSession.shared.dataTask(with: request) { _, _, _ in done.signal() }.resume()
+        _ = done.wait(timeout: .now() + 5)
+    }
+
+    func get(_ name: String) -> String? {
+        let box = Box()
+        let done = DispatchSemaphore(value: 0)
+        URLSession.shared.dataTask(with: base.appendingPathComponent("signal/\(name)")) { data, response, _ in
+            if (response as? HTTPURLResponse)?.statusCode == 200, let data { box.text = String(decoding: data, as: UTF8.self) }
+            done.signal()
+        }.resume()
+        _ = done.wait(timeout: .now() + 5)
+        return box.text
     }
 }

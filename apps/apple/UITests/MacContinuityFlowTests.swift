@@ -1,15 +1,17 @@
 import XCTest
 
 /// Opt-in acceptance with a Mac through a real server, run together with the
-/// Mac's `PhoneContinuityFlowTests`. The two runs meet through files in
-/// WITERM_E2E_DIR. Continues the Mac's fresh session here (the session opens
+/// Mac's `PhoneContinuityFlowTests`. The two runs exchange signals through
+/// `scripts/e2e-signal-server.py` when WITERM_E2E_SIGNALS names it, otherwise
+/// through files; screenshots go to WITERM_E2E_DIR. Continues the Mac's fresh session here (the session opens
 /// as soon as the Mac approves), types alongside the Mac, and exercises the
 /// terminal's touch gestures.
 @MainActor
 final class MacContinuityFlowTests: XCTestCase {
     private var folder: URL!
-    /// Where the Mac's sandboxed runner writes its files.
-    private var macFolder: URL!
+    /// Where the Mac's sandboxed runner writes its files, without a signal server.
+    private var macFolder: URL?
+    private var signals: E2ESignals?
     private var app: XCUIApplication!
 
     private func shot(_ name: String) {
@@ -17,13 +19,18 @@ final class MacContinuityFlowTests: XCTestCase {
     }
 
     private func signal(_ name: String, _ text: String = "") {
+        if let signals { signals.put(name, text); return }
         try? Data(text.utf8).write(to: folder.appendingPathComponent(name), options: .atomic)
     }
 
     private func awaitSignal(_ name: String, timeout: TimeInterval) -> String? {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if let data = try? Data(contentsOf: macFolder.appendingPathComponent(name)) { return String(decoding: data, as: UTF8.self) }
+            if let signals {
+                if let text = signals.get(name) { return text }
+            } else if let macFolder, let data = try? Data(contentsOf: macFolder.appendingPathComponent(name)) {
+                return String(decoding: data, as: UTF8.self)
+            }
             RunLoop.current.run(until: Date().addingTimeInterval(0.5))
         }
         return nil
@@ -34,14 +41,19 @@ final class MacContinuityFlowTests: XCTestCase {
     func testPairOpenAndTypeAlongsideMac() throws {
         continueAfterFailure = false
         let environment = ProcessInfo.processInfo.environment
-        guard let directory = environment["WITERM_E2E_DIR"], let macDirectory = environment["WITERM_E2E_MAC_DIR"],
-              let server = environment["WITERM_E2E_SERVER"] else {
-            throw XCTSkip("Set WITERM_E2E_DIR, WITERM_E2E_MAC_DIR and WITERM_E2E_SERVER")
+        guard let directory = environment["WITERM_E2E_DIR"], let server = environment["WITERM_E2E_SERVER"],
+              environment["WITERM_E2E_SIGNALS"] != nil || environment["WITERM_E2E_MAC_DIR"] != nil else {
+            throw XCTSkip("Set WITERM_E2E_DIR, WITERM_E2E_SERVER, and WITERM_E2E_SIGNALS or WITERM_E2E_MAC_DIR")
         }
         folder = URL(fileURLWithPath: directory)
-        macFolder = URL(fileURLWithPath: macDirectory)
+        signals = environment["WITERM_E2E_SIGNALS"].flatMap(URL.init(string:)).map(E2ESignals.init)
+        macFolder = environment["WITERM_E2E_MAC_DIR"].map { URL(fileURLWithPath: $0) }
         app = XCUIApplication()
+        // A launch-only snippet, never saved, for typing without software keys.
+        let snippet = #"[{"id":"0F3D8E2A-6C11-4B7A-9E55-2A9C4D1B7E31","name":"Phone typed","text":"echo phonetyped","runsImmediately":true}]"#
+        let snippetHex = Data(snippet.utf8).map { String(format: "%02x", $0) }.joined()
         app.launchArguments = ["-witerm.onboarding.completedVersion", "1", "-witerm.serverAddresses", "(\"\(server)\")",
+                               "-witerm.commandSnippets", "<\(snippetHex)>",
                                "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
                                // A blinking caret never lets XCTest see the app idle.
                                "--witerm-ui-test-steady-terminal-cursor"]
@@ -83,14 +95,27 @@ final class MacContinuityFlowTests: XCTestCase {
         let keyboard = app.keyboards.firstMatch
         XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "The keyboard didn't come up with the connection")
         // The terminal isn't an accessibility text field (its reading view is),
-        // so type with real software keys rather than app.typeText.
-        for character in "echo phonetyped" {
-            let key = character == " " ? keyboard.keys["space"] : keyboard.keys[String(character)]
-            XCTAssertTrue(key.waitForExistence(timeout: 3), "Missing key \(character)")
-            key.tap()
+        // so type with real software keys. After an earlier typeText, XCTest's
+        // virtual hardware keyboard can stay attached and the software keys
+        // sit off screen; then type the same command with the key row's
+        // Snippets key.
+        if keyboard.keys["e"].isHittable {
+            for character in "echo phonetyped" {
+                let key = character == " " ? keyboard.keys["space"] : keyboard.keys[String(character)]
+                XCTAssertTrue(key.waitForExistence(timeout: 3), "Missing key \(character)")
+                key.tap()
+            }
+            let returnKey = keyboard.buttons["return"].exists ? keyboard.buttons["return"] : keyboard.keys["return"]
+            returnKey.tap()
+        } else {
+            let snippetsKey = app.buttons["terminalKey-snippets"]
+            XCTAssertTrue(snippetsKey.waitForExistence(timeout: 5))
+            for _ in 0..<4 where !snippetsKey.isHittable { app.buttons["terminalKey-escape"].swipeLeft() }
+            snippetsKey.tap()
+            let item = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Phone typed")).firstMatch
+            XCTAssertTrue(item.waitForExistence(timeout: 5), "The Snippets key must list the snippet")
+            item.tap()
         }
-        let returnKey = keyboard.buttons["return"].exists ? keyboard.buttons["return"] : keyboard.keys["return"]
-        returnKey.tap()
         RunLoop.current.run(until: Date().addingTimeInterval(1.5))
         shot("08-typed")
         signal("phone-typed")
@@ -114,5 +139,33 @@ final class MacContinuityFlowTests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 15), "The edge swipe didn't go back")
         shot("11-back")
         signal("phone-done")
+    }
+}
+
+/// Signals exchanged with the Mac's runner through the loopback server in
+/// `scripts/e2e-signal-server.py`: PUT stores one, GET returns it or 404.
+struct E2ESignals {
+    let base: URL
+
+    private final class Box: @unchecked Sendable { var text: String? }
+
+    func put(_ name: String, _ text: String) {
+        var request = URLRequest(url: base.appendingPathComponent("signal/\(name)"))
+        request.httpMethod = "PUT"
+        request.httpBody = Data(text.utf8)
+        let done = DispatchSemaphore(value: 0)
+        URLSession.shared.dataTask(with: request) { _, _, _ in done.signal() }.resume()
+        _ = done.wait(timeout: .now() + 5)
+    }
+
+    func get(_ name: String) -> String? {
+        let box = Box()
+        let done = DispatchSemaphore(value: 0)
+        URLSession.shared.dataTask(with: base.appendingPathComponent("signal/\(name)")) { data, response, _ in
+            if (response as? HTTPURLResponse)?.statusCode == 200, let data { box.text = String(decoding: data, as: UTF8.self) }
+            done.signal()
+        }.resume()
+        _ = done.wait(timeout: .now() + 5)
+        return box.text
     }
 }

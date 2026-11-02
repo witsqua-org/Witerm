@@ -182,7 +182,6 @@ struct MacDevicesView: View {
                         .accessibilityLabel(String(localized: "Edit \(device.name)", bundle: .main))
                         .accessibilityIdentifier("editDevice-\(device.id)")
                 }
-                .accessibilityElement(children: .combine)
             }
             if pairing?.device != nil, pairedGrants.isEmpty {
                 Text(String(localized: "No paired devices yet.", bundle: .main))
@@ -195,7 +194,6 @@ struct MacDevicesView: View {
         } header: {
             Text(String(localized: "Paired Devices", bundle: .main))
         }
-        .accessibilityIdentifier("pairedDevices")
     }
 
     private func summary(_ grant: DeviceGrant) -> String {
