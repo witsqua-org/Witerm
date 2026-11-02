@@ -152,6 +152,12 @@ final class PhoneContinuityFlowTests: XCTestCase {
         // Approve with the defaults: this session only, and typing.
         let approve = app.buttons["continueApprove"]
         XCTAssertTrue(approve.waitForExistence(timeout: 240), "No pairing request arrived")
+        // A phone that was already paired asks again; approving replaces its access.
+        let replaces = app.descendants(matching: .any)["pairingReplacesGrant"].firstMatch.exists
+        print("WITERM_E2E_REPAIR=\(replaces)")
+        if environment["WITERM_E2E_EXPECT_REPAIR"] == "1" {
+            XCTAssertTrue(replaces, "A re-pairing request should say it replaces the current access")
+        }
         shot("03-request")
         approve.click()
         let done = app.buttons["continueDone"]
@@ -183,7 +189,9 @@ final class PhoneContinuityFlowTests: XCTestCase {
         XCTAssertNotNil(awaitSignal("phone-done", timeout: 300), "The phone didn't finish")
         shot("06-after")
 
-        // Revoke only this test's pairing, in Settings → Devices.
+        // Revoke only this test's pairing, in Settings → Devices, unless the
+        // next run should start paired to check re-pairing.
+        if environment["WITERM_E2E_KEEP_PAIRING"] == "1" { return }
         app.typeKey(",", modifierFlags: .command)
         let devicesTab = app.toolbars.buttons["Devices"].firstMatch
         XCTAssertTrue(devicesTab.waitForExistence(timeout: 10))

@@ -471,11 +471,10 @@ private struct ContinueWaitStep: View {
     private func requestPairing() {
         guard case .pairing(let invitation) = parsed, let pairing, pairing.device != nil, !requested else { return }
         requested = true
-        // Already paired with that device: its pairing applies as it is.
-        if let existing = pairing.grants.first(where: { $0.host.publicKey == invitation.hostPublicKey }) {
-            approvedGrant = existing
-            return
-        }
+        // Always ask, even when already paired with that device: the Mac shows
+        // a pairing code only when it expects a request (a new device, or
+        // re-pairing, where approving replaces the current access), and a
+        // grant kept here may already be revoked there.
         pairing.prepare(invitation.urlString)
         pairing.join()
     }
