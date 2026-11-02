@@ -31,7 +31,7 @@
 - Project documentation is written in English.
 - Do not commit `.env`, build products, or local signing information.
 - Native simulator Keychain acceptance requires a normally signed build. `CODE_SIGNING_ALLOWED=NO` proves compilation only; without a simulated application identity, Keychain access is denied.
-- Reuse the retained iPhone 18 Pro (`2A0B27E3-B897-4E44-9BCF-8302250A00C2`) for simulator verification. Never create devices or erase existing device data. If needed, shut down devices started by tests while retaining their data.
+- For simulator verification, reuse an existing iPhone 18 Pro simulator on the current Mac. The target device is changeable and machine-specific: choose it by UDID from `xcrun simctl list devices`, preferring one that is already booted and available. Never create devices or erase existing device data. If needed, shut down devices started by tests while retaining their data.
 - Keep only one Witerm instance during Mac verification. Before changing build directories, quit the old instance by its exact process path; do not infer successful exit from a keyboard shortcut.
 - The local service uses the registered `group.com.witerm.$(DEVELOPMENT_TEAM)` App Group, authorized by both parent/helper profiles, and an SMAppService LaunchAgent. Mac parent and helper follow the non-sandboxed Developer ID path while retaining signing and Hardened Runtime. iOS sandboxing is unchanged. Do not use root or take over other terminals. SwiftTerm is pinned to 1.19.0.
 
