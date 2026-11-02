@@ -32,7 +32,7 @@ import XCTest
         for _ in 0..<4 where !name.isHittable || name.frame.maxY > middle { app.swipeUp() }
         name.tap(); name.typeText(profileName)
         let password = app.secureTextFields.matching(identifier: "sshHostPassword").firstMatch
-        password.tap(); password.typeText("witerm-fixture-only")
+        reveal(password, in: app); password.tap(); password.typeText("witerm-fixture-only")
         app.buttons["sshConnect"].tap()
         let identity = app.staticTexts["sshHostFingerprint"]
         let terminal = app.descendants(matching: .any)["sshTerminalSurface"].firstMatch
@@ -116,6 +116,19 @@ import XCTest
         // for explicit cleanup instead of touching another host or credential.
         let failure = cleanupFixtures(app, name: profileName, expectedFingerprint: fingerprint)
         print("SSH_FIXTURE_CLEANUP completed=\(failure == nil)" + (failure.map { " reason=\($0)" } ?? ""))
+    }
+
+    /// Scrolling down to a field lower in the form can leave one above it under
+    /// the navigation bar, where a tap lands on the bar. Drag the form back
+    /// until the element is below the bar.
+    private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
+        XCTAssertTrue(element.waitForExistence(timeout: 5))
+        let bar = app.navigationBars.firstMatch
+        for _ in 0..<4 where !element.isHittable || (bar.exists && element.frame.minY < bar.frame.maxY + 8) {
+            let window = app.windows.firstMatch
+            let start = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+            start.press(forDuration: 0.05, thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.55)))
+        }
     }
 
     private func tapVisibleControl(_ element: XCUIElement, in app: XCUIApplication) {
@@ -210,6 +223,84 @@ import XCTest
             "sshProfileRow-", name, "，已连接")).firstMatch
     }
 
+    /// In a live terminal: the Snippets key types a saved command, and Find in
+    /// Terminal counts its matches without sending anything to the shell.
+    /// The snippet exists only in this launch's arguments, never in saved
+    /// preferences.
+    func testSnippetKeyAndFindBarInLiveTerminal() throws {
+        continueAfterFailure = false
+        executionTimeAllowance = 240
+        let environment = ProcessInfo.processInfo.environment
+        guard let port = environment["WITERM_SSH_UI_PORT"], Int(port) != nil,
+              let fingerprint = environment["WITERM_SSH_UI_FINGERPRINT"], fingerprint.hasPrefix("SHA256:") else {
+            throw XCTSkip("Configure a disposable SSH UI fixture explicitly")
+        }
+        let profileName = "SSH 验收 iOS 查找"
+        let marker = "witerm-find-marker"
+        let snippet = #"[{"id":"6B1C2E0A-5A43-4F7E-9C8B-1D2E3F405162","name":"Find marker","text":"echo "# + marker + #"","runsImmediately":true}]"#
+        let hex = Data(snippet.utf8).map { String(format: "%02x", $0) }.joined()
+        let app = XCUIApplication()
+        app.launchArguments = ["--witerm-ui-test-steady-terminal-cursor", "-witerm.commandSnippets", "<\(hex)>",
+                               "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        addTeardownBlock { await MainActor.run { app.terminate() } }
+        app.launch()
+        let sshTab = app.tabBars.buttons.element(boundBy: 0)
+        XCTAssertTrue(sshTab.waitForExistence(timeout: 10))
+        sshTab.tap()
+        connectNewHost(app, name: profileName, port: port, fingerprint: fingerprint)
+        let terminal = app.descendants(matching: .any)["sshTerminalSurface"].firstMatch
+
+        // The Snippets key lists the saved command and types it with Return.
+        tapVisibleControl(app.buttons["sshKeyboard"], in: app)
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        let snippetsKey = app.buttons["terminalKey-snippets"]
+        XCTAssertTrue(snippetsKey.waitForExistence(timeout: 5))
+        for _ in 0..<4 where !snippetsKey.isHittable { app.buttons["terminalKey-escape"].swipeLeft() }
+        XCTAssertTrue(snippetsKey.isHittable, "The Snippets key must be reachable in the key row")
+        snippetsKey.tap()
+        let item = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Find marker")).firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: 5), "The Snippets key must list the saved snippet")
+        item.tap()
+        // The command line and its output: the shell ran it once.
+        let ran = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value CONTAINS %@ OR label CONTAINS %@", "~$ echo " + marker, "~$ echo " + marker),
+            object: terminal)
+        wait(for: [ran], timeout: 10)
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        let ranShot = XCTAttachment(screenshot: app.screenshot())
+        ranShot.name = "ios-ssh-snippet"; ranShot.lifetime = .keepAlways; add(ranShot)
+        tapVisibleControl(app.buttons["sshKeyboard"], in: app)
+
+        // Find counts both lines and reports no match for anything else.
+        tapVisibleControl(app.buttons["terminalFind"], in: app)
+        let field = app.textFields["terminalFindField"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText(marker)
+        let count = app.staticTexts["terminalFindCount"]
+        XCTAssertTrue(count.waitForExistence(timeout: 5))
+        let two = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label ENDSWITH %@", "共 2 个"), object: count)
+        wait(for: [two], timeout: 5)
+        let findShot = XCTAttachment(screenshot: app.screenshot())
+        findShot.name = "ios-ssh-find"; findShot.lifetime = .keepAlways; add(findShot)
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: marker.count) + "zqxjv")
+        let none = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "无匹配项"), object: count)
+        wait(for: [none], timeout: 5)
+        tapVisibleControl(app.buttons["terminalFindDone"], in: app)
+        XCTAssertFalse(field.waitForExistence(timeout: 2))
+        // Searching never typed into the shell.
+        let value = terminal.value as? String ?? terminal.label
+        XCTAssertFalse(value.contains("zqxjv"), "Find must not send input to the terminal")
+
+        tapVisibleControl(app.buttons["sshSessionActions"], in: app)
+        app.buttons["断开"].tap()
+        XCTAssertTrue(app.buttons["sshReconnect"].waitForExistence(timeout: 5))
+        tapVisibleControl(app.buttons["sshShowHosts"], in: app)
+        XCTAssertTrue(app.buttons["newSSHProfile"].waitForExistence(timeout: 5))
+        let failure = cleanupFixtures(app, name: profileName, expectedFingerprint: fingerprint)
+        print("SSH_FIXTURE_CLEANUP completed=\(failure == nil)" + (failure.map { " reason=\($0)" } ?? ""))
+        XCTAssertNil(failure)
+    }
+
     /// Creates a fixture host from the list, verifies its key, and waits for
     /// the shell prompt.
     private func connectNewHost(_ app: XCUIApplication, name profileName: String, port: String, fingerprint: String) {
@@ -225,7 +316,7 @@ import XCTest
         for _ in 0..<4 where !name.isHittable || name.frame.maxY > middle { app.swipeUp() }
         name.tap(); name.typeText(profileName)
         let password = app.secureTextFields.matching(identifier: "sshHostPassword").firstMatch
-        password.tap(); password.typeText("witerm-fixture-only")
+        reveal(password, in: app); password.tap(); password.typeText("witerm-fixture-only")
         app.buttons["sshConnect"].tap()
         declinePasswordOffer(app, timeout: 3)
         let identity = app.staticTexts["sshHostFingerprint"]
@@ -256,7 +347,7 @@ import XCTest
         sshTab.tap()
         XCTAssertTrue(app.buttons["newSSHProfile"].waitForExistence(timeout: 5))
         // Every fixture name these tests use; each is unique to them.
-        for name in ["SSH 验收 iOS 1026", "SSH 验收 iOS 双会话 A", "SSH 验收 iOS 双会话 B"] {
+        for name in ["SSH 验收 iOS 1026", "SSH 验收 iOS 双会话 A", "SSH 验收 iOS 双会话 B", "SSH 验收 iOS 查找"] {
             let failure = cleanupFixtures(app, name: name, expectedFingerprint: nil, anyLoopbackPin: true)
             XCTAssertNil(failure, "\(name): \(failure ?? "")")
         }
@@ -308,7 +399,9 @@ import XCTest
             let identifier = row.identifier
             let suffix = String(identifier.dropFirst("sshProfileRow-".count))
             guard UUID(uuidString: suffix) != nil else { return "unexpected row identifier" }
-            let rowPort = (row.value as? String ?? "").components(separatedBy: ":").last ?? ""
+            // The address may be followed by its state, such as "，已断开".
+            let address = (row.value as? String ?? "").components(separatedBy: "，").first ?? ""
+            let rowPort = address.components(separatedBy: ":").last ?? ""
             guard Int(rowPort) != nil else { return "unexpected row value" }
             let menu = app.buttons["sshProfileActions-\(suffix)"]
 

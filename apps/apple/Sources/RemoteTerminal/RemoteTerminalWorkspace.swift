@@ -225,7 +225,7 @@ struct RemoteTerminalWorkspace: View {
                 .disabled(model.busy != nil)
             }
             if model.loaded, model.sessions.isEmpty, model.busy == nil {
-                ContentUnavailableView(String(localized: "No Available Sessions", bundle: .main), systemImage: "terminal", description: Text(String(localized: "Share a terminal session on the device, then pull down to refresh.", bundle: .main)))
+                ContentUnavailableView(String(localized: "No Available Sessions", bundle: .main), systemImage: "terminal", description: Text(String(localized: "On the other device, choose Continue on Another Device for a session, then pull down to refresh.", bundle: .main)))
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("remoteSessionsEmpty")
             }

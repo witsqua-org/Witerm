@@ -5,7 +5,9 @@ import VisionKit
 
 /// The camera for an invitation code, inside the continue flow. Scanning
 /// only supplies text to the normal review; it never opens a scanned URL.
-/// Without a camera, or without permission, it says how to paste instead.
+/// Without a camera, or without permission, it shrinks to a short note on
+/// how to paste instead, so paste and typing stay on screen (and above the
+/// keyboard) rather than below an empty camera frame.
 struct InvitationScanner: View {
     let onInvitation: (String) -> Void
     @Environment(\.openURL) private var openURL
@@ -13,38 +15,33 @@ struct InvitationScanner: View {
     @State private var cameraAllowed: Bool?
     @State private var failed = false
 
+    /// Whether this device has a camera that can scan codes at all.
+    static var isSupported: Bool { DataScannerViewController.isSupported }
+
     var body: some View {
-        ZStack {
-            Color.black
-            if !DataScannerViewController.isSupported || failed {
-                message(String(localized: "Scanning Is Unavailable", bundle: .main), systemImage: "camera",
-                        detail: String(localized: "Copy the invitation on the other device, then paste it below.", bundle: .main))
+        Group {
+            if !Self.isSupported || failed {
+                FallbackNote(title: String(localized: "Scanning Is Unavailable", bundle: .main),
+                             detail: String(localized: "Copy the invitation on the other device, then paste it below.", bundle: .main))
+                    .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("pairingScannerUnavailable")
             } else if cameraAllowed == false {
-                VStack(spacing: 12) {
-                    message(String(localized: "Camera Access Needed", bundle: .main), systemImage: "camera",
-                            detail: String(localized: "Allow camera access in Settings to scan, or paste the invitation below.", bundle: .main))
+                FallbackNote(title: String(localized: "Camera Access Needed", bundle: .main),
+                             detail: String(localized: "Allow camera access in Settings to scan, or paste the invitation below.", bundle: .main)) {
                     Button(String(localized: "Open Settings", bundle: .main)) {
                         if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
                     }
                     .buttonStyle(.bordered)
-                    .tint(.white)
+                    .touchTarget()
                 }
-            } else if cameraAllowed == true {
-                PairingCamera(failed: $failed) { onInvitation($0) }
-                    .overlay(alignment: .bottom) {
-                        Text(String(localized: "Point at the code on the other device", bundle: .main))
-                            .font(.footnote)
-                            .foregroundStyle(.white)
-                            .padding(.bottom, 14)
-                    }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("pairingScannerDenied")
             } else {
-                ProgressView().tint(.white)
+                camera
             }
         }
-        .clipShape(.rect(cornerRadius: 28, style: .continuous))
         .task(id: scenePhase) {
-            guard scenePhase == .active, DataScannerViewController.isSupported else { return }
+            guard scenePhase == .active, Self.isSupported else { return }
             let allowed = await AVCaptureDevice.requestAccess(for: .video)
             guard !Task.isCancelled else { return }
             cameraAllowed = allowed
@@ -52,15 +49,59 @@ struct InvitationScanner: View {
         }
     }
 
-    private func message(_ title: String, systemImage: String, detail: String) -> some View {
-        VStack(spacing: 8) {
-            Image(systemName: systemImage).font(.title).accessibilityHidden(true)
-            Text(title).font(.headline)
-            Text(detail).font(.subheadline).multilineTextAlignment(.center).opacity(0.85)
+    /// The live camera in a square, or a placeholder while access is decided.
+    private var camera: some View {
+        ZStack {
+            Color.black
+            if cameraAllowed == true {
+                PairingCamera(failed: $failed) { onInvitation($0) }
+                    .overlay(alignment: .bottom) {
+                        Text(String(localized: "Point at the code on the other device", bundle: .main))
+                            .font(.footnote)
+                            .foregroundStyle(.white)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 14)
+                    }
+            } else {
+                ProgressView().tint(.white)
+            }
         }
-        .foregroundStyle(.white)
-        .padding(24)
-        .accessibilityElement(children: .combine)
+        .aspectRatio(1, contentMode: .fit)
+        .clipShape(.rect(cornerRadius: 28, style: .continuous))
+        .frame(maxWidth: 420)
+        .frame(maxWidth: .infinity)
+    }
+}
+
+/// Why scanning isn't possible and what to do instead. It takes the height
+/// of its text, so it wraps at every text size instead of truncating.
+private struct FallbackNote<Actions: View>: View {
+    let title: String
+    let detail: String
+    let actions: Actions
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    init(title: String, detail: String, @ViewBuilder actions: () -> Actions = { EmptyView() }) {
+        self.title = title
+        self.detail = detail
+        self.actions = actions()
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            if !typeSize.isAccessibilitySize {
+                IconTile(systemImage: "camera", tint: WitermTheme.secondary)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.headline).foregroundStyle(WitermTheme.ink)
+                Text(detail).font(.subheadline).foregroundStyle(WitermTheme.secondary)
+                actions.padding(.top, 6)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .witermCard()
     }
 }
 

@@ -21,7 +21,7 @@ struct RemoteTerminalIssue {
                 recovery = String(localized: "Check that the device is online and allows Witerm remote access.", bundle: .main)
             case .untrusted, .revoked:
                 title = String(localized: "Device Access Unavailable", bundle: .main)
-                recovery = String(localized: "Check the device’s authorization in Device Pairing.", bundle: .main)
+                recovery = String(localized: "This device’s access was revoked or can’t be verified. On the other device, choose Continue on Another Device to pair again.", bundle: .main)
             case .unauthorized:
                 title = String(localized: "Unable to Verify Device Identity", bundle: .main)
                 recovery = String(localized: "Unlock your device and check the network, then try again.", bundle: .main)

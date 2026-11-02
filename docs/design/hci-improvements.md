@@ -82,3 +82,14 @@ From an audit of the Mac app and service on 2026-11-02, against the honest-statu
 | 3 | Consistency | `witerm sessions` reports private sessions and paused typing (also in JSON), and points to Settings → Devices instead of the old Paired Devices. | [CLIRunner](../../apps/mac-agent/Sources/WitermCLI/CLIRunner.swift) |
 | 4 | Continuity headroom | The server gives tunnel joins their own per-device budget and lets a Mac hold 8 tunnels, so a second phone or tablet no longer spends the first one's allowance. | [pairing/relay.go](../../server/internal/pairing/relay.go), [relay.go](../../server/internal/relay/relay.go) |
 
+## Round 6: iOS
+
+iOS continuation and terminal tools, from a simulator review on 2026-11-02 (iPhone 18 Pro, no camera).
+
+| # | Principle | Change | Main code |
+|---|---|---|---|
+| 1 | Error prevention, accessibility | Without a camera, or without camera permission, the continue sheet shows a short note instead of a square black camera frame, so Paste is on the first screen. At accessibility text sizes the note wraps instead of truncating, and Paste and Type Invitation… come first. | [InvitationScanner](../../apps/apple/Sources/Pairing/InvitationScanner.swift), [ContinueFromDeviceFlow](../../apps/apple/Sources/Continuity/ContinueFromDeviceFlow.swift) |
+| 2 | Task, shortcuts | Typing an invitation puts the camera away, so the field and Continue stay above the keyboard (Continue used to be hidden under it), and Return continues instead of adding a line. Scan a Code Instead goes back to the camera on devices that have one. | [ContinueFromDeviceFlow](../../apps/apple/Sources/Continuity/ContinueFromDeviceFlow.swift) |
+| 3 | Specific recovery | After a typed or pasted invitation, the way back is Use Another Invitation, which clears the used text; Scan Again stays for scanned codes. A revoked device and an empty session list point to Continue on Another Device instead of a "Device Pairing" screen that no longer exists. | [ContinueFromDeviceFlow](../../apps/apple/Sources/Continuity/ContinueFromDeviceFlow.swift), [RemoteTerminalModel](../../apps/apple/Sources/RemoteTerminal/RemoteTerminalModel.swift), [RemoteTerminalWorkspace](../../apps/apple/Sources/RemoteTerminal/RemoteTerminalWorkspace.swift) |
+| 4 | Feedback, honest status | When the server refuses a request (an expired or used invitation, found against the live server), the waiting screen shows only why and the way back. It no longer keeps asking to compare this device's code and choose Approve, and Cancel Request becomes Cancel. | [ContinueFromDeviceFlow](../../apps/apple/Sources/Continuity/ContinueFromDeviceFlow.swift) |
+| 5 | Consistency | Paired device rows in Devices no longer repeat the server name, which the section header already gives when there are several servers, as in Terminals. | [DevicesView](../../apps/apple/Sources/Mobile/DevicesView.swift) |

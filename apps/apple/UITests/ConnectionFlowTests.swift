@@ -202,6 +202,9 @@ final class ConnectionFlowTests: XCTestCase {
         let app = launchApp(extra: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
         openContinue(app)
         let paste = app.buttons["pasteInvitation"]
+        // At accessibility sizes the actions come first, ahead of the explanations.
+        XCTAssertTrue(paste.isHittable, "Paste must be on the first screen at accessibility text sizes")
+        XCTAssertTrue(app.buttons["typeInvitation"].isHittable)
         for _ in 0..<4 where !paste.isHittable { app.swipeUp() }
         XCTAssertTrue(paste.isHittable)
         XCTAssertGreaterThanOrEqual(paste.frame.height, 44)
@@ -259,10 +262,62 @@ final class ConnectionFlowTests: XCTestCase {
         let app = launchApp(address: "http://localhost:37429")
         openContinue(app)
         // The retained simulator has no camera: the flow still offers paste and typing.
-        XCTAssertTrue(app.descendants(matching: .any)["pairingScannerUnavailable"].firstMatch.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["pasteInvitation"].exists)
-        XCTAssertTrue(app.buttons["typeInvitation"].exists)
+        let note = app.descendants(matching: .any)["pairingScannerUnavailable"].firstMatch
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        // A short note, not an empty square camera frame above the actions.
+        XCTAssertLessThan(note.frame.height, app.windows.firstMatch.frame.width * 0.5)
+        XCTAssertTrue(app.buttons["pasteInvitation"].isHittable)
+        XCTAssertTrue(app.buttons["typeInvitation"].isHittable)
         capture("12-scanner-fallback", app: app)
+    }
+
+    /// Opt-in, against a real server (WITERM_UI_LIVE_SERVER): a request the
+    /// server refuses says why and stops asking for approval. The invitation
+    /// is generated here with a random ID, so it reaches no device.
+    func testFailedRequestStopsAskingForApproval() throws {
+        guard let server = ProcessInfo.processInfo.environment["WITERM_UI_LIVE_SERVER"] else {
+            throw XCTSkip("Set WITERM_UI_LIVE_SERVER to a continuation server")
+        }
+        let app = launchApp(address: server, language: "en")
+        openContinue(app, typing: pairingLink(server: server, id: UUID().uuidString.lowercased()))
+        let request = app.buttons["joinPairing"]
+        XCTAssertTrue(request.waitForExistence(timeout: 5))
+        request.tap()
+        let failure = app.descendants(matching: .any)["pairingError"].firstMatch
+        XCTAssertTrue(failure.waitForExistence(timeout: 30), "The refused request must say so")
+        XCTAssertFalse(app.staticTexts["This Device’s Code"].exists, "A failed request must not show the code to approve")
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "choose Approve")).firstMatch.exists)
+        XCTAssertEqual(app.buttons["cancelContinueRequest"].label, "Cancel")
+        capture("15-refused-request", app: app)
+        app.buttons["continueStartOver"].tap()
+        XCTAssertTrue(app.buttons["pasteInvitation"].waitForExistence(timeout: 5))
+    }
+
+    /// Typing an invitation keeps the field and Continue above the keyboard,
+    /// and Return continues. Going back for another invitation clears it.
+    func testTypedInvitationStaysAboveKeyboard() {
+        let app = launchApp(address: "http://localhost:37429")
+        openContinue(app)
+        app.buttons["typeInvitation"].tap()
+        let field = app.descendants(matching: .any)["sessionInvitationField"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "Type Invitation… must focus the field")
+        let proceed = app.buttons["preparePairing"]
+        XCTAssertTrue(proceed.exists)
+        XCTAssertLessThanOrEqual(field.frame.maxY, keyboard.frame.minY, "The field is under the keyboard")
+        XCTAssertLessThanOrEqual(proceed.frame.maxY, keyboard.frame.minY, "Continue is under the keyboard")
+        capture("14-typing", app: app)
+        // Only review a locally generated invitation; never submit it.
+        field.typeText(pairingLink(server: "http://localhost:37429", id: "00000000-0000-4000-8000-000000000003") + "\n")
+        let review = app.buttons["joinPairing"]
+        XCTAssertTrue(review.waitForExistence(timeout: 5), "Return must continue to the review")
+        let startOver = app.buttons["continueStartOver"]
+        XCTAssertTrue(startOver.exists)
+        XCTAssertEqual(startOver.label, "使用其他邀请", "A typed invitation goes back to typing or pasting, not scanning")
+        startOver.tap()
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        XCTAssertFalse((field.value as? String ?? "").contains("witerm://"), "The used invitation must be cleared")
     }
 
     /// An invitation naming a server you haven't added asks first and adds

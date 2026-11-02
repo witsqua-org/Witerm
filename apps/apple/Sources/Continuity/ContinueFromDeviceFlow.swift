@@ -20,6 +20,7 @@ struct ContinueFromDeviceFlow: View {
     let opened: (ConnectionModel, DeviceGrant) -> Void
     @Environment(ServerList.self) private var servers
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var path: [Route] = []
     @State private var problem: String?
     @State private var typing = false
@@ -31,7 +32,7 @@ struct ContinueFromDeviceFlow: View {
     /// state that changed after it was pushed.
     enum Route: Hashable {
         case check(Parsed, scanned: Bool)
-        case wait(Parsed)
+        case wait(Parsed, scanned: Bool)
     }
 
     enum Parsed: Hashable {
@@ -75,9 +76,11 @@ struct ContinueFromDeviceFlow: View {
                 .navigationDestination(for: Route.self) { route in
                     switch route {
                     case .check(let parsed, let scanned):
-                        ContinueCheckStep(parsed: parsed, scanned: scanned, scanAgain: scanAgain) { path.append(.wait(parsed)) }
-                    case .wait(let parsed):
-                        ContinueWaitStep(parsed: parsed, scanAgain: scanAgain) { server, grant in
+                        ContinueCheckStep(parsed: parsed, scanned: scanned, startOver: startOver) {
+                            path.append(.wait(parsed, scanned: scanned))
+                        }
+                    case .wait(let parsed, let scanned):
+                        ContinueWaitStep(parsed: parsed, scanned: scanned, startOver: startOver) { server, grant in
                             dismiss()
                             opened(server, grant)
                         }
@@ -92,56 +95,100 @@ struct ContinueFromDeviceFlow: View {
 
     // MARK: Scan
 
+    /// The camera first, then paste. Typing an invitation puts the camera
+    /// away, so the field and Continue stay above the keyboard. At
+    /// accessibility text sizes the actions come first, ahead of the
+    /// explanations they would otherwise follow by several screens.
     private var scanStep: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                InvitationScanner { value in read(value, scanned: true) }
-                    .id(scanID)
-                    .aspectRatio(1, contentMode: .fit)
-                    .frame(maxWidth: 420)
-                    .frame(maxWidth: .infinity)
                 if let problem {
                     Label(problem, systemImage: "exclamationmark.circle")
                         .font(.subheadline).foregroundStyle(WitermTheme.warning)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("invitationProblem")
                 }
-                Text(String(localized: "On the other device, choose Continue on Another Device. It shows a code to scan or an invitation to copy.", bundle: .main))
-                    .font(.subheadline).foregroundStyle(WitermTheme.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                PasteButton(payloadType: String.self) { values in
-                    if let value = values.first { read(value, scanned: false) }
-                }
-                .buttonBorderShape(.capsule)
-                .labelStyle(.titleAndIcon)
-                .controlSize(.large)
-                .frame(maxWidth: .infinity)
-                .accessibilityIdentifier("pasteInvitation")
-                if typing {
-                    TextField(String(localized: "Invitation", bundle: .main), text: $text, axis: .vertical)
-                        .lineLimit(2...5)
-                        .font(.system(.subheadline, design: .monospaced))
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .privacySensitive()
-                        .focused($fieldFocused)
-                        .padding(12)
-                        .background(WitermTheme.surface, in: .rect(cornerRadius: 12, style: .continuous))
-                        .accessibilityIdentifier("sessionInvitationField")
-                    PrimaryButton(String(localized: "Continue", bundle: .main), fullWidth: true) { read(text, scanned: false) }
-                        .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        .accessibilityIdentifier("preparePairing")
+                if typeSize.isAccessibilitySize {
+                    entryActions
+                    scanner
+                    instructions
                 } else {
-                    Button(String(localized: "Type Invitation…", bundle: .main)) { typing = true; fieldFocused = true }
-                        .frame(maxWidth: .infinity)
-                        .touchTarget()
-                        .accessibilityIdentifier("typeInvitation")
+                    scanner
+                    instructions
+                    entryActions
                 }
             }
             .readableContent()
             .padding(.vertical, 16)
         }
+        .scrollDismissesKeyboard(.interactively)
         .background(WitermTheme.canvas)
+    }
+
+    @ViewBuilder private var scanner: some View {
+        if !typing {
+            InvitationScanner { value in read(value, scanned: true) }
+                .id(scanID)
+        }
+    }
+
+    private var instructions: some View {
+        Text(String(localized: "On the other device, choose Continue on Another Device. It shows a code to scan or an invitation to copy.", bundle: .main))
+            .font(.subheadline).foregroundStyle(WitermTheme.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// Typing (when chosen), paste, and the switch between typing and scanning.
+    @ViewBuilder private var entryActions: some View {
+        if typing {
+            invitationField
+            PrimaryButton(String(localized: "Continue", bundle: .main), fullWidth: true) { read(text, scanned: false) }
+                .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .accessibilityIdentifier("preparePairing")
+        }
+        PasteButton(payloadType: String.self) { values in
+            if let value = values.first { read(value, scanned: false) }
+        }
+        .buttonBorderShape(.capsule)
+        .labelStyle(.titleAndIcon)
+        .controlSize(.large)
+        .frame(maxWidth: .infinity)
+        .accessibilityIdentifier("pasteInvitation")
+        if !typing {
+            Button(String(localized: "Type Invitation…", bundle: .main)) { typing = true; fieldFocused = true }
+                .frame(maxWidth: .infinity)
+                .touchTarget()
+                .accessibilityIdentifier("typeInvitation")
+        } else if InvitationScanner.isSupported {
+            Button(String(localized: "Scan a Code Instead", bundle: .main), systemImage: "qrcode.viewfinder") {
+                fieldFocused = false
+                typing = false
+            }
+            .frame(maxWidth: .infinity)
+            .touchTarget()
+            .accessibilityIdentifier("scanInvitationInstead")
+        }
+    }
+
+    /// An invitation is one line of text, so Return continues instead of
+    /// starting a new line; a pasted trailing line break does the same.
+    private var invitationField: some View {
+        TextField(String(localized: "Invitation", bundle: .main), text: $text, axis: .vertical)
+            .lineLimit(2...5)
+            .font(.system(.subheadline, design: .monospaced))
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .privacySensitive()
+            .submitLabel(.continue)
+            .focused($fieldFocused)
+            .padding(12)
+            .background(WitermTheme.surface, in: .rect(cornerRadius: 12, style: .continuous))
+            .accessibilityIdentifier("sessionInvitationField")
+            .onChange(of: text) { _, value in
+                guard value.contains(where: \.isNewline) else { return }
+                text = value.filter { !$0.isNewline }
+                if !text.trimmingCharacters(in: .whitespaces).isEmpty { read(text, scanned: false) }
+            }
     }
 
     /// Reads either kind of invitation. A scanned code for a saved server goes
@@ -162,12 +209,24 @@ struct ContinueFromDeviceFlow: View {
         }
         problem = nil
         let known = servers.servers.contains { ServerAddressKey($0.address) == ServerAddressKey(parsed.server) }
-        path = scanned && known ? [.wait(parsed)] : [.check(parsed, scanned: scanned)]
+        fieldFocused = false
+        path = scanned && known ? [.wait(parsed, scanned: true)] : [.check(parsed, scanned: scanned)]
     }
 
-    private func scanAgain() {
+    /// Back to the first step for another invitation. A typed one is cleared,
+    /// since it was already used; the camera restarts.
+    private func startOver() {
         path = []
+        text = ""
+        problem = nil
         scanID = UUID()
+    }
+
+    /// Going back for another invitation: by camera when this one was
+    /// scanned, otherwise by paste or typing, which a device without a
+    /// camera also has.
+    static func startOverTitle(scanned: Bool) -> String {
+        scanned ? String(localized: "Scan Again", bundle: .main) : String(localized: "Use Another Invitation", bundle: .main)
     }
 }
 
@@ -175,7 +234,7 @@ struct ContinueFromDeviceFlow: View {
 private struct ContinueCheckStep: View {
     let parsed: ContinueFromDeviceFlow.Parsed
     let scanned: Bool
-    let scanAgain: () -> Void
+    let startOver: () -> Void
     let next: () -> Void
     @Environment(ServerList.self) private var servers
     @State private var problem: String?
@@ -227,9 +286,10 @@ private struct ContinueCheckStep: View {
                     .accessibilityIdentifier("joinPairing")
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets())
-                Button(String(localized: "Scan Again", bundle: .main), action: scanAgain)
+                Button(ContinueFromDeviceFlow.startOverTitle(scanned: scanned), action: startOver)
                     .frame(maxWidth: .infinity)
                     .listRowBackground(Color.clear)
+                    .accessibilityIdentifier("continueStartOver")
             }
         }
         .formStyle(.grouped)
@@ -262,7 +322,8 @@ private struct ContinueCheckStep: View {
 /// Waiting for the other device to approve, then opening its session.
 private struct ContinueWaitStep: View {
     let parsed: ContinueFromDeviceFlow.Parsed
-    let scanAgain: () -> Void
+    let scanned: Bool
+    let startOver: () -> Void
     let opened: (ConnectionModel, DeviceGrant) -> Void
     @Environment(ServerList.self) private var servers
     @Environment(\.dismiss) private var dismiss
@@ -286,7 +347,7 @@ private struct ContinueWaitStep: View {
                     .padding(.bottom, 8)
                     .accessibilityHidden(true)
                 status
-                if case .pairing = parsed, let device = pairing?.device {
+                if case .pairing = parsed, let device = pairing?.device, failureMessage == nil {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(String(localized: "This Device’s Code", bundle: .main))
                             .font(.footnote).foregroundStyle(WitermTheme.secondary).textCase(.uppercase)
@@ -305,13 +366,16 @@ private struct ContinueWaitStep: View {
             .readableContent()
         }
         .background(WitermTheme.canvas)
-        .navigationTitle(hostName.map { String(localized: "Approve on \($0)", bundle: .main) }
+        .navigationTitle(failureMessage != nil ? String(localized: "Continue from Another Device", bundle: .main)
+                         : hostName.map { String(localized: "Approve on \($0)", bundle: .main) }
                          ?? String(localized: "Approve on the Other Device", bundle: .main))
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button(String(localized: "Cancel Request", bundle: .main)) { cancel() }
+                // A failed request has nothing left to cancel; this only closes.
+                Button(failureMessage != nil ? String(localized: "Cancel", bundle: .main)
+                       : String(localized: "Cancel Request", bundle: .main)) { cancel() }
                     .accessibilityIdentifier("cancelContinueRequest")
             }
         }
@@ -331,20 +395,30 @@ private struct ContinueWaitStep: View {
 
     private var openable: Bool { approvedGrant != nil && server?.supportsRelay == true }
 
-    @ViewBuilder private var status: some View {
-        if let issue = pairing?.issue {
-            failure(issue.title, issue.recovery)
-        } else if let status = pairing?.pairing?.status, status == .expired || status == .rejected {
-            failure(status == .expired ? String(localized: "The other device didn’t approve in time.", bundle: .main)
+    /// Why the request can't go on, if it can't. Nothing is waiting then, so
+    /// the screen stops asking for approval.
+    private var failureMessage: (title: String, detail: String)? {
+        if let issue = pairing?.issue { return (issue.title, issue.recovery) }
+        if let status = pairing?.pairing?.status, status == .expired || status == .rejected {
+            return (status == .expired ? String(localized: "The other device didn’t approve in time.", bundle: .main)
                     : String(localized: "The other device rejected the request.", bundle: .main),
-                    String(localized: "Scan a new code to try again.", bundle: .main))
-        } else if case .failed(let message) = join.phase {
-            failure(message, String(localized: "Ask for a new invitation if this one has expired.", bundle: .main))
-        } else if let server, case .failed(let issue) = server.phase, approvedGrant != nil {
-            failure(issue.title, issue.recovery)
-        } else if let server, server.phase.isAvailable, !server.supportsRelay {
-            failure(String(localized: "This server doesn’t offer remote terminals.", bundle: .main),
+                    scanned ? String(localized: "Scan a new code to try again.", bundle: .main)
+                        : String(localized: "Get a new invitation from the other device to try again.", bundle: .main))
+        }
+        if case .failed(let message) = join.phase {
+            return (message, String(localized: "Ask for a new invitation if this one has expired.", bundle: .main))
+        }
+        if let server, case .failed(let issue) = server.phase, approvedGrant != nil { return (issue.title, issue.recovery) }
+        if let server, server.phase.isAvailable, !server.supportsRelay {
+            return (String(localized: "This server doesn’t offer remote terminals.", bundle: .main),
                     String(localized: "Ask the other device to use another continuation server.", bundle: .main))
+        }
+        return nil
+    }
+
+    @ViewBuilder private var status: some View {
+        if let failureMessage {
+            failure(failureMessage.title, failureMessage.detail)
         } else {
             HStack(spacing: 10) {
                 ProgressView()
@@ -371,8 +445,9 @@ private struct ContinueWaitStep: View {
         VStack(spacing: 12) {
             Label(title, systemImage: "exclamationmark.circle").font(.headline).foregroundStyle(WitermTheme.warning)
             Text(detail).font(.subheadline).foregroundStyle(WitermTheme.secondary).multilineTextAlignment(.center)
-            Button(String(localized: "Scan Again", bundle: .main), action: scanAgain)
+            Button(ContinueFromDeviceFlow.startOverTitle(scanned: scanned), action: startOver)
                 .buttonStyle(.bordered).witermControl()
+                .accessibilityIdentifier("continueStartOver")
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("pairingError")

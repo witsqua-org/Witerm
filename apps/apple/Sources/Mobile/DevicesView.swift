@@ -141,10 +141,9 @@ struct DevicesView: View {
                             IconTile(systemImage: grant.host.platform == .macos ? "laptopcomputer" : "iphone", tint: grant.host.identityHue)
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(grant.host.name).foregroundStyle(WitermTheme.ink)
-                                Text([grant.permission == .view ? String(localized: "View Only", bundle: .main) : String(localized: "Can Type", bundle: .main),
-                                      server.displayName].joined(separator: " · "))
+                                // The section names the server when there are several.
+                                Text(grant.permission == .view ? String(localized: "View Only", bundle: .main) : String(localized: "Can Type", bundle: .main))
                                     .font(.caption).foregroundStyle(WitermTheme.secondary)
-                                    .lineLimit(1).truncationMode(.middle)
                             }
                             Spacer(minLength: 8)
                         }

@@ -2342,23 +2342,6 @@
         }
       }
     },
-    "Check the device’s authorization in Device Pairing." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Check the device’s authorization in Device Pairing."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请在设备配对中重新确认该设备的授权。"
-          }
-        }
-      }
-    },
     "Check the host address, port and username." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5147,6 +5130,23 @@
         }
       }
     },
+    "Get a new invitation from the other device to try again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Get a new invitation from the other device to try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请从另一台设备获取新的邀请后重试。"
+          }
+        }
+      }
+    },
     "Get a new pairing invitation from the other device." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7501,6 +7501,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在 %1$@ 上打开 Witerm，“%2$@”位于“终端 → %3$@”中。"
+          }
+        }
+      }
+    },
+    "On the other device, choose Continue on Another Device for a session, then pull down to refresh." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On the other device, choose Continue on Another Device for a session, then pull down to refresh."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请在另一台设备上为某个会话选择“在其他设备上继续”，然后下拉刷新。"
           }
         }
       }
@@ -9953,6 +9970,23 @@
         }
       }
     },
+    "Scan a Code Instead" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan a Code Instead"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "改为扫描验证码"
+          }
+        }
+      }
+    },
     "Scan a new code to try again." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10561,23 +10595,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "共享"
-          }
-        }
-      }
-    },
-    "Share a terminal session on the device, then pull down to refresh." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Share a terminal session on the device, then pull down to refresh."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请在设备上共享终端会话，然后下拉刷新。"
           }
         }
       }
@@ -12282,6 +12299,23 @@
         }
       }
     },
+    "This device’s access was revoked or can’t be verified. On the other device, choose Continue on Another Device to pair again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This device’s access was revoked or can’t be verified. On the other device, choose Continue on Another Device to pair again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此设备的访问权限已被撤销或无法验证。请在另一台设备上选择“在其他设备上继续”重新配对。"
+          }
+        }
+      }
+    },
     "This device’s code %@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13400,6 +13434,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "名称需为 1–64 个字符，且不能包含控制字符。"
+          }
+        }
+      }
+    },
+    "Use Another Invitation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use Another Invitation"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用其他邀请"
           }
         }
       }
