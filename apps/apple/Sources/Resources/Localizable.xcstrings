@@ -12447,7 +12447,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "可输入"
+            "value" : "输入中"
           }
         }
       }
@@ -13824,7 +13824,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "仅观看"
+            "value" : "观看中"
           }
         }
       }

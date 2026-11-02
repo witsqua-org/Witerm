@@ -20,9 +20,9 @@ The mark is a W stroke with a cursor at its lower right, on a graphite tile. The
 | ActionLabel | `#FFFFFF` | `#0F1013` | Text on the accent and on machine hues |
 | Ink | `#111215` | `#ECEEF2` | Primary content |
 | SecondaryInk | `#5A5F6A` | `#8F95A0` | Explanations and status |
-| Canvas | `#F4F5F7` | `#0F1013` | Background |
+| Canvas | `#F4F5F7` | `#0F1013` | Mac background. iOS uses the system grouped background everywhere, so custom pages match lists, forms and system sheets. |
 | Surface | `#FFFFFF` | `#17181C` | Cards |
-| Positive | `#1A7F4B` | `#5BD68A` | Health not tied to a machine (reachable server, attached session, switches) |
+| Positive | `#157043` | `#5BD68A` | Health not tied to a machine (reachable server, attached session, switches) |
 | Warning | `#A04D00` | `#FFB340` | Recoverable errors |
 
 Every pairing reaches at least 4.5:1 on Canvas and Surface.
@@ -86,6 +86,29 @@ The tab bar hides while a terminal is open on compact layouts. With a hardware k
 - **Undo over confirmation** where everything can be restored; confirm only what can't be.
 - **Native conventions.** Standard sidebars, tabs, sheets, menus, shortcuts, and copy behavior. Return submits, Escape cancels, ⌘Return runs the Mac's primary action.
 
+## Design system
+
+Set on 2026-11-03 from the [Mac](audit-mac.md) and [iOS](audit-ios.md) audits. Tokens live in `apps/apple/Sources/Design/WitermTheme.swift`; the names are shared and the Mac value comes first where they differ. Rule zero: prefer the system component. A list of things is a `List` or `Form` with standard rows; custom surfaces are for the terminal, banners, cards and the tour.
+
+| Token | Mac | iOS | Use |
+|---|---|---|---|
+| `Space.xxs / xs / s / m / l / xl` | 2 / 4 / 8 / 12 / 16 / 20 | same | stacked text / inside a row / between controls / tile to text, banner insets / card padding / page and sheet inset |
+| `Space.xxl` | 24 | 32 | section gaps in custom scroll views |
+| `Radius.s / m / l / xl` | 6 / 8 / 12 / 16 | 8 / 12 / 20 / 28 | controls, hover, keys / fields, nested cards, code tiles / cards, banners, choice cards / hero tiles; capsules for badges and buttons |
+| `WitermType` | `pageTitle`, `heroTitle`, `cardTitle`, `rowTitle`, `rowDetail` (callout on the Mac, subheadline on iOS), `meta` (caption, metadata only), `code`, `codeInline`, `codeHero` | | Roles, never point sizes; regular and semibold only |
+| Fills | `hoverFill` 6% (12% with Increase Contrast); `selectedFill` accent 10% with a 1.5 pt accent border; `tint` 12%; `edge` 55% | same except hover | One value per meaning |
+| `WitermSymbols` | one symbol per idea | same | |
+
+**Color.** One secondary grey, `WitermTheme.secondary`, except `.secondary` inside native List and sidebar rows. Every text and control pairing reaches 4.5:1 (3:1 for large text and control outlines), including the tour's page dots and disabled-looking but enabled buttons. On the Mac, system controls (switches, checkboxes, radios, links) keep the system accent; the graphite tint stays on `PrimaryButton` and the app's own surfaces. On iOS, an action inside content (Edit Address, Add Host, Save for Later) carries a leading symbol and the semibold weight, so it never reads as a label.
+
+**Sheets.** Mac: one shape, `SheetScaffold` (title, one scrolling area, a divider, a footer with destructive and secondary actions leading and Cancel and the primary trailing), at three sizes: 400 wide, 520 wide or 600 wide, each fitting its content. Return is the primary unless it's a trust decision; Esc always cancels and never rejects or deletes. Forms in sheets never have a fixed height. iOS: inline titles, the detents in the iOS audit's table, a visible drag indicator with several detents, and the first field focused. Mac Settings keeps one 640 × 600 size; a tab that doesn't fit scrolls.
+
+**Rows and cards.** Mac custom rows: 28 pt single line, 40 pt two lines, 16 pt icons. iOS rows: a 32 pt `IconTile` scaled with the text, 12 pt to the text, every row in a list with a tile or none; one trailing affordance (chevron or one `ellipsis.circle` menu), swipe actions that mirror the menu. Cards hold one live object (an open terminal, a banner, a code to compare), never a list of navigation rows. `SelectableCard` is the one choice card on both platforms.
+
+**Terminal text** follows Dynamic Type up to xxxLarge; larger accessibility sizes don't enlarge it further, and pinch still zooms. It never touches the screen edge.
+
+**Devices** appear once per device and server, however many pairings that device has; Unpair ends them all.
+
 ## Components
 
 Shared components are in `apps/apple/Sources/Design/Components.swift`. Use them instead of local copies.
@@ -136,10 +159,11 @@ One word per idea, the same on both platforms and in both languages. A label nam
 | SSH host (SSH 主机) | A machine you sign in to with SSH. | server |
 | relay server (中继服务器) | The Witerm server your devices pair and connect through. | continuation server, server alone where an SSH host could be meant |
 | paired device (已配对设备) | Another of your devices that may open this Mac's terminals. The one at the other end of a pairing is the other device. | — |
-| code (验证码) | A device's fingerprint, compared by eye. | fingerprint |
+| code (验证码) | A device's fingerprint, compared by eye. Never the scannable image. | fingerprint |
+| QR code (二维码) | What the other device scans: Show QR Code, Making a QR code…. | code |
 | Add Device (添加设备) | iOS: pair with another device, or open a terminal it invites you to, by scanning or pasting what it shows under Open On ▸ New Device. | Continue from Another Device |
 
-**Your own view of a terminal.** Two states, named by what you can do: **Typing** (可输入) and **Watching** (仅观看), where nothing you press is sent. **Open** opens a terminal so you can type; **Watch** opens it without typing. While it's open, **Stop Typing** and **Start Typing** switch. Only one place types at a time; when it's elsewhere, say where (Typing on *device*). **Connect**, **Reconnect** and **Disconnect** are only for SSH hosts and network connections, never for opening a terminal on a Mac.
+**Your own view of a terminal.** Two states, named by what you can do: **Typing** (输入中) and **Watching** (观看中), where nothing you press is sent. **Open** opens a terminal so you can type; **Watch** opens it without typing. While it's open, **Stop Typing** and **Start Typing** switch. Only one place types at a time; when it's elsewhere, say where (Typing on *device*). **Connect**, **Reconnect** and **Disconnect** are only for SSH hosts and network connections, never for opening a terminal on a Mac.
 
 **What another device may do.** **Can watch and type** (可观看和输入) or **Can only watch** (仅可观看); which terminals: **All terminals**, **Only “*name*”**, or **Terminals you choose**. Never "View Only", "can read", "Can Open", or "Can Type" on its own. Ending a pairing is **Unpair…** (取消配对), and its confirmation says what the device loses and that pairing again restores it.
 
