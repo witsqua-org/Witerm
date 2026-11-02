@@ -66,7 +66,7 @@ struct ContinueFromDeviceFlow: View {
     var body: some View {
         NavigationStack(path: $path) {
             scanStep
-                .navigationTitle(String(localized: "Continue from Another Device", bundle: .main))
+                .navigationTitle(String(localized: "Add Device", bundle: .main))
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
@@ -133,7 +133,7 @@ struct ContinueFromDeviceFlow: View {
     }
 
     private var instructions: some View {
-        Text(String(localized: "On the other device, choose Continue on Another Device.", bundle: .main))
+        Text(String(localized: "On the other device, choose Open On ▸ New Device.", bundle: .main))
             .font(.subheadline).foregroundStyle(WitermTheme.secondary)
             .fixedSize(horizontal: false, vertical: true)
     }
@@ -204,7 +204,7 @@ struct ContinueFromDeviceFlow: View {
             scanID = UUID()
             problem = trimmed.lowercased().hasPrefix("witerm://share")
                 ? String(localized: "This invitation has expired or isn’t valid. Ask for a new one.", bundle: .main)
-                : String(localized: "That isn’t a Witerm invitation. On the other device, choose Continue on Another Device to get one.", bundle: .main)
+                : String(localized: "That isn’t a Witerm invitation. On the other device, choose Open On ▸ New Device to get one.", bundle: .main)
             return
         }
         problem = nil
@@ -367,7 +367,7 @@ private struct ContinueWaitStep: View {
             .readableContent()
         }
         .background(WitermTheme.canvas)
-        .navigationTitle(failureMessage != nil ? String(localized: "Continue from Another Device", bundle: .main)
+        .navigationTitle(failureMessage != nil ? String(localized: "Add Device", bundle: .main)
                          : hostName.map { String(localized: "Approve on \($0)", bundle: .main) }
                          ?? String(localized: "Approve on the Other Device", bundle: .main))
         .navigationBarTitleDisplayMode(.inline)

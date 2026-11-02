@@ -12,10 +12,12 @@ struct DevicesView: View {
     let macs: RemoteModels
     let openMac: (ConnectionModel, DeviceGrant) -> Void
     let openHost: (SSHProfile) -> Void
-    /// Opens Continue from Another Device.
+    /// Opens Add Device.
     let continueFromDevice: () -> Void
     @Environment(ServerList.self) private var servers
     @State private var inspected: Inspected?
+    /// A short confirmation after unpairing, since the row just disappears.
+    @State private var unpairedNote: String?
     @State private var search = ""
 
     private struct Inspected: Identifiable {
@@ -42,7 +44,7 @@ struct DevicesView: View {
                     Button(action: continueFromDevice) {
                         HStack(spacing: 14) {
                             IconTile(systemImage: "laptopcomputer.and.iphone", tint: IdentityHue.sky)
-                            Text(String(localized: "Continue from Another Device", bundle: .main))
+                            Text(String(localized: "Add Device", bundle: .main))
                                 .font(.headline).foregroundStyle(WitermTheme.ink)
                             Spacer(minLength: 8)
                             Image(systemName: "chevron.right")
@@ -56,9 +58,21 @@ struct DevicesView: View {
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("continueFromDevice")
                 }
+                if let unpairedNote {
+                    Section {
+                        Label(unpairedNote, systemImage: "checkmark.circle")
+                            .font(.subheadline)
+                            .foregroundStyle(WitermTheme.secondary)
+                            .accessibilityIdentifier("unpairedNote")
+                    }
+                    .task(id: unpairedNote) {
+                        try? await Task.sleep(for: .seconds(4))
+                        if !Task.isCancelled { self.unpairedNote = nil }
+                    }
+                }
                 if deviceServers.isEmpty {
                     Section(String(localized: "Paired Devices", bundle: .main)) {
-                        Text(String(localized: "Devices you continue from appear here.", bundle: .main))
+                        Text(String(localized: "Devices you add appear here.", bundle: .main))
                             .font(.subheadline)
                             .foregroundStyle(WitermTheme.secondary)
                             .accessibilityIdentifier("remoteDevicesEmpty")
@@ -107,7 +121,12 @@ struct DevicesView: View {
             .overlay(alignment: .bottom) { SSHUndoRemovalBar(model: ssh) }
         }
         .sheet(item: $inspected) { item in
-            MacDeviceDetails(server: item.server, grant: item.grant) { inspected = nil }
+            MacDeviceDetails(server: item.server, grant: item.grant, model: macs.model(for: item.server)) {
+                inspected = nil
+            } unpaired: {
+                inspected = nil
+                unpairedNote = String(localized: "Unpaired from \(item.grant.host.name)", bundle: .main)
+            }
         }
     }
 

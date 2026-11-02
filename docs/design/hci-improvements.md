@@ -233,3 +233,26 @@ A wording and system-status review of every iPhone screen (iPad where its code d
 | Words changed to the shared vocabulary | — | 53 strings added or reworded, 50 retired (`docs/design/round8-strings-ios.json`) |
 
 **Still to check with a Mac (joint run):** the new title line and Stop Typing / Start Typing against a real paired terminal (now in `MacContinuityFlowTests`), Leave landing on the list, the No Longer Paired banner after unpairing from the Mac, and an automatic reconnect that finds another device typing. The phone can't yet say *which* device is typing elsewhere: the relay doesn't report it.
+
+## Round 9: iOS
+
+Three requests from the Round 8 review, on 2026-11-03: unpair from the iPhone, say who is typing, and a shorter name for the way in. Plus a review of the actions menus for submenus.
+
+| # | Surface | Problem | Principle | Change | Main code |
+|---|---|---|---|---|---|
+| 1 | Device Details | A pairing could only be ended on the Mac; the phone had no way out. | User control and freedom | **Unpair…**, last and destructive, confirms with the device's name and what this iPhone loses ("…can no longer open its terminals. To use them again, pair again."). While the relay server is told it shows Unpairing… and locks the sheet; a terminal open from that device is left first, after the detach ACK. The device then leaves Terminals and Devices, with "Unpaired from *device*" shown for 4 s in Devices and spoken. Offline, the button is off and the footer says it needs a network connection; if the server isn't reached, the device stays listed and the footer says this iPhone already stopped opening its terminals, and to try again or unpair on the other device. | [RemoteModels](../../apps/apple/Sources/RemoteTerminal/RemoteModels.swift), [RemoteTerminalModel](../../apps/apple/Sources/RemoteTerminal/RemoteTerminalModel.swift), [DevicesView](../../apps/apple/Sources/Mobile/DevicesView.swift) |
+| 2 | Watching, refusals, reconnects | "Another device is typing" never said which one. | Visibility of system status | From the Mac's `writers`: Watching · Typing on *device* in the title (the Mac by its paired name), Typing on *device* when Start Typing is refused, "Typing on *device*, so you're watching" after a reconnect, and Typing on *device* under a terminal in the device's list. While you watch a terminal you could type in, the list is fetched every 3 s, only on screen and in the foreground, backing off to 30 s on failures. Older Macs keep the general wording. | [RemoteTerminalModel](../../apps/apple/Sources/RemoteTerminal/RemoteTerminalModel.swift) (`TypingElsewhere`), [RemoteTerminalWorkspace](../../apps/apple/Sources/RemoteTerminal/RemoteTerminalWorkspace.swift) |
+| 3 | The way in | "Continue from Another Device" was long and said nothing about pairing; instructions named the Mac's old command. | Recognition, consistency | **Add Device** in Devices, on the first-use screen, on the tour, and as the sheet's title. Instructions say "On the other device, choose Open On ▸ New Device" (camera note, not-an-invitation error, no-longer-paired recovery, tour). A device that shares no terminals says to choose Open On ▸ *this device's paired name*. | [DevicesView](../../apps/apple/Sources/Mobile/DevicesView.swift), [TerminalsHome](../../apps/apple/Sources/Mobile/TerminalsHome.swift), [ContinueFromDeviceFlow](../../apps/apple/Sources/Continuity/ContinueFromDeviceFlow.swift), [IOSWelcomeTour](../../apps/apple/Sources/Onboarding/IOSWelcomeTour.swift) |
+| 4 | Host actions menu | Add to Favorites / Remove from Favorites changed title without showing the state; Disconnect sat between ordinary items. | Visibility; error prevention | **Favorite** with a checkmark; Edit Host and Host Keys; then, after a divider, Disconnect and Delete Host. | [TerminalsHome](../../apps/apple/Sources/Mobile/TerminalsHome.swift) |
+
+**Submenus.** Reviewed every iOS actions menu; none was long enough for a submenu to help:
+
+| Menu | Top-level items before | After | Why |
+|---|---|---|---|
+| Paired terminal (ellipsis) | 5: text size, Find, Terminal Display, Stop/Start Typing, Leave | 5, unchanged | Each is one tap. A submenu would hide Stop/Start Typing, the state switch, behind a second tap. |
+| SSH terminal (ellipsis) | 6: text size, Find, SFTP Files, Port Forwarding, Terminal Display, Disconnect | 6, unchanged | SFTP Files and Port Forwarding are the reason to open this menu on an SSH host; grouping them saves one line and costs a tap. |
+| SSH host (ellipsis) | 4, Favorite as a changing title, Disconnect second | 4, Favorite checkmarked, destructive items last | State shown; no submenu needed. |
+| Terminal row (long press) | 1: Watch | 1 | — |
+| Paired device row | no menu; info button | no menu; Unpair in Device Details | A destructive action one level down, with its confirmation. |
+
+**Still to check with a Mac (joint run):** Typing on *device* in the title while watching (now asserted in `MacContinuityFlowTests`), Unpair from the iPhone against the real relay server (the Mac should drop the device), and a refused Start Typing naming who types.

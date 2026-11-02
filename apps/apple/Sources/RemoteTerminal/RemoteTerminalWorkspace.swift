@@ -132,12 +132,12 @@ struct RemoteTerminalWorkspace: View {
                     .foregroundStyle(model.isInteractive ? WitermTheme.positive : WitermTheme.secondary)
                     .imageScale(.small)
                     .accessibilityHidden(true)
-                Text(verbatim: [terminalStatus, model.selectedGrant?.host.name].compactMap { $0 }.joined(separator: " · "))
+                Text(verbatim: [terminalStatus, typingWhileWatching ?? model.selectedGrant?.host.name].compactMap { $0 }.joined(separator: " · "))
             }
             .font(.caption)
             .foregroundStyle(WitermTheme.secondary)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel([terminalStatus, model.selectedGrant?.host.name].compactMap { $0 }.joined(separator: ", "))
+            .accessibilityLabel([terminalStatus, typingWhileWatching ?? model.selectedGrant?.host.name].compactMap { $0 }.joined(separator: ", "))
             .accessibilityIdentifier("terminalInputStatus")
         }
         .lineLimit(1)
@@ -162,7 +162,7 @@ struct RemoteTerminalWorkspace: View {
                         .accessibilityIdentifier("remoteTerminalActivity")
                 }
                 if let issue = model.issue {
-                    IssueBanner(issue.title, message: issue.recovery, systemImage: "exclamationmark.shield.fill") {
+                    IssueBanner(title(of: issue), message: issue.recovery, systemImage: "exclamationmark.shield.fill") {
                         if issue.canViewReadOnly, let session = model.selectedSession {
                             Button(String(localized: "Watch", bundle: .main)) { model.attach(session, mode: .view) }
                                 .touchTarget().disabled(model.busy != nil)
@@ -216,9 +216,13 @@ struct RemoteTerminalWorkspace: View {
                         IconTile(systemImage: "terminal", tint: grant.host.identityHue)
                         VStack(alignment: .leading, spacing: 4) {
                             Text(session.name).font(.headline).foregroundStyle(WitermTheme.ink)
-                            // The badge above already covers a device that can only watch.
-                            if access == .view, grant.permission != .view {
-                                Text(String(localized: "Can only watch", bundle: .main))
+                            // Who else types there, as of this list; the badge
+                            // above already covers a device that can only watch.
+                            let detail = [TypingElsewhere.summary(session.writers, hostName: grant.host.name),
+                                          access == .view && grant.permission != .view
+                                            ? String(localized: "Can only watch", bundle: .main) : nil].compactMap { $0 }
+                            if !detail.isEmpty {
+                                Text(detail.joined(separator: " · "))
                                     .font(.caption).foregroundStyle(WitermTheme.secondary)
                             }
                         }
@@ -250,7 +254,7 @@ struct RemoteTerminalWorkspace: View {
                 .disabled(model.busy != nil)
             }
             if model.loaded, model.sessions.isEmpty, model.busy == nil {
-                ContentUnavailableView(String(localized: "No Terminals", bundle: .main), systemImage: "terminal", description: Text(String(localized: "On the other device, choose Continue on Another Device.", bundle: .main)))
+                ContentUnavailableView(String(localized: "No Terminals", bundle: .main), systemImage: "terminal", description: Text(String(localized: "On the other device, choose Open On ▸ \(PairingDeviceName.current).", bundle: .main)))
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("remoteSessionsEmpty")
             }
@@ -268,13 +272,16 @@ struct RemoteTerminalWorkspace: View {
                     .accessibilityHidden(true)
             } else {
                 // The navigation bar already names the Mac.
-                TerminalHeader(attachment.session.name, status: terminalStatus, statusImage: terminalStatusImage,
+                TerminalHeader(attachment.session.name,
+                               status: [terminalStatus, typingWhileWatching].compactMap { $0 }.joined(separator: " · "),
+                               statusImage: terminalStatusImage,
                                live: model.isInteractive, hue: model.selectedGrant?.host.identityHue) {
                     terminalActions
                 }
             }
             OfflineBanner(insets: EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-            if let notice = model.notice {
+            if model.notice {
+                let notice = TypingElsewhere.watchingNotice(model.openWriters, hostName: model.selectedGrant?.host.name ?? "")
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Image(systemName: "eye").accessibilityHidden(true)
                     Text(notice).frame(maxWidth: .infinity, alignment: .leading)
@@ -309,6 +316,18 @@ struct RemoteTerminalWorkspace: View {
                 .id(id)
                 if !model.isInteractive { connectionOverlay }
             }
+            // While watching a terminal this device could type in, list it
+            // again every few seconds so the title keeps saying who types.
+            // Stops when typing, leaving, or in the background; slows down
+            // while the list can't be had.
+            .task(id: pollsWriters) {
+                guard pollsWriters else { return }
+                var delay = 3.0
+                while !Task.isCancelled {
+                    delay = await model.refreshWriters() ? 3 : min(delay * 2, 30)
+                    try? await Task.sleep(for: .seconds(delay))
+                }
+            }
             // Keeps terminal contents out of the app switcher's snapshot.
             .overlay {
                 if scenePhase != .active {
@@ -318,6 +337,22 @@ struct RemoteTerminalWorkspace: View {
                 }
             }
         }
+    }
+
+    private var pollsWriters: Bool {
+        scenePhase == .active && model.isInteractive && model.mode == .view && model.canRequestControl
+    }
+
+    /// While watching: where typing is (Typing on *device*), when the Mac says.
+    private var typingWhileWatching: String? {
+        guard model.isInteractive, model.mode == .view, let grant = model.selectedGrant else { return nil }
+        return TypingElsewhere.summary(model.openWriters, hostName: grant.host.name)
+    }
+
+    /// An issue's title, naming who types when that's why typing was refused.
+    private func title(of issue: RemoteTerminalIssue) -> String {
+        guard issue.typingElsewhere, let grant = model.selectedGrant else { return issue.title }
+        return TypingElsewhere.busyTitle(model.openWriters, hostName: grant.host.name)
     }
 
     /// Your own view of the terminal: Typing or Watching, or what is
@@ -427,7 +462,7 @@ struct RemoteTerminalWorkspace: View {
                 }
                 .accessibilityIdentifier("remoteTerminalActivity")
             } else {
-                Text(model.connectionState == .ended ? String(localized: "Terminal Ended", bundle: .main) : (model.issue?.title ?? String(localized: "Terminal Disconnected", bundle: .main)))
+                Text(model.connectionState == .ended ? String(localized: "Terminal Ended", bundle: .main) : (model.issue.map(title(of:)) ?? String(localized: "Terminal Disconnected", bundle: .main)))
                     .font(.headline)
                     .accessibilityIdentifier("remoteDisconnectedStatus")
                 if let issue = model.issue {

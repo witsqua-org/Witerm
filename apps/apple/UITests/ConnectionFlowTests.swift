@@ -43,7 +43,7 @@ final class ConnectionFlowTests: XCTestCase {
         row.tap()
     }
 
-    /// Devices → Continue from Another Device, typing the invitation.
+    /// Devices → Add Device, typing the invitation.
     private func openContinue(_ app: XCUIApplication, typing invitation: String? = nil) {
         openDevices(app)
         let start = app.buttons["continueFromDevice"]

@@ -2,15 +2,15 @@ import XCTest
 
 @MainActor final class SystemLanguageTests: XCTestCase {
     func testEnglishInterface() {
-        verify(language: "en", locale: "en_US", action: "Continue from Another Device", title: "Add SSH Host", cancel: "Cancel")
+        verify(language: "en", locale: "en_US", action: "Add Device", title: "Add SSH Host", cancel: "Cancel")
     }
 
     func testSimplifiedChineseInterface() {
-        verify(language: "zh-Hans", locale: "zh_CN", action: "从其他设备继续", title: "添加 SSH 主机", cancel: "取消")
+        verify(language: "zh-Hans", locale: "zh_CN", action: "添加设备", title: "添加 SSH 主机", cancel: "取消")
     }
 
     func testUnsupportedLanguageFallsBackToEnglish() {
-        verify(language: "fr", locale: "fr_FR", action: "Continue from Another Device", title: "Add SSH Host", cancel: "Cancel")
+        verify(language: "fr", locale: "fr_FR", action: "Add Device", title: "Add SSH Host", cancel: "Cancel")
     }
 
     private func verify(language: String, locale: String, action: String, title: String, cancel: String) {

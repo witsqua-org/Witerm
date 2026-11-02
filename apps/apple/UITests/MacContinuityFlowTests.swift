@@ -60,7 +60,7 @@ final class MacContinuityFlowTests: XCTestCase {
         app.launch()
         addTeardownBlock { [app] in await MainActor.run { app?.terminate() } }
 
-        // Continue from Another Device, in Devices.
+        // Add Device, in Devices.
         app.tabBars.buttons["Devices"].tap()
         let start = app.buttons["continueFromDevice"]
         XCTAssertTrue(start.waitForExistence(timeout: 30))
@@ -135,6 +135,10 @@ final class MacContinuityFlowTests: XCTestCase {
         shot("09a-menu-typing")
         stop.tap()
         wait(for: [state("Watching")], timeout: 30)
+        // The Mac still has the terminal open and can type, so the title says
+        // where typing is (from the list it polls while watching).
+        let typingOn = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "Typing on"), object: status)
+        wait(for: [typingOn], timeout: 20)
         XCTAssertFalse(app.buttons["remoteKeyboard"].exists, "Watching has no keyboard")
         shot("09b-watching")
         app.buttons["terminalActionsMenu"].tap()

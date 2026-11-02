@@ -12,7 +12,7 @@ struct TerminalsHome: View {
     let macs: RemoteModels
     /// Opens a paired Mac's sessions.
     let openMac: (ConnectionModel, DeviceGrant) -> Void
-    /// Opens Continue from Another Device.
+    /// Opens Add Device.
     let continueFromDevice: () -> Void
     @Environment(ServerList.self) private var servers
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -188,8 +188,8 @@ struct TerminalsHome: View {
                                 symbol: "terminal", hue: IdentityHue.rose, action: ui.presentNew)
                         .accessibilityIdentifier("sshAddFirstHost")
                     Divider().padding(.leading, 60)
-                    FirstUseRow(title: String(localized: "Continue from Another Device", bundle: .main),
-                                detail: String(localized: "Scan or paste an invitation from it", bundle: .main),
+                    FirstUseRow(title: String(localized: "Add Device", bundle: .main),
+                                detail: String(localized: "Scan or paste an invitation", bundle: .main),
                                 symbol: "laptopcomputer.and.iphone", hue: IdentityHue.sky, action: continueFromDevice)
                         .accessibilityIdentifier("firstUseContinue")
                     Divider().padding(.leading, 60)
@@ -248,14 +248,18 @@ struct SSHHostActions: View {
 
     var body: some View {
         let session = ssh.session(for: profile.id)
+        // Favorite shows its state with a checkmark; what ends something comes last.
         Menu {
-            Button(ssh.isFavorite(profile) ? String(localized: "Remove from Favorites", bundle: .main) : String(localized: "Add to Favorites", bundle: .main), systemImage: "star") { ssh.toggleFavorite(profile) }
-            if let session {
-                Button(String(localized: "Disconnect", bundle: .main), systemImage: "xmark.circle", role: .destructive) { ssh.disconnect(session) }
-            } else {
+            Toggle(String(localized: "Favorite", bundle: .main), systemImage: "star", isOn: Binding(
+                get: { ssh.isFavorite(profile) }, set: { _ in ssh.toggleFavorite(profile) }))
+            if session == nil {
                 Button(String(localized: "Edit Host", bundle: .main), systemImage: "pencil") { ui.open(profile, model: ssh, editing: true) }
             }
             Button(String(localized: "Host Keys", bundle: .main), systemImage: "key") { ui.inspectKeys(profile) }
+            Divider()
+            if let session {
+                Button(String(localized: "Disconnect", bundle: .main), systemImage: "xmark.circle", role: .destructive) { ssh.disconnect(session) }
+            }
             Button(String(localized: "Delete Host", bundle: .main), systemImage: "trash", role: .destructive) { ui.remove(profile) }
         } label: {
             Image(systemName: "ellipsis").frame(width: 44, height: 44)

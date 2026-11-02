@@ -8,12 +8,15 @@ struct RemoteTerminalIssue {
     let title: String
     let recovery: String
     let canViewReadOnly: Bool
+    /// Someone else is typing; the view names who, when the Mac says.
+    let typingElsewhere: Bool
 
     init(_ error: Error) {
         let relay = error as? RelayError
         let local = error as? LocalAgentClientError
         canViewReadOnly = relay == .sessionBusy || relay == .readOnly
             || local == .rejected(.sessionBusy) || local == .rejected(.readOnly)
+        typingElsewhere = relay == .sessionBusy || local == .rejected(.sessionBusy)
         if let error = error as? RelayError {
             switch error {
             case .offline:
@@ -21,7 +24,7 @@ struct RemoteTerminalIssue {
                 recovery = String(localized: "Check that the other device is online and allows remote access.", bundle: .main)
             case .untrusted, .revoked:
                 title = String(localized: "No Longer Paired", bundle: .main)
-                recovery = String(localized: "This device was unpaired, or can’t be verified. To pair again, choose Continue on Another Device on the other device.", bundle: .main)
+                recovery = String(localized: "This device was unpaired, or can’t be verified. To pair again, choose Open On ▸ New Device on the other device.", bundle: .main)
             case .unauthorized:
                 title = String(localized: "Unable to Verify Device Identity", bundle: .main)
                 recovery = String(localized: "Unlock your device and check the network, then try again.", bundle: .main)
@@ -67,6 +70,44 @@ struct RemoteTerminalIssue {
     }
 }
 
+/// Where typing is, in the words a paired device can use. The Mac lists the
+/// others who can type in a terminal (`writers`): another paired device by
+/// name, or nil for the Mac itself. Older Macs don't list them, so the
+/// wording falls back to "another device".
+enum TypingElsewhere {
+    /// The names of everyone else typing, the Mac by its paired name, each
+    /// once; nil when the Mac didn't say.
+    static func names(_ writers: [LocalWriterInfo]?, hostName: String) -> [String]? {
+        guard let writers else { return nil }
+        var names: [String] = []
+        for writer in writers {
+            let name = writer.name ?? hostName
+            if !names.contains(name) { names.append(name) }
+        }
+        return names
+    }
+
+    /// "Typing on iPad", or nil when nobody else types or the Mac didn't say.
+    static func summary(_ writers: [LocalWriterInfo]?, hostName: String) -> String? {
+        guard let names = names(writers, hostName: hostName), !names.isEmpty else { return nil }
+        let joined = names.formatted(.list(type: .and))
+        return String(localized: "Typing on \(joined)", bundle: .main)
+    }
+
+    /// A terminal that refused typing because someone else types.
+    static func busyTitle(_ writers: [LocalWriterInfo]?, hostName: String) -> String {
+        summary(writers, hostName: hostName) ?? String(localized: "Typing on Another Device", bundle: .main)
+    }
+
+    /// A reconnect that found someone else typing and watched instead.
+    static func watchingNotice(_ writers: [LocalWriterInfo]?, hostName: String) -> String {
+        guard let summary = summary(writers, hostName: hostName) else {
+            return String(localized: "Another device is typing, so you’re watching.", bundle: .main)
+        }
+        return String(localized: "\(summary), so you’re watching.", bundle: .main)
+    }
+}
+
 enum RemoteTerminalConnectionState: Equatable {
     case browsing, connecting, connected, switching, disconnected, ended
 }
@@ -89,9 +130,11 @@ final class RemoteTerminalModel {
     private(set) var issue: RemoteTerminalIssue?
     private(set) var loaded = false
     @ObservationIgnored private var opensSoleSession = false
-    /// A short explanation of what an automatic reconnect did, such as
-    /// joining read-only because another device has control.
-    private(set) var notice: String?
+    /// An automatic reconnect found someone else typing, so it watches
+    /// instead; the view says who, from the latest list.
+    private(set) var notice = false
+    /// The grant being unpaired from this device, while that's under way.
+    private(set) var unpairingID: String?
     /// The device whose pairing just ended while it was open here. Its
     /// terminal and list close at once, so Terminals says why until dismissed.
     private(set) var unpairedName: String?
@@ -224,7 +267,7 @@ final class RemoteTerminalModel {
         let allowed = access(for: session)
         if !automatic {
             automaticAttempts = 0
-            notice = nil
+            notice = false
         }
         resumeWhenActive = false
         retry?.cancel(); retry = nil
@@ -262,8 +305,11 @@ final class RemoteTerminalModel {
                         return
                     }
                     // The attach reply carries the live grid; the listed access still applies.
+                    // Who else types comes from the list, until the next one.
+                    let writers = self.sessions.first { $0.id == next.session.id }?.writers ?? session.writers
                     let live = LocalSessionInfo(id: next.session.id, name: next.session.name, createdAt: next.session.createdAt,
-                                                columns: next.session.columns, rows: next.session.rows, access: allowed)
+                                                columns: next.session.columns, rows: next.session.rows, access: allowed,
+                                                writers: writers)
                     self.selectedSession = live
                     self.sessions = self.sessions.map { $0.id == live.id ? live : $0 }
                     self.mode = targetMode
@@ -287,7 +333,7 @@ final class RemoteTerminalModel {
                     if automatic, targetMode == .control, Self.isBusy(error) {
                         self.busy = nil
                         self.work = nil
-                        self.notice = String(localized: "Another device is typing, so you’re watching.", bundle: .main)
+                        self.notice = true
                         self.attach(session, mode: .view, automatic: true)
                         return
                     }
@@ -448,14 +494,70 @@ final class RemoteTerminalModel {
         (error as? RelayError) == .sessionBusy || (error as? LocalAgentClientError) == .rejected(.sessionBusy)
     }
 
-    func dismissNotice() { notice = nil }
+    func dismissNotice() { notice = false }
+
+    /// Who else can type in the open terminal, as of the latest list.
+    var openWriters: [LocalWriterInfo]? {
+        guard let id = selectedSession?.id else { return nil }
+        return sessions.first { $0.id == id }?.writers
+    }
+
+    /// Lists the device's terminals again only to learn who else types in
+    /// the one being watched, so its title can say where typing is. Changes
+    /// nothing else; false when the list couldn't be had.
+    @discardableResult
+    func refreshWriters() async -> Bool {
+        guard isInteractive, mode == .view, canRequestControl, let grant = selectedGrant,
+              let id = selectedSession?.id, let pairing else { return false }
+        let token = generation
+        guard let listed = try? await RemoteTerminalClient(pairing: pairing, grantID: grant.id).sessions() else { return false }
+        guard generation == token, selectedGrant?.id == grant.id, selectedSession?.id == id else { return false }
+        sessions = sessions.map { session in
+            guard let fresh = listed.first(where: { $0.id == session.id }) else { return session }
+            return LocalSessionInfo(id: session.id, name: session.name, createdAt: session.createdAt, columns: session.columns,
+                                    rows: session.rows, access: session.access, writers: fresh.writers)
+        }
+        return true
+    }
+
+    /// Ends this device's pairing with `grant`'s device, through the server
+    /// (either side may). A terminal open from it is left first, after the
+    /// detach ACK; then it leaves the lists. Throws when the server wasn't
+    /// told, leaving the device listed so Unpair can be tried again.
+    func unpair(_ grant: DeviceGrant) async throws {
+        guard unpairingID == nil else { return }
+        unpairingID = grant.id
+        defer { unpairingID = nil }
+        let pairing = try pairingClient()
+        if selectedGrant?.id == grant.id {
+            cancelWork()
+            resumeWhenActive = false
+            notice = false
+            if let previous = deactivate() {
+                connectionState = .disconnected
+                busy = String(localized: "Leaving…", bundle: .main)
+                do { try await previous.detach() } catch { await previous.abort() }
+                busy = nil
+            }
+            clearDisplay()
+            selectedSession = nil
+            sessions = []
+            selectedGrant = nil
+            connectionState = .browsing
+        }
+        try await pairing.revoke(grantID: grant.id, pairingID: grant.pairingID)
+        grants.removeAll { $0.id == grant.id }
+        if unpairedName == grant.host.name { unpairedName = nil }
+        UIAccessibility.post(notification: .announcement,
+                             argument: String(localized: "Unpaired from \(grant.host.name)", bundle: .main))
+    }
 
     /// Back to the device's terminals. An open terminal is left first (it
     /// keeps running there), and the list shows after the detach ACK.
     func showSessions() {
         guard busy == nil else { return }
         resumeWhenActive = false
-        notice = nil
+        notice = false
         let previous = deactivate()
         cancelWork()
         issue = nil
@@ -555,7 +657,7 @@ final class RemoteTerminalModel {
 
     private func authorizationUnavailable() {
         resumeWhenActive = false
-        notice = nil
+        notice = false
         if let name = selectedGrant?.host.name {
             unpairedName = name
             UIAccessibility.post(notification: .announcement,
@@ -576,12 +678,19 @@ final class RemoteTerminalModel {
 
     private func pairingClient() throws -> PairingClient {
         if let pairing { return pairing }
-        let clean = UIDevice.current.name.components(separatedBy: .controlCharacters).joined()
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let name = String(String.UnicodeScalarView((clean.isEmpty ? String(localized: "My iPhone", bundle: .main) : clean).unicodeScalars.prefix(64)))
-        let client = try PairingClient(serverAddress: serverAddress, deviceName: name, platform: .ios)
+        let client = try PairingClient(serverAddress: serverAddress, deviceName: PairingDeviceName.current, platform: .ios)
         pairing = client
         return client
+    }
+}
+
+/// The name this device pairs under, which the other device shows (in its
+/// Open On menu, for one).
+enum PairingDeviceName {
+    static var current: String {
+        let clean = UIDevice.current.name.components(separatedBy: .controlCharacters).joined()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return String(String.UnicodeScalarView((clean.isEmpty ? String(localized: "My iPhone", bundle: .main) : clean).unicodeScalars.prefix(64)))
     }
 }
 #endif

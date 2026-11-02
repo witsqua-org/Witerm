@@ -53,11 +53,26 @@ final class RemoteModels {
     }
 }
 
-/// One paired device: who it is, through which server, and its fingerprint.
+/// One paired device: who it is, through which server, its code, and Unpair.
 struct MacDeviceDetails: View {
     let server: ConnectionModel
     let grant: DeviceGrant
+    let model: RemoteTerminalModel
     let done: () -> Void
+    /// Called once the pairing has ended, before the sheet closes.
+    let unpaired: () -> Void
+    @Environment(NetworkStatus.self) private var network: NetworkStatus?
+    @State private var confirming = false
+    @State private var failure: PairingIssue?
+
+    private var unpairing: Bool { model.unpairingID == grant.id }
+    private var offline: Bool { network?.online == false }
+
+    /// Names the device the app runs on, as the vocabulary allows.
+    private var thisDevice: String {
+        UIDevice.current.userInterfaceIdiom == .pad ? String(localized: "This iPad", bundle: .main)
+            : String(localized: "This iPhone", bundle: .main)
+    }
 
     var body: some View {
         NavigationStack {
@@ -71,12 +86,56 @@ struct MacDeviceDetails: View {
                     Text(PairingFingerprint.display(publicKey: grant.host.publicKey))
                         .font(.body.monospaced()).textSelection(.enabled)
                 }
+                Section {
+                    Button(role: .destructive) { confirming = true } label: {
+                        if unpairing {
+                            HStack(spacing: 10) {
+                                ProgressView()
+                                Text(String(localized: "Unpairing…", bundle: .main))
+                            }
+                        } else {
+                            Text(String(localized: "Unpair…", bundle: .main))
+                        }
+                    }
+                    .disabled(unpairing || offline)
+                    .accessibilityIdentifier("unpairDevice")
+                } footer: {
+                    // Unpairing goes through the relay server; say why it can't, and what to do.
+                    if offline {
+                        Text(String(localized: "Unpairing needs a network connection.", bundle: .main))
+                    } else if let failure {
+                        Text(String(localized: "\(failure.title). \(thisDevice) no longer opens its terminals, but the relay server wasn’t told. Try again, or unpair on the other device.", bundle: .main))
+                            .foregroundStyle(WitermTheme.warning)
+                            .accessibilityIdentifier("unpairFailure")
+                    }
+                }
             }
             .navigationTitle(String(localized: "Device Details", bundle: .main))
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button(String(localized: "Done", bundle: .main), action: done)
+                        .disabled(unpairing)
                 }
+            }
+            .interactiveDismissDisabled(unpairing)
+            .alert(String(localized: "Unpair from “\(grant.host.name)”?", bundle: .main), isPresented: $confirming) {
+                Button(String(localized: "Unpair", bundle: .main), role: .destructive, action: unpair)
+                Button(String(localized: "Cancel", bundle: .main), role: .cancel) {}
+            } message: {
+                Text(String(localized: "\(thisDevice) can no longer open its terminals. To use them again, pair again.", bundle: .main))
+            }
+            .sensoryFeedback(.error, trigger: failure?.title)
+        }
+    }
+
+    private func unpair() {
+        failure = nil
+        Task {
+            do {
+                try await model.unpair(grant)
+                unpaired()
+            } catch {
+                failure = PairingIssue(error)
             }
         }
     }

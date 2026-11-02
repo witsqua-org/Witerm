@@ -69,7 +69,11 @@ import XCTest
         app.buttons["sshSaveProfile"].tap()
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         menu.tap()
-        app.buttons["Add to Favorites"].tap()
+        // A checkmark item; XCTest may see it as a button or a switch.
+        let favoriteItem = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@ AND (elementType == %d OR elementType == %d)",
+            "Favorite", XCUIElement.ElementType.button.rawValue, XCUIElement.ElementType.switch.rawValue)).firstMatch
+        XCTAssertTrue(favoriteItem.waitForExistence(timeout: 5))
+        favoriteItem.tap()
         let favorite = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", "favorite"), object: row)
         wait(for: [favorite], timeout: 5)
         // With only a few hosts, search and filters stay out of the way.
