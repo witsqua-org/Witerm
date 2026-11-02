@@ -125,9 +125,32 @@ No invented percentages, minimum loading times, or idle glow. With Reduce Transp
 
 ## Wording
 
-Verbs have fixed meanings. **Leave**: stop watching a Mac session; it keeps running. **End Session**: stop the shell and its programs. **Disconnect**: close an SSH connection (the remote shell ends with it). **Share** and **Stop Sharing**: whether paired devices can reach a session. **Release Control**: hand typing to another device. One icon per idea: Leave uses the door arrow, Disconnect the circled cross, sharing the antenna, pairing the link.
+One word per idea, the same on both platforms and in both languages. A label names what happens or what the person can do, never the mechanism. When a short label can't carry it, add help (a Mac tooltip, an iOS VoiceOver hint or menu subtitle) instead of more visible text. A user should never need the docs to know what a control does or what state they're in.
 
-Remote machines are **devices**; the one at the other end of a pairing is **the other device**. Copy names devices by role (this device, the other device), never by platform, except the device the app runs on ("This Mac"). Witerm servers are **continuation servers** and machines you sign in to are **SSH hosts**; the two never share a label. Access is **View Only** or **Can Type**. A device's fingerprint is its **code**. Continuing between devices uses `laptopcomputer.and.iphone`; `qrcode.viewfinder` appears only on a control that only scans.
+**Things**
+
+| Term | Meaning | Not |
+|---|---|---|
+| terminal (终端) | A shell Witerm keeps running on a Mac, with its programs. It keeps running when nobody has it open. | session (only the CLI and protocol docs say session) |
+| SSH host (SSH 主机) | A machine you sign in to with SSH. | server |
+| relay server (中继服务器) | The Witerm server your devices pair and connect through. | continuation server, server alone where an SSH host could be meant |
+| paired device (已配对设备) | Another of your devices that may open this Mac's terminals. The one at the other end of a pairing is the other device. | — |
+| code (验证码) | A device's fingerprint, compared by eye. | fingerprint |
+
+**Your own view of a terminal.** Two states, named by what you can do: **Typing** (可输入) and **Watching** (仅观看), where nothing you press is sent. **Open** opens a terminal so you can type; **Watch** opens it without typing. While it's open, **Stop Typing** and **Start Typing** switch. Only one place types at a time; when it's elsewhere, say where (Typing on *device*). **Connect**, **Reconnect** and **Disconnect** are only for SSH hosts and network connections, never for opening a terminal on a Mac.
+
+**What another device may do.** **Can watch and type** (可观看和输入) or **Can only watch** (仅可观看); which terminals: **All terminals**, **Only “*name*”**, or **Terminals you choose**. Never "View Only", "can read", "Can Open", or "Can Type" on its own. Ending a pairing is **Unpair…** (取消配对), and its confirmation says what the device loses and that pairing again restores it.
+
+**Verbs.** **Leave**: stop showing a terminal here; it keeps running. **End Terminal…**: stop the shell and its programs (confirmed). **Disconnect**: close an SSH connection, and with it the remote shell. One icon per idea: Leave the door arrow, Disconnect the circled cross, sharing the antenna, pairing the link, watching the eye, typing the keyboard. Continuing between devices uses `laptopcomputer.and.iphone`; `qrcode.viewfinder` appears only on a control that only scans.
+
+**Devices.** Name devices by role (this device, the other device), never by platform, except the device the app runs on (This Mac).
+
+**State and feedback.**
+
+- Any state that limits what the person can do (watching, typing elsewhere, remote typing paused, remote access off, offline, disconnected) is visible while it lasts, where they're looking, with words and a symbol.
+- Menus and buttons that switch a state show the current one: a checkmark or a toggled title, never two items that look the same before and after.
+- Every action changes something visible at once. If nothing on screen would change, confirm briefly; if it takes longer than a moment, show progress that can be cancelled.
+- Fix confusing words with better words, not more of them.
 
 ## Screenshots
 
