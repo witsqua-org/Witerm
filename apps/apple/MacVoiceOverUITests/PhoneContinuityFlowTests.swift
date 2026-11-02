@@ -189,6 +189,11 @@ final class PhoneContinuityFlowTests: XCTestCase {
         RunLoop.current.run(until: Date().addingTimeInterval(2.5))
         app.typeText("echo MAC_TYPED\n")
         RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+        // Typing in turn moves the grid between the two, and its geometry
+        // carries the name the test gave the terminal after opening it; the
+        // window used to reject that and drop the terminal.
+        XCTAssertTrue(terminal.exists, "The Mac window lost the terminal while typing together")
+        XCTAssertFalse(app.staticTexts["Terminals on This Mac Need an Update"].exists, "The Mac rejected the renamed terminal's geometry")
         shot("05-together")
         signal("mac-typed")
         XCTAssertNotNil(awaitSignal("phone-done", timeout: 300), "The phone didn't finish")
