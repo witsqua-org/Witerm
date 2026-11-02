@@ -61,7 +61,8 @@ Point `DOCKER_CONFIG` at that dedicated directory and preserve the active Docker
 If the server cannot reach Docker Hub during builds, build the Linux image on another Docker host for the server's architecture (for example, `linux/amd64` on Windows x64):
 
 ```sh
-docker buildx build --platform linux/amd64 --load -t witerm-server:latest -f server/Dockerfile .
+docker buildx build --platform linux/amd64 --load -t witerm-server:latest \
+  --build-arg REVISION="$(git rev-parse --short HEAD)" -f server/Dockerfile .
 docker save witerm-server:latest -o witerm-server-amd64.tar
 ```
 
@@ -72,4 +73,13 @@ docker load -i witerm-server-amd64.tar
 docker compose -f compose.public.yaml up --no-build --pull never -d --wait
 ```
 
-This keeps the same Compose configuration, application source, database volume, and healthchecks.
+This keeps the same Compose configuration, application source, database volume, and healthchecks. `docker image inspect witerm-server:latest` shows the source revision in the `org.opencontainers.image.revision` label.
+
+Before an update, back up the database to a file on the host and keep the running image for rollback:
+
+```sh
+docker exec witerm-postgres-1 sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc -f /tmp/witerm-backup.dump'
+docker cp witerm-postgres-1:/tmp/witerm-backup.dump backups/witerm-db-YYYYMMDD-HHMMSS.dump
+docker exec witerm-postgres-1 rm -f /tmp/witerm-backup.dump
+docker tag witerm-server:latest witerm-server:rollback-YYYYMMDD
+```

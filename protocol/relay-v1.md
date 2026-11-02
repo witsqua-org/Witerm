@@ -25,7 +25,8 @@ An iOS client lists and attaches to existing Mac sessions through the server. Th
 - Binary messages only, at most 65,536 bytes each, forwarded unchanged.
 
 **Limits.**
-- 4 tunnels per device, 256 overall, 256 host connections.
+- 4 tunnels per client device, 8 per Mac (it serves every device paired with it), 256 overall, 256 host connections.
+- Per device and minute: 30 host connections and tunnel creations together, and separately 120 tunnel joins. Every list or attach from any client costs its Mac one join, so the Mac's joins have room for four clients at full rate.
 - 256 KiB queued per leg; overflow closes the leg instead of dropping data.
 - A route is used once. Expiry, disconnect, host replacement, or revocation consumes it.
 

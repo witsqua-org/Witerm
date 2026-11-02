@@ -18,6 +18,25 @@ type RelayIdentity struct {
 	hash      [32]byte
 }
 
+// RelayAccess says what a relay request does, which decides its rate limit.
+type RelayAccess int
+
+const (
+	// RelayOpen starts something: a Mac's host connection or a new tunnel.
+	RelayOpen RelayAccess = iota
+	// RelayJoin connects to a tunnel that a client already opened.
+	RelayJoin
+)
+
+const (
+	relayOpenLimit = rateLimit
+	// Every list or attach from any paired device costs its Mac one join, so
+	// a Mac would otherwise share one budget among all its devices. Joins
+	// get their own, with room for four devices opening tunnels at their
+	// full rate; a join still needs a live tunnel a rate-limited client opened.
+	relayJoinLimit = 4 * relayOpenLimit
+)
+
 var (
 	ErrRelayUnauthorized = errors.New("unauthorized")
 	ErrRelayUnavailable  = errors.New("tunnel_unavailable")
@@ -25,7 +44,7 @@ var (
 )
 
 // AuthenticateRelay reuses the pairing session and durable device identity.
-func (s *Service) AuthenticateRelay(ctx context.Context, r *http.Request) (RelayIdentity, error) {
+func (s *Service) AuthenticateRelay(ctx context.Context, r *http.Request, access RelayAccess) (RelayIdentity, error) {
 	values := r.Header.Values("Authorization")
 	if len(values) != 1 || !strings.HasPrefix(values[0], "Bearer ") || len(values[0]) > 128 {
 		return RelayIdentity{}, ErrRelayUnauthorized
@@ -42,7 +61,13 @@ func (s *Service) AuthenticateRelay(ctx context.Context, r *http.Request) (Relay
 	if err != nil {
 		return RelayIdentity{}, err
 	}
-	if !s.memory.allow("relay:"+d.ID, s.now()) {
+	var allowed bool
+	if access == RelayJoin {
+		allowed = s.memory.allowUpTo("relay-join:"+d.ID, relayJoinLimit, s.now())
+	} else {
+		allowed = s.memory.allowUpTo("relay:"+d.ID, relayOpenLimit, s.now())
+	}
+	if !allowed {
 		return RelayIdentity{}, ErrRelayRateLimited
 	}
 	return RelayIdentity{Device: d, ExpiresAt: sess.ExpiresAt, hash: sha256.Sum256([]byte(token))}, nil

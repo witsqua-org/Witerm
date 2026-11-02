@@ -189,17 +189,23 @@ func newFixture(t *testing.T, decorate ...func(*pairing.Service) Authorizer) *fi
 	f.host = f.register(t, "Mac", "macos")
 	f.client = f.register(t, "Phone", "ios")
 	f.other = f.register(t, "Other", "ios")
+	f.grant = f.pair(t, f.client)
+	return f
+}
+
+// pair pairs a client with the fixture's host for control and returns the grant.
+func (f *fixture) pair(t *testing.T, client identity) pairing.Grant {
+	t.Helper()
 	var created struct {
 		Pairing pairing.Pairing `json:"pairing"`
 		Secret  string          `json:"secret"`
 	}
 	f.request(t, "POST", "/v1/pairings", f.host.token, struct{}{}, 201, &created)
 	var p pairing.Pairing
-	f.request(t, "POST", "/v1/pairings/"+created.Pairing.ID+"/join", f.client.token, map[string]string{"secret": created.Secret}, 200, &p)
+	f.request(t, "POST", "/v1/pairings/"+created.Pairing.ID+"/join", client.token, map[string]string{"secret": created.Secret}, 200, &p)
 	message := strings.Join([]string{"witerm-pair-v1", p.ID, p.Host.PublicKey, p.Client.PublicKey, "control"}, "\n")
 	f.request(t, "POST", "/v1/pairings/"+p.ID+"/approve", f.host.token, map[string]string{"permission": "control", "approval_signature": base64.StdEncoding.EncodeToString(ed25519.Sign(f.host.key, []byte(message)))}, 200, &p)
-	f.grant = *p.Grant
-	return f
+	return *p.Grant
 }
 func (f *fixture) request(t *testing.T, method, path, token string, body any, want int, result any) {
 	t.Helper()
@@ -367,7 +373,7 @@ func TestRelayPostgresReconnectExpiryAndBounds(t *testing.T) {
 	closed(t, h)
 	closed(t, client)
 	f.dial(t, "/v1/relay/tunnels/"+id, f.host.token, 404)
-	for range maxDeviceTunnels {
+	for range maxClientTunnels {
 		f.route(t, newHost)
 	}
 	f.request(t, "POST", "/v1/relay/tunnels", f.client.token, map[string]string{"grant_id": f.grant.ID}, 429, nil)
@@ -386,6 +392,60 @@ func TestRelayPostgresReconnectExpiryAndBounds(t *testing.T) {
 		defer f.relay.mu.Unlock()
 		return len(f.relay.tunnels) == 0 && len(f.relay.hosts) == 0
 	})
+}
+
+// A Mac serves every device paired with it: two clients at their own bound
+// fit within the Mac's, and a third client finds the Mac full.
+func TestRelayPostgresHostServesSeveralClients(t *testing.T) {
+	f := newFixture(t)
+	f.online(t)
+	tablet := f.register(t, "Tablet", "ios")
+	clients := []struct {
+		identity
+		grant pairing.Grant
+	}{{f.client, f.grant}, {f.other, f.pair(t, f.other)}, {tablet, f.pair(t, tablet)}}
+	for _, c := range clients[:2] {
+		for range maxClientTunnels {
+			f.request(t, "POST", "/v1/relay/tunnels", c.token, map[string]string{"grant_id": c.grant.ID}, 201, nil)
+		}
+		f.request(t, "POST", "/v1/relay/tunnels", c.token, map[string]string{"grant_id": c.grant.ID}, 429, nil)
+	}
+	if 2*maxClientTunnels != maxHostTunnels {
+		t.Fatal("test assumes two full clients fill the host")
+	}
+	f.request(t, "POST", "/v1/relay/tunnels", clients[2].token, map[string]string{"grant_id": clients[2].grant.ID}, 429, nil)
+}
+
+// Joining tunnels has its own budget, so a Mac answering several devices
+// isn't limited to one device's worth of tunnels, and both stay bounded.
+func TestRelayPostgresJoinsHaveTheirOwnBudget(t *testing.T) {
+	f := newFixture(t)
+	authenticate := func(access pairing.RelayAccess) error {
+		r := httptest.NewRequest("GET", "/v1/relay/tunnels/"+f.grant.ID, nil)
+		r.Header.Set("Authorization", "Bearer "+f.host.token)
+		_, err := f.auth.AuthenticateRelay(context.Background(), r, access)
+		return err
+	}
+	opened := 0
+	for authenticate(pairing.RelayOpen) == nil {
+		opened++
+		if opened > 1000 {
+			t.Fatal("open budget is unbounded")
+		}
+	}
+	joined := 0
+	for authenticate(pairing.RelayJoin) == nil {
+		joined++
+		if joined > 1000 {
+			t.Fatal("join budget is unbounded")
+		}
+	}
+	if opened != 30 || joined != 120 {
+		t.Fatalf("opened %d and joined %d, want 30 and 120", opened, joined)
+	}
+	if err := authenticate(pairing.RelayOpen); err != pairing.ErrRelayRateLimited {
+		t.Fatal("a spent budget must report rate_limited")
+	}
 }
 
 func TestRelayPostgresGlobalAndHostOfferBounds(t *testing.T) {
@@ -558,8 +618,8 @@ type expiringAuthorizer struct {
 	host bool
 }
 
-func (a expiringAuthorizer) AuthenticateRelay(ctx context.Context, r *http.Request) (pairing.RelayIdentity, error) {
-	identity, err := a.Service.AuthenticateRelay(ctx, r)
+func (a expiringAuthorizer) AuthenticateRelay(ctx context.Context, r *http.Request, access pairing.RelayAccess) (pairing.RelayIdentity, error) {
+	identity, err := a.Service.AuthenticateRelay(ctx, r, access)
 	if err == nil && (a.host && r.URL.Path == "/v1/relay/host" || !a.host && r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/v1/relay/tunnels/") && identity.Device.Platform == "ios") {
 		identity.ExpiresAt = time.Now().Add(800 * time.Millisecond)
 	}

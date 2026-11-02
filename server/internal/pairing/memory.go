@@ -7,7 +7,11 @@ import (
 	"time"
 )
 
-const memoryCapacity = 10000
+const (
+	memoryCapacity = 10000
+	// rateLimit is the default number of requests per key per minute.
+	rateLimit = 30
+)
 
 type challenge struct {
 	ID        string
@@ -55,7 +59,10 @@ func (m *memory) clean(now time.Time) {
 	}
 }
 
-func (m *memory) allow(key string, now time.Time) bool {
+func (m *memory) allow(key string, now time.Time) bool { return m.allowUpTo(key, rateLimit, now) }
+
+// allowUpTo counts one request against a fixed one-minute window of limit.
+func (m *memory) allowUpTo(key string, limit int, now time.Time) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.clean(now)
@@ -66,7 +73,7 @@ func (m *memory) allow(key string, now time.Time) bool {
 		}
 		window.ExpiresAt = now.Add(time.Minute)
 	}
-	if window.Count >= 30 {
+	if window.Count >= limit {
 		return false
 	}
 	window.Count++

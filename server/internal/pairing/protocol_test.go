@@ -100,6 +100,15 @@ func TestChallengeConsumptionAndMemoryBounds(t *testing.T) {
 	if !m.allow("ip", now.Add(time.Minute)) {
 		t.Fatal("rate window did not expire")
 	}
+	// Each key keeps its own window and limit.
+	for i := 0; i < relayJoinLimit; i++ {
+		if !m.allowUpTo("relay-join:mac", relayJoinLimit, now) {
+			t.Fatal("early join limit")
+		}
+	}
+	if m.allowUpTo("relay-join:mac", relayJoinLimit, now) || !m.allowUpTo("relay:mac", relayOpenLimit, now) {
+		t.Fatal("join and open budgets are not separate")
+	}
 	for i := 0; i < memoryCapacity; i++ {
 		m.challenges[time.Unix(int64(i), 0).String()] = challenge{ExpiresAt: now.Add(time.Hour)}
 	}

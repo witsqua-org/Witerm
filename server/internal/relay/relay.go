@@ -19,8 +19,11 @@ import (
 )
 
 const (
-	maxTunnels       = 256
-	maxDeviceTunnels = 4
+	maxTunnels = 256
+	// A Mac serves every device paired with it, so it may hold more tunnels
+	// than one client; its own service also stops at 8.
+	maxHostTunnels   = 8
+	maxClientTunnels = 4
 	maxHosts         = 256
 	maxSockets       = maxTunnels*2 + maxHosts
 	maxMessage       = 65536
@@ -82,7 +85,7 @@ type Options struct{ AllowLoopbackDevelopment bool }
 // Authorizer is the existing pairing service's narrow in-memory/durable view.
 // No identity records, key material or bearer tokens are duplicated by relay.
 type Authorizer interface {
-	AuthenticateRelay(context.Context, *http.Request) (pairing.RelayIdentity, error)
+	AuthenticateRelay(context.Context, *http.Request, pairing.RelayAccess) (pairing.RelayIdentity, error)
 	WithActiveRelayGrant(context.Context, string, func(pairing.Grant) error) error
 	SetRelayRevocationHook(func(string))
 	CheckRelayState(context.Context, []pairing.RelayIdentity, []string) (map[string]bool, map[string]bool, error)
@@ -156,7 +159,7 @@ func transportAllowed(r *http.Request, allowLoopback bool) bool {
 	}
 	return allowLoopback && (host == "localhost" || host == "127.0.0.1" || host == "::1")
 }
-func (s *Service) authenticate(w http.ResponseWriter, r *http.Request, upgrade bool) (pairing.RelayIdentity, bool) {
+func (s *Service) authenticate(w http.ResponseWriter, r *http.Request, upgrade bool, access pairing.RelayAccess) (pairing.RelayIdentity, bool) {
 	if !transportAllowed(r, s.allowLoopbackDevelopment) || len(r.Header.Values("Origin")) != 0 {
 		fail(w, 403, "forbidden")
 		return pairing.RelayIdentity{}, false
@@ -167,7 +170,7 @@ func (s *Service) authenticate(w http.ResponseWriter, r *http.Request, upgrade b
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), ioTimeout)
 	defer cancel()
-	identity, err := s.pairing.AuthenticateRelay(ctx, r)
+	identity, err := s.pairing.AuthenticateRelay(ctx, r, access)
 	if err != nil {
 		failError(w, err)
 		return pairing.RelayIdentity{}, false
@@ -190,7 +193,7 @@ func (s *Service) acquire() bool {
 func (s *Service) release() { s.mu.Lock(); s.sockets--; s.mu.Unlock() }
 
 func (s *Service) hostHandler(w http.ResponseWriter, r *http.Request) {
-	identity, ok := s.authenticate(w, r, true)
+	identity, ok := s.authenticate(w, r, true, pairing.RelayOpen)
 	if !ok {
 		return
 	}
@@ -260,7 +263,7 @@ func (s *Service) hostHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) createHandler(w http.ResponseWriter, r *http.Request) {
-	identity, ok := s.authenticate(w, r, false)
+	identity, ok := s.authenticate(w, r, false, pairing.RelayOpen)
 	if !ok {
 		return
 	}
@@ -310,7 +313,7 @@ func (s *Service) createHandler(w http.ResponseWriter, r *http.Request) {
 				clientCount++
 			}
 		}
-		if hostCount >= maxDeviceTunnels || clientCount >= maxDeviceTunnels {
+		if hostCount >= maxHostTunnels || clientCount >= maxClientTunnels {
 			return errLimited
 		}
 		tctx, tcancel := context.WithCancel(s.ctx)
@@ -347,7 +350,7 @@ func (s *Service) createHandler(w http.ResponseWriter, r *http.Request) {
 
 func complete(t *tunnel) bool { return t.legs[0].conn != nil && t.legs[1].conn != nil }
 func (s *Service) tunnelHandler(w http.ResponseWriter, r *http.Request) {
-	identity, ok := s.authenticate(w, r, true)
+	identity, ok := s.authenticate(w, r, true, pairing.RelayJoin)
 	if !ok {
 		return
 	}

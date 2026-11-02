@@ -8,6 +8,9 @@ ARG TARGETARCH
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/witerm-server ./cmd/server
 
 FROM alpine:3.23
+# The source revision, so a deployed image can be traced (docker image inspect).
+ARG REVISION=unknown
+LABEL org.opencontainers.image.revision=$REVISION
 RUN apk add --no-cache ca-certificates
 COPY --from=build /out/witerm-server /witerm-server
 USER 65532:65532
