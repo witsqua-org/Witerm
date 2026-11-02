@@ -1,11 +1,86 @@
 #if os(iOS)
 import SwiftTerm
+import UIKit
 import SwiftUI
 
 /// Where a find bar looks. Renderers register their terminal view; the bar
 /// only selects and scrolls within it and never sends input or resizes.
 @MainActor final class TerminalFinder {
     weak var terminal: TerminalView?
+}
+
+/// The terminal's own background, so the area under the home indicator
+/// continues the terminal instead of showing a band of another color.
+enum TerminalBackdrop {
+    static func color(dark: Bool, highContrast: Bool, palette: TerminalColorScheme) -> SwiftUI.Color {
+        if highContrast { return dark ? .black : .white }
+        guard let values = palette.values(dark: dark) else { return SwiftUI.Color(uiColor: .systemBackground) }
+        return SwiftUI.Color(uiColor: UIColor(terminalRGB: values.background))
+    }
+}
+
+/// Smaller and larger terminal text, side by side at the top of a terminal's
+/// actions menu. Like pinching, it changes only this device's view.
+struct TerminalTextSizeControls: View {
+    @AppStorage(TerminalFontSize.key) private var fontSize = TerminalFontSize.standard
+
+    var body: some View {
+        ControlGroup {
+            Button(String(localized: "Decrease Text Size", bundle: .main), systemImage: "textformat.size.smaller") {
+                fontSize = TerminalFontSize.clamped(fontSize - 1)
+            }
+            .disabled(fontSize <= TerminalFontSize.range.lowerBound)
+            .accessibilityIdentifier("terminalSmallerText")
+            Button(String(localized: "Increase Text Size", bundle: .main), systemImage: "textformat.size.larger") {
+                fontSize = TerminalFontSize.clamped(fontSize + 1)
+            }
+            .disabled(fontSize >= TerminalFontSize.range.upperBound)
+            .accessibilityIdentifier("terminalLargerText")
+        }
+        .controlGroupStyle(.compactMenu)
+    }
+}
+
+/// A chevron beside a terminal's title that lists the other terminals one tap
+/// away, so switching needs no trip back to the list.
+struct TerminalSwitcher: View {
+    let names: [String]
+    let choose: (Int) -> Void
+
+    var body: some View {
+        Menu {
+            ForEach(Array(names.enumerated()), id: \.offset) { index, name in
+                Button(name, systemImage: "terminal") { choose(index) }
+            }
+        } label: {
+            Image(systemName: "chevron.down.circle.fill")
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(WitermTheme.secondary)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel(String(localized: "Switch Terminal", bundle: .main))
+        .accessibilityIdentifier("terminalSwitcher")
+    }
+}
+
+/// Shows or hides one terminal's keyboard, and says which it will do: the
+/// symbol and label follow the terminal's real keyboard focus.
+struct TerminalKeyboardButton: View {
+    /// The input view whose focus this button follows.
+    let terminal: () -> UIView?
+    let action: () -> Void
+    @State private var shown = false
+
+    var body: some View {
+        Button(shown ? String(localized: "Hide Keyboard", bundle: .main) : String(localized: "Show Keyboard", bundle: .main),
+               systemImage: shown ? "keyboard.chevron.compact.down" : "keyboard", action: action)
+            .onAppear { shown = terminal()?.isFirstResponder ?? false }
+            .onReceive(NotificationCenter.default.publisher(for: .witermTerminalFocusChanged)) { note in
+                guard let view = terminal(), (note.object as AnyObject?) === view else { return }
+                shown = note.userInfo?["focused"] as? Bool ?? false
+            }
+    }
 }
 
 /// Search in the terminal's scrollback, shown under a terminal's header.

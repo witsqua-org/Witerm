@@ -14,8 +14,8 @@ xcodebuild -project apps/apple/Witerm.xcodeproj -scheme WitermMac \
 ```
 
 1. **First build.** Approve `SwiftTermBuildInfoPlugin` when Xcode asks (it only generates version info) and install Apple's Metal Toolchain. Don't turn off plugin validation globally.
-2. **First launch.** Start the local service from the main window or Settings → General. If macOS asks for approval, the app links to Login Items & Extensions.
-3. **Sessions** appear under **This Mac**, including ones started with `witerm new`. The list refreshes on its own.
+2. **First launch.** The Welcome Tour's second page turns on the local service in place; the main window and Settings → General can too. If macOS asks for approval, the app links to Login Items & Extensions. Help → Welcome Tour shows the tour again.
+3. **Sessions** appear under **This Mac**, including ones started with `witerm new`. The list refreshes on its own. ⌘N opens a new session at once, named Terminal N, with the keyboard in it.
 4. **Command line.** Settings → Command Line installs `witerm` as a link into the app ([guide](cli.md)).
 
 The `WitermMac` scheme builds `Witerm.app`, whose executable is `Contents/MacOS/Witerm`; quit a running instance by that exact path. The Swift module keeps the name `WitermMac`, so tests still `@testable import WitermMac`.
@@ -39,9 +39,9 @@ Production Developer ID signing and notarization haven't been done yet.
 
 - Each session is one shell in Witerm's own tmux server. Terminal, iTerm, and your own tmux are untouched.
 - Closing a terminal view only detaches. **End Session** asks for confirmation, then ends the shell and its programs.
-- **Rename…** (sidebar context menu or the terminal's More menu) changes only the display name. The shell, its programs, and every attachment keep running; paired devices see the new name the next time they list sessions. `witerm rename <session> <name>` does the same.
+- **Rename…** (sidebar context menu, the toolbar's More menu, or Terminal → Rename Session…, ⇧⌘R) changes only the display name. The shell, its programs, and every attachment keep running; paired devices see the new name the next time they list sessions. `witerm rename <session> <name>` does the same.
 - Stopping the service disconnects viewers but keeps the shells. Continuity across logout, restart, or shutdown isn't promised. Sleep is covered in [Terminal experience](terminal-experience.md#sleep-and-weak-networks).
-- Several clients can type in one session; the grid follows whoever typed last. Paired devices type only when this Mac's policy allows, and **Pause Remote Typing** (or `~p`) returns them to view-only. There's no forced takeover.
+- Several clients can type in one session; the grid follows whoever typed last. Paired devices type only when this Mac's policy allows, and **Pause Remote Typing** (⇧⌘P, the toolbar button that appears while another device can type, or `~p`) returns them to view-only. There's no forced takeover.
 - Which paired devices reach a session is this Mac's choice: per device (all sessions, or shared ones only) and per session (**Keep Private** hides it from every paired device). Narrowing either disconnects the affected devices and keeps the shell. See [Encrypted relay](relay.md#using-it).
 - The app's terminals start with up to 1,000 lines of earlier output in their scrollback ([Terminal experience](terminal-experience.md#display)).
 - Terminal output stays in local memory and sockets; it's never stored or sent to the cloud. tmux keeps its usual scrollback, and your shell may keep history as configured.

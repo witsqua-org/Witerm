@@ -4,18 +4,21 @@ import SwiftUI
 import WitermCore
 
 /// A selected local tmux session: the live terminal, or a way back into it.
+/// The window title names the session; its subtitle carries only state worth
+/// knowing (view only, who else is on it, private or shared), and the
+/// toolbar holds the actions, so the terminal gets the whole pane.
 struct LocalTerminalDetail: View {
     @Bindable var service: LocalAgentService
     @Bindable var model: LocalTerminalModel
     let endSession: (LocalSessionInfo) -> Void
     let renameSession: (LocalSessionInfo) -> Void
+    let continueSession: (LocalSessionInfo) -> Void
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.colorScheme) private var systemColorScheme
     @AppStorage(TerminalFontSize.key) private var terminalFontSize = TerminalFontSize.standard
     @AppStorage("witerm.terminalHighContrast") private var terminalHighContrast = false
     @AppStorage(TerminalColorScheme.key) private var terminalPalette = TerminalColorScheme.system
     @AppStorage("witerm.terminalAnnounceOutput") private var terminalAnnounceOutput = false
-    @State private var continuing = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -39,97 +42,126 @@ struct LocalTerminalDetail: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(WitermTheme.canvas)
         .navigationTitle(model.selectedSession?.name ?? String(localized: "Local Terminal", bundle: .main))
-        .onDisappear { model.detach() }
-        .sheet(isPresented: $continuing) {
-            if let session = model.selectedSession {
-                ContinueOnDeviceSheet(service: service, sessionID: session.id) { id in
-                    model.activity(for: id).summary(home: NSHomeDirectory())
-                }
+        .navigationSubtitle(model.attachment == nil ? "" : model.selectedSession.map(subtitle) ?? "")
+        .toolbar {
+            if model.attachment != nil, let session = model.selectedSession, let client = service.client {
+                toolbar(session, client: client)
             }
         }
+        // Another device opening or leaving the session is announced once.
+        .onChange(of: model.selectedSession?.remoteDeviceNames ?? []) { old, new in
+            for name in new where !old.contains(name) {
+                AccessibilityNotification.Announcement(String(localized: "\(name) joined", bundle: .main)).post()
+            }
+            for name in old where !new.contains(name) {
+                AccessibilityNotification.Announcement(String(localized: "\(name) left", bundle: .main)).post()
+            }
+        }
+        .onDisappear { model.detach() }
     }
 
     private func terminal(_ attachment: LocalTerminalAttachment, session: LocalSessionInfo, client: LocalAgentClient) -> some View {
         let attachmentID = model.attachmentID
-        return VStack(spacing: 0) {
-            TerminalHeader(
-                nil,
-                destination: String(localized: "This Mac", bundle: .main),
-                status: model.mode == .view ? String(localized: "View Only", bundle: .main) : String(localized: "Input Enabled", bundle: .main),
-                statusImage: model.mode == .view ? "eye" : "keyboard",
-                live: true
-            ) {
-                let shared = session.sharing?.shared == true
-                Button(String(localized: "Continue on Another Device…", bundle: .main),
-                       systemImage: "laptopcomputer.and.iphone") { continuing = true }
-                .touchTarget()
-                .accessibilityIdentifier("shareLocalSession")
-                .help(String(localized: "Open this session on another device", bundle: .main))
-                if shared {
-                    Button(String(localized: "Stop Sharing", bundle: .main), systemImage: "antenna.radiowaves.left.and.right.slash") {
-                        model.setShared(session, false, using: client)
-                    }
-                    .accessibilityIdentifier("stopSharingLocalSession")
-                }
-                Button(String(localized: "Leave", bundle: .main), systemImage: "rectangle.portrait.and.arrow.right", action: model.detach)
-                    .touchTarget()
-                    .accessibilityIdentifier("detachLocalTerminal")
-                    .help(String(localized: "Leave this session; it keeps running", bundle: .main))
-                Menu(String(localized: "More", bundle: .main), systemImage: "ellipsis") {
-                    Button(String(localized: "Rename…", bundle: .main), systemImage: "pencil") { renameSession(session) }
-                        .accessibilityIdentifier("renameLocalSessionMenu")
-                    RemoteAccessMenuItems(session: session) { keepPrivate, typing in
-                        model.configure(session, keepPrivate: keepPrivate, remoteTyping: typing, using: client)
-                    }
-                    Button(String(localized: "End Session", bundle: .main), systemImage: "xmark.circle", role: .destructive) { endSession(session) }
-                }
-                .menuStyle(.borderlessButton)
-                .help(String(localized: "Terminal Actions", bundle: .main))
-            }
-            .buttonStyle(.borderless)
-            // Shown whenever paired devices can or do reach this session, or
-            // it's kept from all of them.
-            if let sharing = session.sharing,
-               sharing.shared || sharing.keepPrivate || sharing.attachments.contains(where: { $0.device != nil }) {
-                SessionSharingBar(sharing: sharing, relays: model.relays) {
+        return NativeTerminalView(
+            attachment: attachment, mode: model.mode,
+            fontSize: CGFloat(TerminalFontSize.clamped(terminalFontSize)),
+            highContrast: terminalHighContrast || contrast == .increased,
+            preferredColorScheme: systemColorScheme,
+            palette: terminalPalette,
+            announceOutput: terminalAnnounceOutput,
+            activity: model.activity(for: session.id),
+            focusOnShow: model.focusOnAttach,
+            focusRequest: model.focusRequest,
+            onFailure: { model.attachmentFailed($0, id: attachmentID) },
+            onEnded: { model.attachmentEnded(id: attachmentID, client: client) }
+        )
+        .id(attachmentID)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ToolbarContentBuilder
+    private func toolbar(_ session: LocalSessionInfo, client: LocalAgentClient) -> some ToolbarContent {
+        let sharing = session.sharing
+        ToolbarItemGroup(placement: .primaryAction) {
+            // Only while another device can type here, or typing is paused.
+            if let sharing, !sharing.keepPrivate,
+               !sharing.remoteTyping || sharing.attachments.contains(where: { $0.device != nil && $0.mode == .control }) {
+                let title = sharing.remoteTyping ? String(localized: "Pause Remote Typing", bundle: .main)
+                    : String(localized: "Allow Remote Typing", bundle: .main)
+                Button(title, systemImage: sharing.remoteTyping ? "hand.raised" : "hand.raised.slash") {
                     model.configure(session, remoteTyping: !sharing.remoteTyping, using: client)
                 }
-                Divider()
+                .accessibilityIdentifier("toggleRemoteTyping")
+                .help(title)
             }
-            NativeTerminalView(
-                attachment: attachment, mode: model.mode,
-                fontSize: CGFloat(TerminalFontSize.clamped(terminalFontSize)),
-                highContrast: terminalHighContrast || contrast == .increased,
-                preferredColorScheme: systemColorScheme,
-                palette: terminalPalette,
-                announceOutput: terminalAnnounceOutput,
-                activity: model.activity(for: session.id),
-                onFailure: { model.attachmentFailed($0, id: attachmentID) },
-                onEnded: { model.attachmentEnded(id: attachmentID, client: client) }
-            )
-            .id(attachmentID)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Button(String(localized: "Continue on Another Device…", bundle: .main), systemImage: "laptopcomputer.and.iphone") {
+                continueSession(session)
+            }
+            .accessibilityIdentifier("shareLocalSession")
+            .help(String(localized: "Continue on Another Device…", bundle: .main))
+            Menu(String(localized: "More", bundle: .main), systemImage: "ellipsis.circle") {
+                Button(String(localized: "Rename…", bundle: .main)) { renameSession(session) }
+                    .accessibilityIdentifier("renameLocalSessionMenu")
+                RemoteAccessMenuItems(session: session) { keepPrivate, typing in
+                    model.configure(session, keepPrivate: keepPrivate, remoteTyping: typing, using: client)
+                }
+                if sharing?.shared == true {
+                    Button(String(localized: "Stop Sharing", bundle: .main)) { model.setShared(session, false, using: client) }
+                        .accessibilityIdentifier("stopSharingLocalSession")
+                }
+                Divider()
+                Button(String(localized: "Leave", bundle: .main), action: model.detach)
+                    .accessibilityIdentifier("detachLocalTerminal")
+                    .help(String(localized: "Leave this session; it keeps running", bundle: .main))
+                Button(String(localized: "End Session", bundle: .main), role: .destructive) { endSession(session) }
+            }
+            .accessibilityIdentifier("localTerminalMore")
+            .help(String(localized: "More", bundle: .main))
         }
+    }
+
+    /// State worth a glance, in words; empty when there's nothing to say.
+    private func subtitle(_ session: LocalSessionInfo) -> String {
+        var parts: [String] = []
+        if model.mode == .view { parts.append(String(localized: "View Only", bundle: .main)) }
+        guard let sharing = session.sharing else { return parts.joined(separator: " · ") }
+        let remote = sharing.attachments.filter { $0.device != nil }
+        if !remote.isEmpty {
+            parts += remote.map { attachment in
+                let name = attachment.device?.name ?? ""
+                return attachment.mode == .control ? String(localized: "\(name) can type", bundle: .main)
+                    : String(localized: "\(name) is viewing", bundle: .main)
+            }
+        } else if sharing.keepPrivate {
+            parts.append(String(localized: "Private", bundle: .main))
+        } else if !sharing.remoteTyping {
+            parts.append(String(localized: "Remote Typing Paused", bundle: .main))
+        } else if sharing.shared {
+            if model.relays.isEmpty {
+                parts.append(String(localized: "Shared · Remote access off", bundle: .main))
+            } else if !model.relays.contains(where: { $0.state == .ready }) {
+                parts.append(String(localized: "Shared · Connecting…", bundle: .main))
+            } else {
+                parts.append(String(localized: "Shared", bundle: .main))
+            }
+        }
+        return parts.joined(separator: " · ")
     }
 
     private func disconnected(_ session: LocalSessionInfo, client: LocalAgentClient) -> some View {
         ContentUnavailableView {
             Label(model.ended ? String(localized: "Session Ended", bundle: .main) : String(localized: "Session Still Running", bundle: .main), systemImage: "terminal")
-        } description: {
-            Text(model.ended ? String(localized: "Refresh the list to choose another session.", bundle: .main)
-                 : String(localized: "It keeps running while you're away. Connect to pick up where you left off.", bundle: .main))
         } actions: {
-            if model.ended {
-                Button(String(localized: "Refresh", bundle: .main)) { model.refresh(using: client) }
-            } else { HStack(spacing: 12) {
-                PrimaryButton(String(localized: "Connect", bundle: .main)) { model.attach(session, using: client, mode: .control) }
-                    .accessibilityIdentifier("reconnectLocalTerminal")
-                Button(String(localized: "View Only", bundle: .main)) { model.attach(session, using: client, mode: .view) }
-                    .buttonStyle(.bordered)
-                    .witermControl()
-                    .accessibilityIdentifier("viewLocalTerminal")
-            }
-            .disabled(model.isWorking)
+            if !model.ended {
+                HStack(spacing: 12) {
+                    PrimaryButton(String(localized: "Connect", bundle: .main)) { model.attach(session, using: client, mode: .control) }
+                        .accessibilityIdentifier("reconnectLocalTerminal")
+                    Button(String(localized: "View Only", bundle: .main)) { model.attach(session, using: client, mode: .view) }
+                        .buttonStyle(.bordered)
+                        .witermControl()
+                        .accessibilityIdentifier("viewLocalTerminal")
+                }
+                .disabled(model.isWorking)
             }
         }
     }
@@ -152,10 +184,9 @@ struct LocalOverview: View {
                 } else if model.isWorking {
                     LocalProgressView(label: model.busy ?? "", cancel: model.detach)
                 } else {
+                    // Title and actions only; the shortcuts are in the menus.
                     ContentUnavailableView {
                         Label(model.sessions.isEmpty ? String(localized: "No Terminal Sessions Yet", bundle: .main) : String(localized: "Choose a Session", bundle: .main), systemImage: "terminal")
-                    } description: {
-                        Text(model.sessions.isEmpty ? String(localized: "Create a session to start working on this Mac.", bundle: .main) : String(localized: "Select a session on the left to connect.", bundle: .main))
                     } actions: {
                         VStack(spacing: 20) {
                             HStack(spacing: 12) {
@@ -179,85 +210,6 @@ struct LocalOverview: View {
     }
 }
 
-/// Whether paired devices can reach this session right now, and who is on it.
-private struct SessionSharingBar: View {
-    let sharing: LocalSessionSharing
-    let relays: [LocalRelayStatus]
-    /// Pauses or resumes typing from paired devices.
-    let toggleRemoteTyping: () -> Void
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: symbol)
-                .foregroundStyle(tint)
-                .accessibilityHidden(true)
-            // Two lines at most: the split view measures minimum heights at
-            // narrow widths, where unbounded wrapping overflows the window.
-            Text(summary)
-                .font(.callout)
-                .foregroundStyle(WitermTheme.secondary)
-                .lineLimit(2)
-                .truncationMode(.tail)
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier("sessionSharingStatus")
-            Spacer(minLength: 0)
-            // A quick way to stop remote input without ending anyone's view.
-            if !sharing.keepPrivate, !sharing.remoteTyping || remoteDevices.contains(where: { $0.mode == .control }) {
-                Button(sharing.remoteTyping ? String(localized: "Pause Remote Typing", bundle: .main)
-                       : String(localized: "Allow Remote Typing", bundle: .main),
-                       systemImage: sharing.remoteTyping ? "hand.raised" : "keyboard",
-                       action: toggleRemoteTyping)
-                    .buttonStyle(.borderless)
-                    .font(.callout)
-                    .accessibilityIdentifier("toggleRemoteTyping")
-                    .help(String(localized: "Paired devices keep watching; this Mac keeps typing", bundle: .main))
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 7)
-        .background(WitermTheme.statusFill)
-    }
-
-    private var remoteDevices: [LocalAttachmentInfo] { sharing.attachments.filter { $0.device != nil } }
-    private var ready: Bool { relays.contains { $0.state == .ready } }
-
-    private var summary: String {
-        if !remoteDevices.isEmpty {
-            let names = remoteDevices.map { attachment in
-                let name = attachment.device?.name ?? ""
-                return attachment.mode == .control
-                    ? String(localized: "\(name) can type", bundle: .main)
-                    : String(localized: "\(name) is viewing", bundle: .main)
-            }
-            return String(localized: "Remote · \(names.joined(separator: ", "))", bundle: .main)
-        }
-        if sharing.keepPrivate {
-            return String(localized: "Private · No paired device can open it", bundle: .main)
-        }
-        if !sharing.remoteTyping {
-            return String(localized: "Remote typing is paused. Paired devices can only watch.", bundle: .main)
-        }
-        if relays.isEmpty {
-            return String(localized: "Shared, but remote access is off. Turn on Allow Remote Access in Settings > Devices.", bundle: .main)
-        }
-        return ready
-            ? String(localized: "Shared · Paired devices can open it", bundle: .main)
-            : String(localized: "Shared · Waiting for the server to accept this Mac", bundle: .main)
-    }
-
-    private var symbol: String {
-        if sharing.keepPrivate, remoteDevices.isEmpty { return "lock.fill" }
-        if relays.isEmpty { return "antenna.radiowaves.left.and.right.slash" }
-        return ready || !remoteDevices.isEmpty ? "antenna.radiowaves.left.and.right" : "hourglass"
-    }
-
-    private var tint: Color {
-        if sharing.keepPrivate, remoteDevices.isEmpty { return .secondary }
-        if relays.isEmpty { return WitermTheme.warning }
-        return ready || !remoteDevices.isEmpty ? WitermTheme.positive : .secondary
-    }
-}
-
 /// A light pointer to the `witerm` command for starting sessions from Terminal.
 private struct StartFromTerminalHint: View {
     private let tool = CommandLineToolModel.shared
@@ -265,13 +217,11 @@ private struct StartFromTerminalHint: View {
     @AppStorage(SettingsTab.key) private var settingsTab = SettingsTab.general.rawValue
 
     var body: some View {
-        VStack(spacing: 8) {
-            Text(String(localized: "Or start one from Terminal in any folder:", bundle: .main))
-                .font(.subheadline)
-                .foregroundStyle(WitermTheme.secondary)
+        Group {
             if tool.state == .installed {
                 CopyableCommand("witerm new")
                     .frame(maxWidth: 260)
+                    .help(String(localized: "Start a session from Terminal in any folder", bundle: .main))
             } else {
                 // Always the Command Line tab, whichever tab Settings showed last.
                 Button(String(localized: "Install the witerm Command…", bundle: .main)) {
@@ -335,9 +285,7 @@ struct LocalServiceSetupView: View {
             switch service.state {
             case .notRegistered:
                 ContentUnavailableView {
-                    Label(String(localized: "Enable Local Terminal", bundle: .main), systemImage: "terminal")
-                } description: {
-                    Text(String(localized: "Create and manage terminal sessions on this Mac.", bundle: .main))
+                    Label(String(localized: "Local Terminal Off", bundle: .main), systemImage: "terminal")
                 } actions: {
                     PrimaryButton(String(localized: "Enable Local Terminal", bundle: .main)) { Task { await service.start() } }
                         .accessibilityIdentifier("enableLocalTerminal")
@@ -345,8 +293,6 @@ struct LocalServiceSetupView: View {
             case .requiresApproval:
                 ContentUnavailableView {
                     Label(String(localized: "Allow Witerm to Run in the Background", bundle: .main), systemImage: "checkmark.shield")
-                } description: {
-                    Text(String(localized: "Allow Witerm in Login Items in System Settings.", bundle: .main))
                 } actions: {
                     PrimaryButton(String(localized: "Open System Settings", bundle: .main), action: service.openSettings)
                 }
@@ -373,8 +319,6 @@ private struct LocalDependencyView: View {
     var body: some View {
         ContentUnavailableView {
             Label(String(localized: "tmux Required", bundle: .main), systemImage: "terminal")
-        } description: {
-            Text(String(localized: "Install tmux to create local terminal sessions.", bundle: .main))
         } actions: {
             VStack(spacing: 16) {
                 Text("brew install tmux")
@@ -390,30 +334,28 @@ private struct LocalDependencyView: View {
     }
 }
 
-/// Names a new session, or renames one when `renaming` is its current name.
-struct NewLocalSessionSheet: View {
+/// Renames a session. New sessions are named for you (⌘N), so naming never
+/// stands between a person and the prompt.
+struct RenameSessionSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name: String
     @State private var invalid = false
-    private let renaming: Bool
-    let onCreate: (String) -> Void
+    let onRename: (String) -> Void
 
-    init(renaming current: String? = nil, onCreate: @escaping (String) -> Void) {
-        _name = State(initialValue: current ?? String(localized: "New Terminal", bundle: .main))
-        renaming = current != nil
-        self.onCreate = onCreate
+    init(current: String, onRename: @escaping (String) -> Void) {
+        _name = State(initialValue: current)
+        self.onRename = onRename
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 10) {
-                IconTile(systemImage: "terminal")
-                Text(renaming ? String(localized: "Rename Session", bundle: .main) : String(localized: "New Terminal Session", bundle: .main)).font(.headline)
-            }
+            Text(String(localized: "Rename Session", bundle: .main)).font(.headline)
             TextField(String(localized: "Session Name", bundle: .main), text: $name)
                 .textFieldStyle(.roundedBorder)
-                .onSubmit(create)
+                .labelsHidden()
+                .onSubmit(rename)
                 .onChange(of: name) { invalid = false }
+                .accessibilityLabel(String(localized: "Session Name", bundle: .main))
                 .accessibilityIdentifier("localSessionName")
             if invalid {
                 Text(String(localized: "Use 1–64 characters without control characters.", bundle: .main))
@@ -423,25 +365,25 @@ struct NewLocalSessionSheet: View {
                 Spacer()
                 Button(String(localized: "Cancel", bundle: .main), role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                PrimaryButton(renaming ? String(localized: "Rename", bundle: .main) : String(localized: "Create", bundle: .main), action: create)
+                PrimaryButton(String(localized: "Rename", bundle: .main), action: rename)
                     .keyboardShortcut(.defaultAction)
-                    .accessibilityIdentifier(renaming ? "renameLocalSession" : "createLocalSession")
+                    .accessibilityIdentifier("renameLocalSession")
             }
             .witermControl()
         }
         .padding(WitermMetrics.pagePadding)
-        .frame(width: 400)
+        .frame(width: 360)
         .witermTint()
     }
 
-    private func create() {
+    private func rename() {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard (1...64).contains(name.unicodeScalars.count),
               !name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else {
             invalid = true
             return
         }
-        onCreate(name)
+        onRename(name)
         dismiss()
     }
 }

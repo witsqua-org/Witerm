@@ -404,6 +404,10 @@ struct SSHWorkspaceView<Home: View>: View {
     @State private var finding = false
     @AppStorage("witerm.sshBackgroundTipSeen") private var backgroundTipSeen = false
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.colorScheme) private var systemColorScheme
+    @Environment(\.colorSchemeContrast) private var contrast
+    @AppStorage("witerm.terminalHighContrast") private var highContrast = false
+    @AppStorage(TerminalColorScheme.key) private var palette = TerminalColorScheme.system
 
     private var shownID: UUID? { ui.shownID }
     private var shownProfile: SSHProfile? { model.profiles.first { $0.id == shownID } }
@@ -457,15 +461,23 @@ struct SSHWorkspaceView<Home: View>: View {
             }
             if let session = shown {
                 // The host's hue edges the terminal and tints its controls, so
-                // the screen always shows which machine receives input.
-                TerminalHeader(nil, destination: session.profile.endpointSummary,
-                               status: String(localized: "Input Enabled", bundle: .main),
-                               statusImage: "keyboard", live: true, hue: session.profile.identityHue) {
-                    Button(String(localized: "Find in Terminal", bundle: .main), systemImage: "magnifyingglass") { finding = true }
-                        .labelStyle(.iconOnly)
-                        .keyboardShortcut("f", modifiers: .command)
-                        .touchTarget(square: true)
-                        .accessibilityIdentifier("terminalFind")
+                // the screen always shows which machine receives input. On
+                // iPhone the navigation bar names it instead of a second header.
+                if sizeClass == .regular {
+                    TerminalHeader(nil, destination: session.profile.endpointSummary,
+                                   status: String(localized: "Input Enabled", bundle: .main),
+                                   statusImage: "keyboard", live: true, hue: session.profile.identityHue) {
+                        Button(String(localized: "Find in Terminal", bundle: .main), systemImage: "magnifyingglass") { finding = true }
+                            .labelStyle(.iconOnly)
+                            .keyboardShortcut("f", modifiers: .command)
+                            .touchTarget(square: true)
+                            .accessibilityIdentifier("terminalFind")
+                    }
+                } else {
+                    Rectangle()
+                        .fill(session.profile.identityHue.opacity(0.55))
+                        .frame(height: 2)
+                        .accessibilityHidden(true)
                 }
                 if finding {
                     TerminalFindBar(finder: finder(for: session)) { finding = false }
@@ -473,8 +485,7 @@ struct SSHWorkspaceView<Home: View>: View {
                 }
                 if !backgroundTipSeen {
                     // Said once, the first time it applies: with a live SSH terminal on screen.
-                    IssueBanner(String(localized: "SSH closes when Witerm goes to the background", bundle: .main),
-                                message: String(localized: "iOS suspends the connection. To keep programs running, start them in tmux or screen on the server.", bundle: .main),
+                    IssueBanner(String(localized: "SSH stops in the background. Use tmux to keep programs running.", bundle: .main),
                                 systemImage: "info.circle") {
                         Button(String(localized: "OK", bundle: .main)) { backgroundTipSeen = true }
                             .font(.subheadline).touchTarget()
@@ -505,7 +516,11 @@ struct SSHWorkspaceView<Home: View>: View {
                 home
             }
         }
-        .background(WitermTheme.canvas)
+        // Under a terminal on iPhone, its own color continues past the home indicator.
+        .background(shown != nil && sizeClass != .regular
+                    ? TerminalBackdrop.color(dark: systemColorScheme == .dark, highContrast: highContrast || contrast == .increased,
+                                             palette: palette)
+                    : WitermTheme.canvas)
         // Like the back button, an edge swipe returns to the list and keeps the session connected.
         .edgeSwipeBack(enabled: shownID != nil && sizeClass != .regular) { ui.show(nil) }
         .tint(shownProfile?.identityHue)
@@ -515,19 +530,30 @@ struct SSHWorkspaceView<Home: View>: View {
         .toolbar {
             if shownID != nil, sizeClass != .regular {
                 ToolbarItem(placement: .topBarLeading) {
+                    // The symbol alone; the spoken label still names where it goes.
                     Button(String(localized: "Terminals", bundle: .main), systemImage: "chevron.backward") { ui.show(nil) }
-                        .labelStyle(.titleAndIcon)
+                        .labelStyle(.iconOnly)
                         .accessibilityHint(shown != nil ? String(localized: "The session stays connected.", bundle: .main)
                                             : String(localized: "Returns to your terminals.", bundle: .main))
                         .accessibilityIdentifier("sshShowHosts")
+                }
+                if let session = shown {
+                    ToolbarItem(placement: .principal) { compactTitle(session) }
                 }
             }
             ToolbarItem(placement: .primaryAction) {
                 if let session = shown {
                     Menu {
+                        TerminalTextSizeControls()
+                        if sizeClass != .regular {
+                            Button(String(localized: "Find in Terminal", bundle: .main), systemImage: "magnifyingglass") { finding = true }
+                                .keyboardShortcut("f", modifiers: .command)
+                                .accessibilityIdentifier("terminalFind")
+                        }
                         Button(String(localized: "SFTP Files", bundle: .main), systemImage: "folder") { ui.files = session }
                         Button(String(localized: "Port Forwarding", bundle: .main), systemImage: "arrow.left.arrow.right") { ui.forwarding = session }
-                        Button(String(localized: "Terminal Display", bundle: .main), systemImage: "textformat.size") { ui.appearance = true }
+                        Button(String(localized: "Terminal Display", bundle: .main), systemImage: "paintpalette") { ui.appearance = true }
+                        Divider()
                         Button(String(localized: "Disconnect", bundle: .main), systemImage: "xmark.circle", role: .destructive) { model.disconnect(session) }
                     } label: { Label(String(localized: "SSH Actions", bundle: .main), systemImage: "ellipsis.circle") }
                     .accessibilityIdentifier("sshSessionActions")
@@ -538,10 +564,40 @@ struct SSHWorkspaceView<Home: View>: View {
                 }
             }
             ToolbarItem(placement: .primaryAction) {
-                if shown != nil {
-                    Button(String(localized: "Keyboard", bundle: .main), systemImage: "keyboard") { keyboardRequest &+= 1 }
+                if let session = shown {
+                    TerminalKeyboardButton(terminal: { session.terminal.surface.terminal }) { keyboardRequest &+= 1 }
+                        .id(session.token)
                         .accessibilityIdentifier("sshKeyboard")
                 }
+            }
+        }
+    }
+
+    /// Other live SSH terminals, for switching from the title.
+    private func otherOpen(than session: SSHSession) -> [SSHProfile] {
+        model.orderedProfiles().filter { $0.id != session.id && model.session(for: $0.id) != nil }
+    }
+
+    /// The host's name over where typing goes. With other terminals open, a
+    /// chevron beside it switches to one of them.
+    private func compactTitle(_ session: SSHSession) -> some View {
+        let others = otherOpen(than: session)
+        return HStack(spacing: 2) {
+            VStack(spacing: 1) {
+                Text(session.profile.name).font(.headline).foregroundStyle(WitermTheme.ink)
+                Text(verbatim: session.profile.endpointSummary)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(WitermTheme.secondary)
+                    .truncationMode(.middle)
+            }
+            .lineLimit(1)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel([session.profile.name, session.profile.endpointSummary,
+                                 String(localized: "Input Enabled", bundle: .main)].joined(separator: ", "))
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityIdentifier("terminalInputStatus")
+            if !others.isEmpty {
+                TerminalSwitcher(names: others.map(\.name)) { ui.show(others[$0].id) }
             }
         }
     }

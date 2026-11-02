@@ -92,7 +92,7 @@ struct TerminalsHome: View {
                     if session != nil || ended != nil {
                         TerminalActivityCard(name: profile.name, location: profile.endpointSummary,
                                              activity: session?.activity, hue: profile.identityHue,
-                                             status: ended == nil ? nil : String(localized: "Disconnected · Tap to reconnect", bundle: .main))
+                                             status: ended == nil ? nil : String(localized: "Disconnected", bundle: .main))
                     } else {
                         SSHHostRowContent(profile: profile, active: false, expanded: true, favorite: ssh.isFavorite(profile))
                     }
@@ -105,7 +105,8 @@ struct TerminalsHome: View {
             .accessibilityLabel(profile.name)
             .accessibilityValue(accessibilityValue(profile, session: session, ended: ended != nil))
             .accessibilityHint(session == nil
-                ? String(localized: "Connects, or asks for credentials that are not saved.", bundle: .main)
+                ? (ended != nil ? String(localized: "Reconnects.", bundle: .main)
+                   : String(localized: "Connects, or asks for credentials that are not saved.", bundle: .main))
                 : String(localized: "Shows the connected terminal.", bundle: .main))
             .accessibilityAddTraits(ui.shownID == profile.id ? .isSelected : [])
             SSHHostActions(profile: profile, ssh: ssh, ui: ui)
@@ -154,15 +155,12 @@ struct TerminalsHome: View {
 
     // MARK: First use
 
-    /// Three ways in, each saying what it needs.
+    /// Three ways in, each saying what it needs. The Welcome Tour explains;
+    /// this screen only acts.
     private var firstUse: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 BrandEmblem(size: 56).accessibilityHidden(true)
-                Text(String(localized: "Your terminals, wherever you are.", bundle: .main))
-                    .font(.title2.weight(.bold))
-                    .foregroundStyle(WitermTheme.ink)
-                    .fixedSize(horizontal: false, vertical: true)
                 VStack(spacing: 0) {
                     FirstUseRow(title: String(localized: "Connect to an SSH Host", bundle: .main),
                                 detail: String(localized: "Needs an address and a login", bundle: .main),
@@ -180,10 +178,6 @@ struct TerminalsHome: View {
                         .accessibilityIdentifier("sshImportHosts")
                 }
                 .witermCard(padding: 0)
-                Text(String(localized: "SSH connects directly and needs no continuation server. What you type is never stored or sent anywhere else.", bundle: .main))
-                    .font(.footnote)
-                    .foregroundStyle(WitermTheme.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
             .readableContent()
             .padding(.vertical, 24)

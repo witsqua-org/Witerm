@@ -160,8 +160,12 @@ enum MobileKey: String, CaseIterable, Identifiable {
     }
 
     /// Follows the saved key row; a changed setting applies to open terminals.
+    /// The Snippets key appears once there is a snippet to insert, rather
+    /// than offering an empty menu.
     @objc private func rebuildKeys() {
+        let hasSnippets = !CommandSnippets.load().isEmpty
         let wanted = MobileKey.decode(UserDefaults.standard.string(forKey: MobileKey.key) ?? "")
+            .filter { $0 != .snippets || hasSnippets }
         guard wanted != shown else { return }
         shown = wanted
         keys.arrangedSubviews.forEach { $0.removeFromSuperview() }
@@ -280,6 +284,11 @@ enum MobileKey: String, CaseIterable, Identifiable {
         button.tintColor = .label
         button.layer.cornerRadius = 8
         button.widthAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+        // Keys keep their own width. Without this the row's scroll content
+        // had no width of its own, and every key stretched to the same 69 pt,
+        // so only five keys fit an iPhone instead of Esc, Ctrl, Tab and arrows.
+        button.setContentHuggingPriority(.required, for: .horizontal)
+        button.setContentCompressionResistancePriority(.required, for: .horizontal)
         if let action { button.addAction(UIAction { _ in action() }, for: .touchUpInside) }
     }
 }

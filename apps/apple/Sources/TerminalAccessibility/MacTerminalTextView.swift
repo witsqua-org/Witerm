@@ -54,12 +54,43 @@ import WitermCore
         refreshReadingDocument()
     }
 
+    /// Whether the terminal takes keyboard focus the next time it is shown.
+    /// On by default; the owner turns it off while a person browses the
+    /// sidebar with the keyboard, so arrowing through sessions keeps focus there.
+    var focusWhenShown: Bool {
+        get { !requestedInitialFocus }
+        set { requestedInitialFocus = !newValue }
+    }
+
+    /// Takes keyboard focus now, or as soon as the terminal is on screen and
+    /// no sheet covers its window.
+    func requestFocus() {
+        requestedInitialFocus = false
+        scheduleInitialFocus()
+    }
+
     private func scheduleInitialFocus() {
         guard !requestedInitialFocus, inputEnabled, window != nil, bounds.width > 0, bounds.height > 0 else { return }
         requestedInitialFocus = true
-        DispatchQueue.main.async { [weak self] in
-            guard let self, self.inputEnabled, let window = self.window else { return }
-            _ = window.makeFirstResponder(self)
+        DispatchQueue.main.async { [weak self] in self?.focusWhenUncovered(attempts: 20) }
+    }
+
+    /// A sheet that is closing hands focus back to whatever had it before,
+    /// so wait for it to finish rather than lose focus to it.
+    private func focusWhenUncovered(attempts: Int) {
+        guard inputEnabled, let window else { return }
+        if window.attachedSheet != nil, attempts > 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.focusWhenUncovered(attempts: attempts - 1) }
+            return
+        }
+        _ = window.makeFirstResponder(self)
+        // SwiftUI restores focus to the sidebar shortly after a sheet ends.
+        if attempts < 20 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                guard let self, self.inputEnabled, let window = self.window, window.attachedSheet == nil,
+                      !(window.firstResponder is NSText) else { return }
+                _ = window.makeFirstResponder(self)
+            }
         }
     }
 

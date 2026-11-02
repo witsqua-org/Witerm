@@ -156,9 +156,6 @@ struct CommandLineToolSettings: View {
                 }
             } header: {
                 Text(String(localized: "Command Line Tool", bundle: .main))
-            } footer: {
-                Text(String(localized: "Start, share, and attach to this Mac's sessions from any terminal. The command and the app use the same sessions.", bundle: .main))
-                    .foregroundStyle(WitermTheme.secondary)
             }
 
             if model.state == .installed {
@@ -166,9 +163,6 @@ struct CommandLineToolSettings: View {
                     CopyableCommand("export PATH=\"$HOME/.local/bin:$PATH\"")
                 } header: {
                     Text(String(localized: "If your shell can't find witerm", bundle: .main))
-                } footer: {
-                    Text(String(localized: "Add this line to your shell profile, such as ~/.zshrc.", bundle: .main))
-                        .foregroundStyle(WitermTheme.secondary)
                 }
             }
 

@@ -89,7 +89,7 @@ final class TerminalVoiceOverTests: XCTestCase {
         addTeardownBlock {
             await Self.restore(originalVoiceOver, app: app)
         }
-        app.launchArguments = ["--witerm-terminal-accessibility-harness"]
+        app.launchArguments = ["-witerm.onboarding.completedVersion", "1", "--witerm-terminal-accessibility-harness"]
         if readOnly { app.launchArguments.append("--witerm-terminal-read-only") }
         app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         app.launch()

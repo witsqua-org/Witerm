@@ -28,7 +28,7 @@ import XCTest
         let app = XCUIApplication(url: URL(fileURLWithPath: path))
         addTeardownBlock { await MainActor.run { app.terminate() } }
         // English keeps field lookups independent of translation wording.
-        app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-witerm.onboarding.completedVersion", "1"]
         app.launch()
         app.activate()
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 15))

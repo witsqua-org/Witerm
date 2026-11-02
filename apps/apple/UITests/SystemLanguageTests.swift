@@ -16,7 +16,7 @@ import XCTest
     private func verify(language: String, locale: String, action: String, title: String, cancel: String) {
         continueAfterFailure = false
         let app = XCUIApplication()
-        app.launchArguments = ["-AppleLanguages", "(\(language))", "-AppleLocale", locale,
+        app.launchArguments = ["-witerm.onboarding.completedVersion", "1", "-AppleLanguages", "(\(language))", "-AppleLocale", locale,
                                "-witerm.serverAddresses", "()"]
         addTeardownBlock { await MainActor.run { app.terminate() } }
         app.launch()

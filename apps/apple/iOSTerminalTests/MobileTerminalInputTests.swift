@@ -36,6 +36,37 @@ import XCTest
         XCTAssertFalse(writer.editActions().contains { $0.title == copy })
     }
 
+    /// A new connection that accepts typing brings up the keyboard once it is
+    /// on screen; a view-only one, or one shown again later, does not.
+    func testNewTypingTerminalFocusesOnceWhenShown() async throws {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+        window.rootViewController = UIViewController()
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        let writer = input(), reader = input(mode: .view)
+        writer.focusesWhenShown = true
+        reader.focusesWhenShown = true
+        let focus = FocusLog()
+        let observer = NotificationCenter.default.addObserver(forName: .witermTerminalFocusChanged, object: writer, queue: nil) { note in
+            let focused = note.userInfo?["focused"] as? Bool ?? false
+            MainActor.assumeIsolated { focus.values.append(focused) }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        window.rootViewController?.view.addSubview(reader)
+        window.rootViewController?.view.addSubview(writer)
+        for _ in 0..<20 where !writer.isFirstResponder { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertTrue(writer.isFirstResponder)
+        XCTAssertFalse(reader.isFirstResponder)
+        XCTAssertFalse(writer.focusesWhenShown, "Focus is requested once per connection")
+        _ = writer.resignFirstResponder()
+        writer.removeFromSuperview()
+        window.rootViewController?.view.addSubview(writer)
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertFalse(writer.isFirstResponder, "Showing the terminal again keeps the person's choice")
+        XCTAssertEqual(focus.values.first, true)
+        XCTAssertEqual(focus.values.last, false)
+    }
+
     func testControlKeyResetsAndReadOnlyRejectsAccessoryAndPaste() {
         let terminal = input(), spy = InputSpy()
         terminal.terminalDelegate = spy
@@ -111,7 +142,12 @@ import XCTest
     func testKeyRowFollowsSavedOrderAndSelection() throws {
         let defaults = UserDefaults.standard
         let previous = defaults.string(forKey: MobileKey.key)
-        defer { defaults.set(previous, forKey: MobileKey.key) }
+        let previousSnippets = defaults.data(forKey: CommandSnippets.key)
+        defer {
+            defaults.set(previous, forKey: MobileKey.key)
+            defaults.set(previousSnippets, forKey: CommandSnippets.key)
+        }
+        defaults.removeObject(forKey: CommandSnippets.key)
         XCTAssertEqual(MobileKey.decode(""), MobileKey.allCases)
         // An untouched row from before arrows moved forward follows the new default.
         XCTAssertEqual(MobileKey.decode(MobileKey.previousDefault), MobileKey.allCases)
@@ -125,8 +161,32 @@ import XCTest
             return buttons(accessory).compactMap(\.accessibilityIdentifier)
         }
         XCTAssertEqual(identifiers(), ["terminalInterrupt", "terminalKey-escape"])
+        // The Snippets key waits for a snippet, then takes its saved place.
         defaults.set(MobileKey.encode([.control, .snippets, .home]), forKey: MobileKey.key)
+        XCTAssertEqual(identifiers(), ["terminalControlModifier", "terminalKey-home"])
+        defaults.set(CommandSnippets.encode([CommandSnippet(name: "List", text: "ls")]), forKey: CommandSnippets.key)
         XCTAssertEqual(identifiers(), ["terminalControlModifier", "terminalKey-snippets", "terminalKey-home"])
+    }
+
+    /// Esc, Ctrl, Tab and the four arrows fit an iPhone's width without
+    /// scrolling the row, each still a 44 pt target.
+    func testFirstSevenKeysFitAnIPhoneWidth() throws {
+        let defaults = UserDefaults.standard
+        let previous = defaults.string(forKey: MobileKey.key)
+        defer { defaults.set(previous, forKey: MobileKey.key) }
+        defaults.removeObject(forKey: MobileKey.key)
+        let accessory = try XCTUnwrap(input().inputAccessoryView)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+        window.addSubview(accessory)
+        accessory.frame = CGRect(x: 0, y: 600, width: 390, height: accessory.intrinsicContentSize.height)
+        accessory.setNeedsLayout()
+        accessory.layoutIfNeeded()
+        func buttons(_ view: UIView) -> [UIButton] { (view as? UIButton).map { [$0] } ?? view.subviews.flatMap(buttons) }
+        let keys = buttons(accessory)
+        let right = try XCTUnwrap(keys.first { $0.accessibilityIdentifier == "terminalKey-right" })
+        let edge = right.convert(right.bounds, to: accessory).maxX
+        XCTAssertLessThanOrEqual(edge, 390, "Widths: \(keys.prefix(7).map { Int($0.bounds.width) })")
+        for key in keys { XCTAssertGreaterThanOrEqual(key.bounds.width, 44); XCTAssertGreaterThanOrEqual(key.bounds.height, 44) }
     }
 
     func testSnippetsTypeOnlyWhenInputIsAllowed() {
@@ -209,4 +269,8 @@ import XCTest
     func clipboardRead(source: TerminalView) -> Data? { nil }
     func iTermContent(source: TerminalView, content: ArraySlice<UInt8>) {}
     func rangeChanged(source: TerminalView, startY: Int, endY: Int) {}
+}
+
+@MainActor private final class FocusLog {
+    var values: [Bool] = []
 }

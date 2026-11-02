@@ -183,7 +183,7 @@ final class TerminalVoiceOverTests: XCTestCase {
         app.launchArguments = ["--witerm-terminal-accessibility-harness"]
         if readOnly { app.launchArguments.append("--witerm-terminal-read-only") }
         if plainBaseline { app.launchArguments.append("--witerm-voiceover-plain-baseline") }
-        app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN", "-witerm.onboarding.completedVersion", "1"]
         app.launch()
         XCTAssertTrue(app.staticTexts["harnessReady"].waitForExistence(timeout: 10))
         let ready = XCTNSPredicateExpectation(

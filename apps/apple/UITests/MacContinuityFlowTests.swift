@@ -41,7 +41,7 @@ final class MacContinuityFlowTests: XCTestCase {
         folder = URL(fileURLWithPath: directory)
         macFolder = URL(fileURLWithPath: macDirectory)
         app = XCUIApplication()
-        app.launchArguments = ["-witerm.serverAddresses", "(\"\(server)\")",
+        app.launchArguments = ["-witerm.onboarding.completedVersion", "1", "-witerm.serverAddresses", "(\"\(server)\")",
                                "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
                                // A blinking caret never lets XCTest see the app idle.
                                "--witerm-ui-test-steady-terminal-cursor"]
@@ -78,10 +78,10 @@ final class MacContinuityFlowTests: XCTestCase {
         shot("07-terminal")
         signal("phone-attached", UIDevice.current.name)
 
-        // Type while the Mac is attached too.
-        app.buttons["remoteKeyboard"].tap()
+        // Type while the Mac is attached too. The keyboard is already up:
+        // a terminal that can type is ready the moment it connects.
         let keyboard = app.keyboards.firstMatch
-        XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "The keyboard button didn't focus the terminal")
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "The keyboard didn't come up with the connection")
         // The terminal isn't an accessibility text field (its reading view is),
         // so type with real software keys rather than app.typeText.
         for character in "echo phonetyped" {

@@ -32,6 +32,8 @@ import UIKit
         surface.terminal.inputDestination = String(localized: "SSH Terminal", bundle: .main)
         surface.readingView.accessibilityLabel = String(localized: "SSH Terminal Text", bundle: .main)
         surface.readingView.accessibilityIdentifier = "sshTerminalSurface"
+        // A new connection is ready to type into the moment it's on screen.
+        surface.terminal.focusesWhenShown = true
         #endif
         surface.terminal.terminalDelegate = coordinator
         coordinator.start(surface.terminal)
@@ -140,26 +142,49 @@ struct SSHNativeTerminalView: UIViewRepresentable {
         self.shell = shell; self.onEnded = onEnded
     }
 
+    /// The shell's output is drained off the main thread into `batch`, and
+    /// the main thread feeds whatever has gathered in one go. The shell
+    /// buffers only 64 chunks, and a program printing line by line fills them
+    /// in moments; draining on the main thread let any pause there (layout,
+    /// an accessibility snapshot) end the session with a backpressure error.
     func start(_ view: TerminalView) {
         terminal = view
         stabilizeTestCursor(view)
-        outputTask = Task { [weak self, weak view, shell] in
+        let batch = SSHOutputBatch()
+        outputTask = Task.detached { [weak self, shell] in
             do {
                 for try await bytes in shell.output {
                     try Task.checkCancellation()
-                    guard let self, !self.stopped, let view else { return }
-                    view.feed(byteArray: Array(bytes)[...])
-                    self.stabilizeTestCursor(view)
-                    self.refreshReading(view, output: true)
-                    self.activity.outputArrived(in: view.getTerminal())
+                    switch batch.append(bytes) {
+                    case .first: Task { @MainActor [weak self] in self?.deliver(batch) }
+                    case .queued: break
+                    case .overflow: throw SSHFailure.backpressure
+                    }
                 }
-                guard let self, !self.stopped, !Task.isCancelled else { return }
-                self.stop(); self.onEnded(nil)
+                try Task.checkCancellation()
+                Task { @MainActor [weak self] in
+                    guard let self, !self.stopped else { return }
+                    self.deliver(batch)
+                    self.stop(); self.onEnded(nil)
+                }
             } catch {
                 guard !Task.isCancelled else { return }
-                self?.fail(error)
+                Task { @MainActor [weak self] in
+                    self?.deliver(batch)
+                    self?.fail(error)
+                }
             }
         }
+    }
+
+    /// Feeds everything gathered since the last delivery.
+    private func deliver(_ batch: SSHOutputBatch) {
+        let bytes = batch.take()
+        guard !stopped, !bytes.isEmpty, let view = terminal else { return }
+        view.feed(byteArray: Array(bytes)[...])
+        stabilizeTestCursor(view)
+        refreshReading(view, output: true)
+        activity.outputArrived(in: view.getTerminal())
     }
 
     func stop() {
@@ -247,7 +272,8 @@ struct SSHNativeTerminalView: UIViewRepresentable {
         #if os(macOS)
         (view as? MacTerminalTextView)?.refreshReadingDocument(outputChanged: output)
         #else
-        (view as? RemoteNativeTerminalView.TerminalInputView)?.readingChanged?(output)
+        // Coalesced per run-loop turn; a burst of output rebuilds it once.
+        (view as? RemoteNativeTerminalView.TerminalInputView)?.requestReadingRefresh(output: output)
         #endif
     }
 
@@ -276,5 +302,31 @@ struct SSHNativeTerminalView: UIViewRepresentable {
     private func fail(_ error: Error) {
         guard !stopped else { return }
         stop(); onEnded(error)
+    }
+}
+
+/// Shell output waiting for the main thread. Bounded: past the limit the
+/// session ends with a backpressure error, as before, instead of growing.
+final class SSHOutputBatch: @unchecked Sendable {
+    enum Appended { case first, queued, overflow }
+    static let limit = 8 << 20
+    private let lock = NSLock()
+    private var data = Data()
+
+    /// `.first` when the batch was empty, so the caller schedules a delivery.
+    func append(_ bytes: Data) -> Appended {
+        lock.withLock {
+            guard data.count + bytes.count <= Self.limit else { return .overflow }
+            let first = data.isEmpty
+            data.append(bytes)
+            return first ? .first : .queued
+        }
+    }
+
+    func take() -> Data {
+        lock.withLock {
+            defer { data = Data() }
+            return data
+        }
     }
 }

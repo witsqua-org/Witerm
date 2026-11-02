@@ -11,7 +11,7 @@ final class MacFollowProbeTests: XCTestCase {
               let directory = environment["WITERM_E2E_DIR"] else { throw XCTSkip("Opt-in probe") }
         let folder = URL(fileURLWithPath: directory)
         let app = XCUIApplication()
-        app.launchArguments = ["-witerm.serverAddresses", "(\"\(server)\")", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+        app.launchArguments = ["-witerm.onboarding.completedVersion", "1", "-witerm.serverAddresses", "(\"\(server)\")", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
                                // A blinking caret never lets XCTest see the app idle.
                                "--witerm-ui-test-steady-terminal-cursor"]
         app.launch()
@@ -20,14 +20,18 @@ final class MacFollowProbeTests: XCTestCase {
         let mac = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "remoteMac-")).firstMatch
         XCTAssertTrue(mac.waitForExistence(timeout: 30))
         mac.tap()
+        // A Mac sharing a single session opens it directly; otherwise pick it.
         let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "remoteSession-", name)).firstMatch
-        XCTAssertTrue(row.waitForExistence(timeout: 30))
-        row.tap()
-        XCTAssertTrue(app.buttons["remoteKeyboard"].waitForExistence(timeout: 30))
+        let keyboardButton = app.buttons["remoteKeyboard"]
+        let deadline = Date().addingTimeInterval(30)
+        while Date() < deadline, !row.exists, !keyboardButton.exists { RunLoop.current.run(until: Date().addingTimeInterval(0.5)) }
+        if !keyboardButton.exists { row.tap() }
+        XCTAssertTrue(keyboardButton.waitForExistence(timeout: 30))
         RunLoop.current.run(until: Date().addingTimeInterval(2))
         shot("1-following")
         let started = Date()
-        app.buttons["remoteKeyboard"].tap()
+        // The keyboard comes up with the connection; the button brings it back if not.
+        if !app.keyboards.firstMatch.exists { keyboardButton.tap() }
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         app.keyboards.firstMatch.keys["e"].tap()
         let elapsed = Date().timeIntervalSince(started)

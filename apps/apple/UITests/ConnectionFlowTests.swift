@@ -9,7 +9,7 @@ final class ConnectionFlowTests: XCTestCase {
 
     private func launchApp(address: String = "", language: String = "zh-Hans", extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = serverList(address.isEmpty ? [] : [address])
+        app.launchArguments = serverList(address.isEmpty ? [] : [address]) + ["-witerm.onboarding.completedVersion", "1"]
         app.launchArguments += ["-AppleLanguages", "(\(language))", "-AppleLocale", language == "en" ? "en_US" : "zh_CN"]
         app.launchArguments += extra
         app.launch()
@@ -215,7 +215,7 @@ final class ConnectionFlowTests: XCTestCase {
     /// own identity: a duplicate is refused, and removing one leaves the other.
     func testSeveralServersAreUsedTogether() {
         let app = XCUIApplication()
-        app.launchArguments = serverList(["http://localhost:37429", "http://127.0.0.1:37429"])
+        app.launchArguments = serverList(["http://localhost:37429", "http://127.0.0.1:37429"]) + ["-witerm.onboarding.completedVersion", "1"]
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
         openDevices(app)

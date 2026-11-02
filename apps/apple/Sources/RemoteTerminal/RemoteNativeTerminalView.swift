@@ -4,6 +4,12 @@ import UIKit
 import SwiftTerm
 import WitermCore
 
+extension Notification.Name {
+    /// A terminal's input view gained or lost the keyboard focus; the object
+    /// is the view and `focused` in the user info says which.
+    static let witermTerminalFocusChanged = Notification.Name("witermTerminalFocusChanged")
+}
+
 struct RemoteNativeTerminalView: UIViewRepresentable {
     let attachment: RemoteTerminalAttachment
     let mode: LocalAttachmentMode
@@ -31,6 +37,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         surface.updateAppearance(highContrast: highContrast, scheme: preferredColorScheme, palette: palette)
         surface.announceOutput = announceOutput
         surface.terminal.inputDestination = inputDestination ?? attachment.session.name
+        surface.terminal.focusesWhenShown = isInteractive && mode == .control
         surface.terminal.terminalDelegate = context.coordinator
         context.coordinator.start(surface.terminal)
         finder?.terminal = surface.terminal
@@ -85,6 +92,10 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             terminal.notifyUpdateChanges = true
             terminal.linkReporting = .explicit
             terminal.keyboardDismissMode = .interactive
+            // The surface already sits within the safe area and above the
+            // keyboard. Automatic insets would shift the rows by a fraction
+            // of a line, clipping the prompt under the key row.
+            terminal.contentInsetAdjustmentBehavior = .never
             terminal.isAccessibilityElement = false
             terminal.accessibilityElementsHidden = true
             readingView.accessibilityLabel = mode == .view ? String(localized: "Read-Only Terminal Text", bundle: .main) : String(localized: "Terminal Text", bundle: .main)
@@ -146,6 +157,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
                     width: max(bounds.width, grid.width / CGFloat(columns) * 20 + pixel),
                     height: max(bounds.height, grid.height / CGFloat(rows) * 5 + pixel)
                 ))
+                pinToBottomIfFollowing()
             }
             scroll.contentSize = terminal.frame.size
             // A grid that shrank (such as after following a wider one) must
@@ -164,6 +176,18 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
                 }
             }
             refreshReadingDocument()
+        }
+
+        /// The keyboard animates the height through several frames. When the
+        /// final one keeps the same number of rows, SwiftTerm doesn't move
+        /// its rows again, so a view that follows output was left aligned to
+        /// an in-between height, a few points short of the bottom, with the
+        /// prompt's foot under the key row. Keep it on the bottom.
+        private func pinToBottomIfFollowing() {
+            terminal.layoutIfNeeded()
+            guard terminal.canScroll, terminal.scrollPosition >= 1, !terminal.isTracking, !terminal.isDecelerating else { return }
+            let bottom = max(0, terminal.contentSize.height - terminal.bounds.height)
+            if abs(terminal.contentOffset.y - bottom) > 0.01 { terminal.contentOffset.y = bottom }
         }
 
         /// The grid this view shows at its own size, within the protocol's
@@ -290,7 +314,20 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             let document = TerminalAXDocument.make(terminal: core, rows: page.rows, columns: page.columns, cursor: liveCursor)
             readingView.update(document: document, cellSize: cellSize, font: terminal.font,
                                announceOutput: outputChanged && announceOutput)
+            #if DEBUG
+            if Self.layoutProbe {
+                let base = readingView.accessibilityLabel?.components(separatedBy: " |").first ?? ""
+                readingView.accessibilityLabel = base + String(format: " | rows=%d yDisp=%d pos=%.3f page=%d..<%d cell=%.3f frameH=%.2f boundsH=%.2f offset=%.2f content=%.2f",
+                    core.rows, core.getTopVisibleRow(), terminal.scrollPosition, page.rows.lowerBound, page.rows.upperBound,
+                    cellSize.height, terminal.frame.height, bounds.height, terminal.contentOffset.y, terminal.contentSize.height)
+            }
+            #endif
         }
+
+        #if DEBUG
+        /// UI tests that measure layout read the grid's numbers from the label.
+        private static let layoutProbe = ProcessInfo.processInfo.arguments.contains("--witerm-ui-test-layout-probe")
+        #endif
 
         func pageReading(forward: Bool) -> Bool {
             let core = terminal.getTerminal(), previous = core.getTopVisibleRow()
@@ -337,6 +374,9 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
                        options: TerminalOptions(cols: session.columns, rows: session.rows))
             inputDestination = session.name
             inputAccessoryView = MobileTerminalAccessory(terminal: self)
+            // SwiftTerm leaves the scroll delegate unset; ours only finishes
+            // a scroll that comes to rest just short of the bottom.
+            delegate = self
             installTouchModel()
         }
 
@@ -473,6 +513,40 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         }
         override var canBecomeFirstResponder: Bool { mode == .control && inputEnabled }
 
+        /// Brings up the keyboard the first time this terminal is on screen
+        /// while it accepts typing, so a new connection is ready to type into.
+        /// Set once per connection; showing the terminal again keeps whatever
+        /// the person chose since.
+        var focusesWhenShown = false
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            guard window != nil, focusesWhenShown, acceptsInput else { return }
+            focusesWhenShown = false
+            // After this layout pass, like the keyboard button's request.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.window != nil, self.acceptsInput, !self.isFirstResponder else { return }
+                _ = self.becomeFirstResponder()
+            }
+        }
+
+        override func becomeFirstResponder() -> Bool {
+            let became = super.becomeFirstResponder()
+            if became { postFocus(true) }
+            return became
+        }
+
+        override func resignFirstResponder() -> Bool {
+            let resigned = super.resignFirstResponder()
+            if resigned { postFocus(false) }
+            return resigned
+        }
+
+        /// Lets the keyboard button say whether it shows or hides the keyboard.
+        private func postFocus(_ focused: Bool) {
+            NotificationCenter.default.post(name: .witermTerminalFocusChanged, object: self, userInfo: ["focused": focused])
+        }
+
         func disableInput() {
             inputEnabled = false
             allowMouseReporting = false
@@ -546,6 +620,50 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
 
         var geometryChanged: ((LocalSessionInfo) -> Void)?
         var readingChanged: ((Bool) -> Void)?
+        private var readingRefreshQueued = false
+        private var readingRefreshHasOutput = false
+
+        /// Rebuilds the reading page (what VoiceOver reads) once per run-loop
+        /// turn, however many output chunks or scroll steps arrived in it,
+        /// rather than once per chunk while long output streams in.
+        func requestReadingRefresh(output: Bool) {
+            readingRefreshHasOutput = readingRefreshHasOutput || output
+            guard !readingRefreshQueued else { return }
+            readingRefreshQueued = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                let output = self.readingRefreshHasOutput
+                self.readingRefreshQueued = false
+                self.readingRefreshHasOutput = false
+                self.readingChanged?(output)
+            }
+        }
+
+        /// A scroll that comes to rest within half a row of the bottom counts
+        /// as back at the live screen in SwiftTerm, but the view stayed a few
+        /// points short, cutting off the foot of the last row (the prompt)
+        /// and leaving it off the reading page. Finish the trip.
+        @objc func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) { snapToBottomIfFollowing() }
+
+        @objc func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+            if !decelerate { snapToBottomIfFollowing() }
+        }
+
+        private func snapToBottomIfFollowing() {
+            guard canScroll, scrollPosition >= 1 else { return }
+            let bottom = max(0, contentSize.height - bounds.height + adjustedContentInset.bottom)
+            guard contentOffset.y < bottom else { return }
+            setContentOffset(CGPoint(x: contentOffset.x, y: bottom), animated: false)
+        }
+
+        /// SwiftTerm moves its rows for a touch scroll, and when it follows
+        /// output, by setting the content offset without telling its delegate;
+        /// the reading page follows it too.
+        override var contentOffset: CGPoint {
+            didSet {
+                if oldValue != contentOffset { requestReadingRefresh(output: false) }
+            }
+        }
 
         func applyGeometry(_ session: LocalSessionInfo) {
             if getTerminal().cols != session.columns || getTerminal().rows != session.rows {
@@ -626,7 +744,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
                             view.feed(byteArray: Array(data)[...])
                             self.feeding = false
                             self.stabilizeTestCursor(view)
-                            view.readingChanged?(true)
+                            view.requestReadingRefresh(output: true)
                         }
                     }
                     guard let self, !self.stopped, !Task.isCancelled else { return }

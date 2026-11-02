@@ -48,14 +48,15 @@ struct RemoteTerminalWorkspace: View {
         }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
+                // Symbols alone; the spoken labels name where they go.
                 if model.displayAttachment != nil {
                     Button(String(localized: "Sessions", bundle: .main), systemImage: "chevron.backward") { model.showSessions() }
-                        .labelStyle(.titleAndIcon)
+                        .labelStyle(.iconOnly)
                         .disabled(model.busy != nil)
                         .accessibilityIdentifier("remoteSessionList")
                 } else if model.selectedGrant != nil {
                     Button(String(localized: "Terminals", bundle: .main), systemImage: "chevron.backward") { model.loadDevices() }
-                        .labelStyle(.titleAndIcon)
+                        .labelStyle(.iconOnly)
                         .disabled(model.busy != nil)
                         .accessibilityIdentifier("remoteChooseMac")
                 }
@@ -69,7 +70,6 @@ struct RemoteTerminalWorkspace: View {
                 ToolbarItemGroup(placement: .primaryAction) {
                     terminalKeyboardButton
                     Menu(String(localized: "Terminal Actions", bundle: .main), systemImage: "ellipsis.circle") {
-                        terminalControlButton
                         terminalSecondaryActions
                     }
                     .accessibilityIdentifier("terminalActionsMenu")
@@ -100,9 +100,27 @@ struct RemoteTerminalWorkspace: View {
         if model.displayAttachment != nil { model.showSessions() } else if model.selectedGrant != nil { model.loadDevices() }
     }
 
+    /// Other sessions this device may open, for switching from the title.
+    /// Switching goes through `attach`, which waits for the detach ACK.
+    private func otherSessions(than attachment: RemoteTerminalAttachment) -> [LocalSessionInfo] {
+        model.sessions.filter { $0.id != attachment.session.id }
+    }
+
     /// The session's name, and under it the Mac with an icon for typing or
-    /// watching; the status words are spoken rather than shown.
+    /// watching; the status words are spoken rather than shown. With other
+    /// sessions available, a chevron beside it switches to one.
     private func compactTitle(_ attachment: RemoteTerminalAttachment) -> some View {
+        let others = otherSessions(than: attachment)
+        return HStack(spacing: 2) {
+            compactTitleText(attachment)
+            if !others.isEmpty {
+                TerminalSwitcher(names: others.map(\.name)) { model.attach(others[$0]) }
+                    .disabled(model.busy != nil)
+            }
+        }
+    }
+
+    private func compactTitleText(_ attachment: RemoteTerminalAttachment) -> some View {
         VStack(spacing: 1) {
             Text(attachment.session.name)
                 .font(.headline)
@@ -129,10 +147,8 @@ struct RemoteTerminalWorkspace: View {
     /// The terminal's own background, so the area under the home indicator
     /// continues the terminal instead of showing a band.
     private var terminalBackground: Color {
-        let dark = systemColorScheme == .dark
-        if terminalHighContrast || contrast == .increased { return dark ? .black : .white }
-        guard let values = terminalPalette.values(dark: dark) else { return Color(uiColor: .systemBackground) }
-        return Color(uiColor: UIColor(terminalRGB: values.background))
+        TerminalBackdrop.color(dark: systemColorScheme == .dark, highContrast: terminalHighContrast || contrast == .increased,
+                               palette: terminalPalette)
     }
 
     private var browser: some View {
@@ -185,47 +201,52 @@ struct RemoteTerminalWorkspace: View {
                 }
                 .witermCard()
             }
-            HStack {
-                Text(String(localized: "Terminal Sessions", bundle: .main)).font(.headline)
-                Spacer()
-                StatusBadge(grant.permission == .view ? String(localized: "View Only", bundle: .main) : String(localized: "Can Type", bundle: .main),
-                            systemImage: grant.permission == .view ? "eye" : "keyboard")
+            // Typing is the norm, so only its absence is stated.
+            if grant.permission == .view {
+                StatusBadge(String(localized: "View Only", bundle: .main), systemImage: "eye")
+                    .padding(.top, 4)
             }
-            .padding(.top, 4)
             ForEach(model.sessions) { session in
                 let access = model.access(for: session)
-                HStack(spacing: 12) {
-                    Button { model.attach(session) } label: {
-                        HStack(spacing: 14) {
-                            IconTile(systemImage: "terminal", tint: grant.host.identityHue)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(session.name).font(.headline).foregroundStyle(WitermTheme.ink)
-                                Text(access == .control ? String(localized: "Open to Type", bundle: .main) : String(localized: "View Only", bundle: .main))
+                Button { model.attach(session) } label: {
+                    HStack(spacing: 14) {
+                        IconTile(systemImage: "terminal", tint: grant.host.identityHue)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(session.name).font(.headline).foregroundStyle(WitermTheme.ink)
+                            if access == .view {
+                                Text(String(localized: "View Only", bundle: .main))
                                     .font(.caption).foregroundStyle(WitermTheme.secondary)
                             }
-                            Spacer(minLength: 8)
-                            Image(systemName: "chevron.right")
-                                .font(.footnote.weight(.semibold))
-                                .foregroundStyle(WitermTheme.secondary)
-                                .accessibilityHidden(true)
                         }
-                        .touchTarget()
-                        .contentShape(Rectangle())
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(WitermTheme.secondary)
+                            .accessibilityHidden(true)
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("remoteSession-\(session.id)")
+                    .touchTarget()
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("remoteSession-\(session.id)")
+                .accessibilityValue(access == .control ? String(localized: "Can Type", bundle: .main) : String(localized: "View Only", bundle: .main))
+                // Watching a session you could type in is rare: one long press
+                // away, and a VoiceOver action, instead of a button on every row.
+                .contextMenu {
                     if access == .control {
                         Button(String(localized: "View Only", bundle: .main), systemImage: "eye") { model.attach(session, mode: .view) }
-                            .labelStyle(.iconOnly)
-                            .touchTarget(square: true)
-                            .accessibilityLabel(String(localized: "View Only", bundle: .main))
+                    }
+                }
+                .accessibilityActions {
+                    if access == .control {
+                        Button(String(localized: "View Only", bundle: .main)) { model.attach(session, mode: .view) }
                     }
                 }
                 .witermCard(padding: 14)
                 .disabled(model.busy != nil)
             }
             if model.loaded, model.sessions.isEmpty, model.busy == nil {
-                ContentUnavailableView(String(localized: "No Available Sessions", bundle: .main), systemImage: "terminal", description: Text(String(localized: "On the other device, choose Continue on Another Device for a session, then pull down to refresh.", bundle: .main)))
+                ContentUnavailableView(String(localized: "No Available Sessions", bundle: .main), systemImage: "terminal", description: Text(String(localized: "On the other device, choose Continue on Another Device.", bundle: .main)))
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("remoteSessionsEmpty")
             }
@@ -309,50 +330,33 @@ struct RemoteTerminalWorkspace: View {
         return model.mode == .view ? "eye" : "keyboard"
     }
 
+    /// iPad's header: the actions menu and the keyboard. Typing or watching
+    /// lives in the menu, as on iPhone, since devices now type together.
     private var terminalActions: some View {
-        Group {
-            if typeSize.isAccessibilitySize {
-                HStack(spacing: 12) {
-                    Menu(String(localized: "Terminal Actions", bundle: .main), systemImage: "ellipsis") {
-                        terminalSecondaryActions
-                        terminalControlButton
-                    }
-                        .touchTarget(square: true)
-                        .accessibilityIdentifier("terminalActionsMenu")
-                    terminalKeyboardButton
-                }
-            } else {
-                HStack(spacing: 8) {
-                    Menu(String(localized: "Terminal Actions", bundle: .main), systemImage: "ellipsis.circle") { terminalSecondaryActions }
-                        .labelStyle(.iconOnly)
-                        .touchTarget(square: true)
-                        .accessibilityIdentifier("terminalActionsMenu")
-                    terminalControlButton
-                    terminalKeyboardButton
-                }
-            }
+        HStack(spacing: typeSize.isAccessibilitySize ? 12 : 8) {
+            Menu(String(localized: "Terminal Actions", bundle: .main), systemImage: "ellipsis.circle") { terminalSecondaryActions }
+                .labelStyle(.iconOnly)
+                .touchTarget(square: true)
+                .accessibilityIdentifier("terminalActionsMenu")
+            terminalKeyboardButton
         }
         .font(.subheadline)
     }
 
+    /// Text size first (the most frequent), then find and display, typing or
+    /// watching, and Leave last. The back button already lists the sessions.
     @ViewBuilder private var terminalSecondaryActions: some View {
-        Group {
-            Button(String(localized: "Find in Terminal", bundle: .main), systemImage: "magnifyingglass") { finding = true }
-                .keyboardShortcut("f", modifiers: .command)
-                .touchTarget(square: true)
-                .accessibilityIdentifier("terminalFind")
-            Button(String(localized: "Display", bundle: .main), systemImage: "textformat.size") { showingAppearance = true }
-                .touchTarget(square: true)
-                .accessibilityIdentifier("terminalAppearance")
-            Button(String(localized: "Sessions", bundle: .main), systemImage: "list.bullet") { model.showSessions() }
-                .touchTarget(square: true)
-                .disabled(model.busy != nil)
-                .accessibilityIdentifier("remoteSessionListInline")
-            if model.isInteractive {
-                Button(String(localized: "Leave", bundle: .main), systemImage: "rectangle.portrait.and.arrow.right") { model.disconnect() }
-                    .touchTarget(square: true)
-                    .accessibilityIdentifier("detachRemoteTerminal")
-            }
+        TerminalTextSizeControls()
+        Button(String(localized: "Find in Terminal", bundle: .main), systemImage: "magnifyingglass") { finding = true }
+            .keyboardShortcut("f", modifiers: .command)
+            .accessibilityIdentifier("terminalFind")
+        Button(String(localized: "Display", bundle: .main), systemImage: "paintpalette") { showingAppearance = true }
+            .accessibilityIdentifier("terminalAppearance")
+        terminalControlButton
+        if model.isInteractive {
+            Divider()
+            Button(String(localized: "Leave", bundle: .main), systemImage: "rectangle.portrait.and.arrow.right") { model.disconnect() }
+                .accessibilityIdentifier("detachRemoteTerminal")
         }
     }
 
@@ -361,14 +365,14 @@ struct RemoteTerminalWorkspace: View {
             Button(model.mode == .control ? String(localized: "Watch Only", bundle: .main) : String(localized: "Start Typing", bundle: .main), systemImage: model.mode == .control ? "eye" : "keyboard") {
                 model.switchMode()
             }
-            .touchTarget()
             .accessibilityIdentifier("switchRemoteControl")
         }
     }
 
     @ViewBuilder private var terminalKeyboardButton: some View {
         if model.isInteractive, model.mode == .control {
-            Button(String(localized: "Keyboard", bundle: .main), systemImage: "keyboard") { keyboardRequest += 1 }
+            TerminalKeyboardButton(terminal: { [finder] in finder.terminal }) { keyboardRequest += 1 }
+                .id(model.attachmentID)
                 .touchTarget(square: true)
                 .accessibilityIdentifier("remoteKeyboard")
         }
@@ -391,6 +395,8 @@ struct RemoteTerminalWorkspace: View {
         }
     }
 
+    /// What happened and one clear next step: Reconnect when it can work,
+    /// otherwise back to the sessions (the back button also goes there).
     private var connectionStatusContent: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let busy = model.busy {
@@ -413,14 +419,14 @@ struct RemoteTerminalWorkspace: View {
                         PrimaryButton(String(localized: "Reconnect", bundle: .main), systemImage: "arrow.clockwise") { model.reconnect() }
                             .accessibilityIdentifier("reconnectRemoteTerminal")
                         if model.reconnectMode == .control {
-                            Button(String(localized: "Connect Read Only", bundle: .main)) { model.reconnect(as: .view) }.touchTarget()
+                            Button(String(localized: "View Only", bundle: .main)) { model.reconnect(as: .view) }.touchTarget()
                                 .accessibilityIdentifier("reconnectRemoteReadOnly")
                         }
                     }
+                } else {
+                    PrimaryButton(String(localized: "Back to Sessions", bundle: .main), systemImage: "list.bullet") { model.showSessions() }
+                        .accessibilityIdentifier("remoteDisconnectedSessionList")
                 }
-                Button(String(localized: "Back to Sessions", bundle: .main), systemImage: "list.bullet") { model.showSessions() }
-                    .touchTarget()
-                    .accessibilityIdentifier("remoteDisconnectedSessionList")
             }
         }
     }

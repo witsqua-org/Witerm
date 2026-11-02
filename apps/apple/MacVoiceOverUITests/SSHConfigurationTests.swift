@@ -6,7 +6,7 @@ import XCTest
         executionTimeAllowance = 120
         let app = XCUIApplication()
         let name = "UI config Mac " + String(UUID().uuidString.prefix(6))
-        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-witerm.onboarding.completedVersion", "1"]
         app.launch()
         addTeardownBlock { await MainActor.run { app.terminate() } }
         app.menuBars.menuBarItems["File"].click()

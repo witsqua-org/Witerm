@@ -14,7 +14,7 @@ import XCTest
         }
         let app = XCUIApplication()
         let profileName = "SSH 验收 iOS 1026"
-        app.launchArguments = ["--witerm-ui-test-steady-terminal-cursor"]
+        app.launchArguments = ["-witerm.onboarding.completedVersion", "1", "--witerm-ui-test-steady-terminal-cursor"]
         addTeardownBlock { await MainActor.run { app.terminate() } }
         app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         app.launch()
@@ -47,19 +47,19 @@ import XCTest
             predicate: NSPredicate(format: "value CONTAINS %@ OR label CONTAINS %@", "~$ ", "~$ "), object: terminal)
         wait(for: [prompt], timeout: 10)
         declinePasswordOffer(app, timeout: 2)
+        // A new connection is ready to type into: the keyboard is already up,
+        // and the keyboard button hides and shows it again.
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "The keyboard must be up when the terminal connects")
+        tapVisibleControl(app.buttons["sshKeyboard"], in: app)
+        let hidden = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.keyboards.firstMatch)
+        wait(for: [hidden], timeout: 5)
         tapVisibleControl(app.buttons["sshKeyboard"], in: app)
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "The keyboard control must focus the real SSH input view")
         let marker = "~$ z"
         XCTAssertFalse((terminal.value as? String ?? terminal.label).contains(marker))
         // The terminal's separate AX reading view intentionally hides its input
         // view. Use a real software key instead of app.typeText's AX-focus search.
-        let character = app.keyboards.keys["z"].firstMatch
-        XCTAssertTrue(character.waitForExistence(timeout: 5))
-        character.tap()
-        let rendered = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "value CONTAINS %@ OR label CONTAINS %@", marker, marker),
-            object: terminal)
-        wait(for: [rendered], timeout: 10)
+        typeLetter("z", until: marker, in: terminal, app: app)
         let delete = app.keyboards.keys["delete"].firstMatch
         XCTAssertTrue(delete.exists)
         delete.tap()
@@ -156,7 +156,7 @@ import XCTest
         }
         let app = XCUIApplication()
         let firstName = "SSH 验收 iOS 双会话 A", secondName = "SSH 验收 iOS 双会话 B"
-        app.launchArguments = ["--witerm-ui-test-steady-terminal-cursor"]
+        app.launchArguments = ["-witerm.onboarding.completedVersion", "1", "--witerm-ui-test-steady-terminal-cursor"]
         // Optional text size, e.g. UICTContentSizeCategoryAccessibilityL, for layout review.
         if let size = environment["WITERM_UI_CONTENT_SIZE"] {
             app.launchArguments += ["-UIPreferredContentSizeCategoryName", size]
@@ -171,12 +171,9 @@ import XCTest
         let terminal = app.descendants(matching: .any)["sshTerminalSurface"].firstMatch
         connectNewHost(app, name: firstName, port: firstPort, fingerprint: firstPin)
         // Leave a marker in the first session's live line.
-        tapVisibleControl(app.buttons["sshKeyboard"], in: app)
+        // The keyboard comes up with the connection.
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
-        app.keyboards.keys["z"].firstMatch.tap()
-        let marker = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "value CONTAINS %@ OR label CONTAINS %@", "~$ z", "~$ z"), object: terminal)
-        wait(for: [marker], timeout: 10)
+        typeLetter("z", until: "~$ z", in: terminal, app: app)
 
         tapVisibleControl(app.buttons["sshShowHosts"], in: app)
         XCTAssertTrue(app.buttons["newSSHProfile"].waitForExistence(timeout: 5))
@@ -240,7 +237,7 @@ import XCTest
         let snippet = #"[{"id":"6B1C2E0A-5A43-4F7E-9C8B-1D2E3F405162","name":"Find marker","text":"echo "# + marker + #"","runsImmediately":true}]"#
         let hex = Data(snippet.utf8).map { String(format: "%02x", $0) }.joined()
         let app = XCUIApplication()
-        app.launchArguments = ["--witerm-ui-test-steady-terminal-cursor", "-witerm.commandSnippets", "<\(hex)>",
+        app.launchArguments = ["-witerm.onboarding.completedVersion", "1", "--witerm-ui-test-steady-terminal-cursor", "-witerm.commandSnippets", "<\(hex)>",
                                "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         addTeardownBlock { await MainActor.run { app.terminate() } }
         app.launch()
@@ -251,7 +248,7 @@ import XCTest
         let terminal = app.descendants(matching: .any)["sshTerminalSurface"].firstMatch
 
         // The Snippets key lists the saved command and types it with Return.
-        tapVisibleControl(app.buttons["sshKeyboard"], in: app)
+        // The keyboard comes up with the connection.
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         let snippetsKey = app.buttons["terminalKey-snippets"]
         XCTAssertTrue(snippetsKey.waitForExistence(timeout: 5))
@@ -271,8 +268,10 @@ import XCTest
         ranShot.name = "ios-ssh-snippet"; ranShot.lifetime = .keepAlways; add(ranShot)
         tapVisibleControl(app.buttons["sshKeyboard"], in: app)
 
-        // Find counts both lines and reports no match for anything else.
-        tapVisibleControl(app.buttons["terminalFind"], in: app)
+        // Find counts both lines and reports no match for anything else. On
+        // iPhone it lives in the terminal's actions menu.
+        tapVisibleControl(app.buttons["sshSessionActions"], in: app)
+        tapVisibleControl(app.buttons["在终端中查找"], in: app)
         let field = app.textFields["terminalFindField"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.typeText(marker)
@@ -299,6 +298,241 @@ import XCTest
         let failure = cleanupFixtures(app, name: profileName, expectedFingerprint: fingerprint)
         print("SSH_FIXTURE_CLEANUP completed=\(failure == nil)" + (failure.map { " reason=\($0)" } ?? ""))
         XCTAssertNil(failure)
+    }
+
+    /// The terminal around the keyboard, scrolling, and selection, against
+    /// the fixture: the keyboard keeps the width and the prompt in view, and
+    /// hiding it restores the same grid; long output scrolls back and returns;
+    /// a long press copies exactly the word without typing anything.
+    func testKeyboardScrollAndSelectionInLiveTerminal() throws {
+        continueAfterFailure = false
+        executionTimeAllowance = 300
+        let environment = ProcessInfo.processInfo.environment
+        guard let port = environment["WITERM_SSH_UI_PORT"], Int(port) != nil,
+              let fingerprint = environment["WITERM_SSH_UI_FINGERPRINT"], fingerprint.hasPrefix("SHA256:") else {
+            throw XCTSkip("Configure a disposable SSH UI fixture explicitly")
+        }
+        let shots = environment["WITERM_SHOTS_DIR"].map { URL(fileURLWithPath: $0) }
+        let profileName = "SSH 验收 iOS 布局"
+        func snippet(_ id: Int, _ name: String, _ text: String) -> String {
+            #"{"id":"6B1C2E0A-5A43-4F7E-9C8B-1D2E3F40516\#(id)","name":"\#(name)","text":"\#(text)","runsImmediately":true}"#
+        }
+        let snippets = "[" + [snippet(3, "Grid now", "stty size"), snippet(4, "Grid later", "sleep 6; stty size"),
+                              snippet(5, "Long output", "seq 1 3000"), snippet(6, "Pager", "seq 1 300 | less"), snippet(7, "Quit pager", "q"),
+                              snippet(8, "Ticks", "for i in $(seq 1 30); do echo tick$i; sleep 0.3; done")]
+            .joined(separator: ",") + "]"
+        let hex = Data(snippets.utf8).map { String(format: "%02x", $0) }.joined()
+        let app = XCUIApplication()
+        app.launchArguments = ["-witerm.onboarding.completedVersion", "1", "--witerm-ui-test-steady-terminal-cursor",
+                               "-witerm.commandSnippets", "<\(hex)>", "--witerm-ui-test-layout-probe", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        addTeardownBlock { await MainActor.run { app.terminate() } }
+        app.launch()
+        func shot(_ name: String) {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.6))
+            let attachment = XCTAttachment(screenshot: app.screenshot())
+            attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+            if let shots { try? app.screenshot().pngRepresentation.write(to: shots.appendingPathComponent(name + ".png")) }
+        }
+        let sshTab = app.tabBars.buttons.element(boundBy: 0)
+        XCTAssertTrue(sshTab.waitForExistence(timeout: 10))
+        sshTab.tap()
+        connectNewHost(app, name: profileName, port: port, fingerprint: fingerprint)
+        let terminal = app.descendants(matching: .any)["sshTerminalSurface"].firstMatch
+        let keyboard = app.keyboards.firstMatch
+        func text() -> String { terminal.exists ? (terminal.value as? String ?? terminal.label) : "" }
+        func waitFor(_ predicate: @escaping (String) -> Bool, timeout: TimeInterval = 10, _ message: String) {
+            let deadline = Date().addingTimeInterval(timeout)
+            while Date() < deadline, !predicate(text()) { RunLoop.current.run(until: Date().addingTimeInterval(0.25)) }
+            XCTAssertTrue(predicate(text()), message + "\n" + text() + "\n" + (terminal.exists ? terminal.label : ""))
+        }
+        /// The last `rows cols` line `stty size` printed on screen.
+        func grid() -> (rows: Int, columns: Int)? {
+            text().split(whereSeparator: \.isNewline).reversed().lazy.compactMap { line -> (Int, Int)? in
+                let parts = line.trimmingCharacters(in: .whitespaces).split(separator: " ")
+                guard parts.count == 2, let rows = Int(parts[0]), let columns = Int(parts[1]) else { return nil }
+                return (rows, columns)
+            }.first
+        }
+        /// Scrolls the key row until `key` is on screen, from wherever it was left.
+        func reveal(_ key: XCUIElement) {
+            XCTAssertTrue(key.waitForExistence(timeout: 5))
+            let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "terminalKey-"))
+            let width = app.windows.firstMatch.frame.width
+            for _ in 0..<8 where !key.isHittable {
+                // Never start on a key that repeats while held.
+                let repeating = ["left", "up", "down", "right", "pageUp", "pageDown"].map { "terminalKey-" + $0 }
+                guard let visible = (0..<row.count).lazy.map({ row.element(boundBy: $0) })
+                    .first(where: { $0.isHittable && !repeating.contains($0.identifier) }) else { return }
+                // A short drag toward the key; a drag never sends the key it starts on.
+                let start = visible.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+                let dx: CGFloat = key.frame.midX > width / 2 ? -width / 3 : width / 3
+                start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: dx, dy: 0)))
+            }
+        }
+        func run(_ name: String) {
+            if !keyboard.exists { tapVisibleControl(app.buttons["sshKeyboard"], in: app) }
+            XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+            let key = app.buttons["terminalKey-snippets"]
+            reveal(key)
+            key.tap()
+            let item = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch
+            XCTAssertTrue(item.waitForExistence(timeout: 5), name)
+            item.tap()
+        }
+        let window = app.windows.firstMatch.frame
+
+        // 1. The keyboard is up with the connection; the terminal ends above
+        // the key row, and the prompt line is on screen.
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+        let escape = app.buttons["terminalKey-escape"]
+        XCTAssertTrue(escape.waitForExistence(timeout: 5))
+        XCTAssertLessThanOrEqual(terminal.frame.maxY, escape.frame.minY + 1, "The terminal must end above the key row")
+        // The first seven keys (Esc, Ctrl, Tab and the arrows) fit the width.
+        XCTAssertLessThanOrEqual(app.buttons["terminalKey-right"].frame.maxX, window.maxX, "Esc, Ctrl, Tab and the arrows must fit without scrolling")
+        run("Grid now")
+        waitFor({ _ in grid() != nil }, "stty size never printed")
+        let up = try XCTUnwrap(grid())
+        print("TERMINAL_PROBE keyboard-up \(terminal.label)")
+        waitFor({ $0.split(whereSeparator: \.isNewline).last?.contains("~$") == true }, "The prompt must be the last visible line above the keyboard")
+        shot("terminal-keyboard-up")
+
+        // 2. Hiding the keyboard keeps the width, gives back the rows, and
+        // leaves no band under the terminal.
+        run("Grid later")
+        tapVisibleControl(app.buttons["sshKeyboard"], in: app)
+        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: keyboard)
+        wait(for: [gone], timeout: 5)
+        RunLoop.current.run(until: Date().addingTimeInterval(7))
+        let down = try XCTUnwrap(grid())
+        let downFrame = terminal.frame
+        print("TERMINAL_GRID keyboard-up \(up) keyboard-down \(down) frame \(downFrame) \(terminal.label)")
+        XCTAssertEqual(down.columns, up.columns, "The keyboard must never change the width")
+        XCTAssertGreaterThan(down.rows, up.rows, "Hidden keyboard gives the rows back")
+        XCTAssertGreaterThan(terminal.frame.maxY, window.maxY - 60, "The terminal must fill the screen again")
+        shot("terminal-keyboard-down")
+
+        // 3. Showing and hiding it again lands on the same grid: the view is restored.
+        tapVisibleControl(app.buttons["sshKeyboard"], in: app)
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+        shot("terminal-keyboard-again")
+        run("Grid later")
+        tapVisibleControl(app.buttons["sshKeyboard"], in: app)
+        wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: keyboard)], timeout: 5)
+        RunLoop.current.run(until: Date().addingTimeInterval(7))
+        let restored = try XCTUnwrap(grid())
+        print("TERMINAL_GRID restored \(restored) frame \(terminal.frame) \(terminal.label)")
+        XCTAssertEqual(terminal.frame, downFrame, "Hiding the keyboard again must restore the same frame")
+        XCTAssertEqual(restored.rows, down.rows, "Hiding the keyboard again must restore the same rows")
+        XCTAssertEqual(restored.columns, down.columns)
+        shot("terminal-keyboard-restored")
+
+        // 4. Long output: the view follows it to the end, scrolls back through
+        // it, and returns to the bottom.
+        let streaming = Date()
+        run("Long output")
+        waitFor({ $0.contains("3000\n") || $0.contains("\n3000") }, timeout: 30, "The view must follow output to its end")
+        print("TERMINAL_SEQ_3000_SECONDS " + String(format: "%.1f", Date().timeIntervalSince(streaming)))
+        tapVisibleControl(app.buttons["sshKeyboard"], in: app)
+        wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: keyboard)], timeout: 5)
+        for _ in 0..<3 { terminal.swipeDown(velocity: .fast) }
+        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+        XCTAssertFalse(text().contains("\n3000"), "Swiping down must scroll back")
+        shot("terminal-scrolled-back")
+        for _ in 0..<40 { terminal.swipeDown(velocity: .fast) }
+        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+        let top = text()
+        terminal.swipeDown(velocity: .fast)
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        XCTAssertEqual(text(), top, "Scrollback has a top that stays put")
+        shot("terminal-scrollback-top")
+        for _ in 0..<45 { terminal.swipeUp(velocity: .fast) }
+        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+        waitFor({ $0.contains("3000") && $0.contains("~$") }, "Swiping up must return to the live prompt")
+
+        // 5. A long press selects the word under it; Copy puts exactly that
+        // word on the pasteboard and types nothing. (The test runner may not
+        // read the pasteboard, so the Paste key types it back to check.)
+        let before = text()
+        let lines = before.split(separator: "\n", omittingEmptySubsequences: false)
+        let row = try XCTUnwrap(lines.lastIndex { $0 == "2999" }, "2999 must be on screen")
+        let point = terminal.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+            .withOffset(CGVector(dx: 12, dy: (CGFloat(row) + 0.5) * terminal.frame.height / CGFloat(lines.count)))
+        point.press(forDuration: 0.8)
+        let copy = app.buttons["拷贝"].exists ? app.buttons["拷贝"] : app.menuItems["拷贝"]
+        XCTAssertTrue(copy.waitForExistence(timeout: 5), "Lifting a long press must offer Copy")
+        shot("terminal-selection")
+        copy.tap()
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        XCTAssertEqual(text(), before, "Selecting and copying must not type into the shell")
+        tapVisibleControl(app.buttons["sshKeyboard"], in: app)
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+        let paste = app.buttons["terminalKey-paste"]
+        reveal(paste)
+        paste.tap()
+        /// The last line with text, without the padding a terminal row keeps.
+        func lastLine(_ page: String) -> String {
+            page.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.last { !$0.isEmpty } ?? ""
+        }
+        waitFor({ lastLine($0).hasSuffix("~$ 2999") }, "Copy must put exactly the selected word on the pasteboard")
+        app.buttons["terminalInterrupt"].tap()
+        waitFor({ lastLine($0).hasSuffix("~$") }, "Ctrl+C clears the line")
+
+        // 6. A pager opens, fills the view, and quits cleanly. (BusyBox less
+        // draws on the main screen; the alternate screen is unit-tested.)
+        run("Pager")
+        waitFor({ $0.contains("standard input") || $0.contains("(END)") }, "less never opened")
+        XCTAssertFalse(text().contains("~$"), "The pager's page replaces the shell's lines")
+        shot("terminal-pager")
+        run("Quit pager")
+        waitFor({ lastLine($0).hasSuffix("~$") }, "Quitting less must return to the prompt")
+        XCTAssertFalse(text().contains("standard input"), "The pager's status line leaves with it")
+
+        // 7. Scrolled back while output keeps arriving, the view stays put;
+        // back at the bottom, it follows again.
+        run("Ticks")
+        waitFor({ $0.contains("tick3") }, "The slow output never started")
+        tapVisibleControl(app.buttons["sshKeyboard"], in: app)
+        wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: keyboard)], timeout: 5)
+        for _ in 0..<2 { terminal.swipeDown(velocity: .fast) }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.8))
+        let held = text()
+        RunLoop.current.run(until: Date().addingTimeInterval(3))
+        XCTAssertEqual(text(), held, "New output must not pull a scrolled-back view")
+        shot("terminal-held-while-streaming")
+        RunLoop.current.run(until: Date().addingTimeInterval(8))
+        for _ in 0..<6 { terminal.swipeUp(velocity: .fast) }
+        waitFor({ $0.contains("tick30") }, "Back at the bottom, the view shows the latest output")
+
+        tapVisibleControl(app.buttons["sshSessionActions"], in: app)
+        app.buttons["断开"].tap()
+        XCTAssertTrue(app.buttons["sshReconnect"].waitForExistence(timeout: 5))
+        tapVisibleControl(app.buttons["sshShowHosts"], in: app)
+        XCTAssertTrue(app.buttons["newSSHProfile"].waitForExistence(timeout: 5))
+        let failure = cleanupFixtures(app, name: profileName, expectedFingerprint: fingerprint)
+        print("SSH_FIXTURE_CLEANUP completed=\(failure == nil)" + (failure.map { " reason=\($0)" } ?? ""))
+        XCTAssertNil(failure)
+    }
+
+    /// Taps a letter on the software keyboard until it reaches the shell.
+    /// With an input method such as Pinyin active (as on a simulator set up
+    /// for Chinese), the letter composes instead of typing; clear that and
+    /// move to the next keyboard, as a person would with the globe key.
+    private func typeLetter(_ letter: String, until marker: String, in terminal: XCUIElement, app: XCUIApplication) {
+        let next = app.keyboards.buttons.matching(NSPredicate(format: "label IN %@", ["Next keyboard", "下一个键盘"])).firstMatch
+        for _ in 0..<4 {
+            let key = app.keyboards.keys[letter].firstMatch
+            XCTAssertTrue(key.waitForExistence(timeout: 5))
+            // It exists as soon as it starts sliding in; wait until it's on screen.
+            wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: key)], timeout: 5)
+            key.tap()
+            let typed = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "value CONTAINS %@ OR label CONTAINS %@", marker, marker), object: terminal)
+            if XCTWaiter.wait(for: [typed], timeout: 2) == .completed { return }
+            app.keyboards.keys["delete"].firstMatch.tap()
+            guard next.exists else { break }
+            next.tap()
+        }
+        XCTFail("The letter \(letter) never reached the shell")
     }
 
     /// Creates a fixture host from the list, verifies its key, and waits for
@@ -340,14 +574,14 @@ import XCTest
         }
         let app = XCUIApplication()
         addTeardownBlock { await MainActor.run { app.terminate() } }
-        app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launchArguments += ["-witerm.onboarding.completedVersion", "1", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         app.launch()
         let sshTab = app.tabBars.buttons.element(boundBy: 0)
         XCTAssertTrue(sshTab.waitForExistence(timeout: 10))
         sshTab.tap()
         XCTAssertTrue(app.buttons["newSSHProfile"].waitForExistence(timeout: 5))
         // Every fixture name these tests use; each is unique to them.
-        for name in ["SSH 验收 iOS 1026", "SSH 验收 iOS 双会话 A", "SSH 验收 iOS 双会话 B", "SSH 验收 iOS 查找"] {
+        for name in ["SSH 验收 iOS 1026", "SSH 验收 iOS 双会话 A", "SSH 验收 iOS 双会话 B", "SSH 验收 iOS 查找", "SSH 验收 iOS 布局"] {
             let failure = cleanupFixtures(app, name: name, expectedFingerprint: nil, anyLoopbackPin: true)
             XCTAssertNil(failure, "\(name): \(failure ?? "")")
         }

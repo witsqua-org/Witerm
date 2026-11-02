@@ -272,13 +272,12 @@ struct ContinueOnDeviceSheet: View {
 
     private var subtitle: String? {
         switch step {
-        case .server: String(localized: "Your devices reach each other through a continuation server. It relays only end-to-end encrypted data.", bundle: .main)
-        case .device: String(localized: "Which device will continue “\(sessionName)”?", bundle: .main)
-        case .code: String(localized: "On the other device, open Witerm and choose Continue from Another Device.", bundle: .main)
+        case .server, .device: nil
+        case .code: String(localized: "On the other device, choose Continue from Another Device.", bundle: .main)
         case .approve:
             String(localized: "Check that \(pairing?.pairing?.client?.name ?? String(localized: "the other device", bundle: .main)) shows this code.", bundle: .main)
         case .invite: String(localized: "They can open “\(sessionName)” once, on one device, without pairing.", bundle: .main)
-        case .inviteCode: String(localized: "On their device, open Witerm and choose Continue from Another Device. Then scan this code or paste the link.", bundle: .main)
+        case .inviteCode: String(localized: "On their device, choose Continue from Another Device.", bundle: .main)
         case .inviteReview: String(localized: "Approve only if this is the device you invited.", bundle: .main)
         case .open:
             if let continuing, sessionID != nil {
@@ -342,13 +341,11 @@ struct ContinueOnDeviceSheet: View {
                     LabeledContent(String(localized: "Status", bundle: .main)) {
                         StatusBadge(server.statusTitle, systemImage: server.statusSymbol, tone: server.statusTone)
                     }
-                    LabeledContent(String(localized: "Remote Access", bundle: .main),
-                                   value: remoteAccess.isEnabled(for: server.address) ? String(localized: "On", bundle: .main) : String(localized: "Off", bundle: .main))
                 }
             }
             .formStyle(.grouped)
             .scrollDisabled(true)
-            .frame(height: 150)
+            .frame(height: 110)
             .padding(.horizontal, -20)
             switch blocker {
             case .failed(let issue)?:
@@ -359,10 +356,9 @@ struct ContinueOnDeviceSheet: View {
                 IssueBanner(String(localized: "\(server.displayName) doesn’t offer continuation", bundle: .main),
                             message: String(localized: "Choose another server, or update this one.", bundle: .main))
             case .serviceOff?:
-                note(String(localized: "Continuing needs this Mac’s local terminal service.", bundle: .main))
                 if let issue = service.issue { IssueBanner(issue) }
             case .remoteAccessOff?:
-                note(String(localized: "Turning on remote access lets paired devices reach only the sessions you allow. You can turn it off in Settings → Devices.", bundle: .main))
+                note(String(localized: "Paired devices reach only the sessions you allow, through this server.", bundle: .main))
                 if let issue = remoteAccess.issue { IssueBanner(issue) }
             default:
                 EmptyView()
@@ -403,8 +399,7 @@ struct ContinueOnDeviceSheet: View {
                     .accessibilityIdentifier("continueDevice-\(device.id)")
             }
             ChoiceRow(selected: choice == .new, title: String(localized: "Pair a New Device", bundle: .main),
-                      detail: String(localized: "A device with Witerm that isn’t paired with this Mac", bundle: .main),
-                      symbol: "plus", hue: nil) { choice = .new; autoAdvance = false }
+                      detail: nil, symbol: "plus", hue: nil) { choice = .new; autoAdvance = false }
                 .accessibilityIdentifier("continueNewDevice")
             ChoiceRow(selected: choice == .guest, title: String(localized: "Someone Else’s Device", bundle: .main),
                       detail: String(localized: "A one-time invitation to this session only", bundle: .main),
@@ -428,7 +423,10 @@ struct ContinueOnDeviceSheet: View {
         if devices.count == 1 { choice = .paired(devices[0].id) }
         else if let reaching = devices.first(where: reaches) { choice = .paired(reaching.id) }
         else if let first = devices.first { choice = .paired(first.id) }
-        else { choice = .new }
+        else {
+            choice = .new
+            if autoAdvance, step == .device { showCode() }
+        }
     }
 
     private var choiceStillValid: Bool {
@@ -511,15 +509,12 @@ struct ContinueOnDeviceSheet: View {
             SessionReachPicker(reach: $reach, chosen: $chosen, sessions: reachableSessions, startingSession: session,
                                activity: activity)
             Form {
-                Toggle(isOn: $canType) {
-                    Text(String(localized: "Can Type", bundle: .main))
-                    Text(String(localized: "Types alongside this Mac. Pause remote typing at any time.", bundle: .main))
-                }
+                Toggle(String(localized: "Can Type", bundle: .main), isOn: $canType)
                 .accessibilityIdentifier("continueCanType")
             }
             .formStyle(.grouped)
             .scrollDisabled(true)
-            .frame(height: 70)
+            .frame(height: 56)
             .padding(.horizontal, -20)
         }
     }
@@ -637,13 +632,11 @@ struct ContinueOnDeviceSheet: View {
                     Text(String(localized: "24 hours", bundle: .main)).tag(SessionInvitation.longestAccess)
                 }
                 .accessibilityIdentifier("inviteDuration")
-            } footer: {
-                Text(String(localized: "Share the code or link only with the person you mean to invite. It stops working when it expires or when you end the session.", bundle: .main))
             }
         }
         .formStyle(.grouped)
         .scrollDisabled(true)
-        .frame(height: 250)
+        .frame(height: 200)
         .padding(.horizontal, -20)
     }
 
@@ -997,7 +990,7 @@ private struct StepStrip: View {
 private struct ChoiceRow: View {
     let selected: Bool
     let title: String
-    let detail: String
+    let detail: String?
     let symbol: String
     let hue: Color?
     let action: () -> Void
@@ -1011,7 +1004,7 @@ private struct ChoiceRow: View {
                 IconTile(systemImage: symbol, tint: hue ?? WitermTheme.secondary)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title).font(.subheadline.weight(.semibold))
-                    Text(detail).font(.caption).foregroundStyle(WitermTheme.secondary)
+                    if let detail { Text(detail).font(.caption).foregroundStyle(WitermTheme.secondary) }
                 }
                 Spacer(minLength: 0)
             }

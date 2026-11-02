@@ -69,6 +69,11 @@ final class LocalTerminalModel {
     private(set) var ended = false
     /// Remote access per server; empty when Allow Remote Access is off.
     private(set) var relays: [LocalRelayStatus] = []
+    /// Each change asks the shown terminal for keyboard focus.
+    private(set) var focusRequest = 0
+    /// Whether the next terminal shown takes keyboard focus; off while a
+    /// person browses the sidebar with the arrow keys.
+    @ObservationIgnored private(set) var focusOnAttach = true
     @ObservationIgnored private var work: Task<Void, Never>?
     @ObservationIgnored private var watcher: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
@@ -189,6 +194,16 @@ final class LocalTerminalModel {
         }
     }
 
+    /// Focuses the terminal on screen, if any.
+    func focusTerminal() { focusRequest += 1 }
+
+    /// The first free "Terminal N" name; renaming is always available later.
+    var nextSessionName: String {
+        let taken = Set(sessions.map(\.name))
+        let number = (1...).first { !taken.contains(String(localized: "Terminal \($0)", bundle: .main)) } ?? 1
+        return String(localized: "Terminal \(number)", bundle: .main)
+    }
+
     func create(name: String, using client: LocalAgentClient) {
         guard !isWorking else { return }
         begin(String(localized: "Creating session…", bundle: .main)) { [weak self] expected in
@@ -203,14 +218,20 @@ final class LocalTerminalModel {
         }
     }
 
-    func select(_ id: String?, using client: LocalAgentClient) {
+    /// Opens a session from the sidebar. `focus` is false while a person
+    /// arrows through the list, so the terminal doesn't take the keyboard.
+    func select(_ id: String?, using client: LocalAgentClient, focus: Bool = true) {
         guard !isWorking, let id, let session = sessions.first(where: { $0.id == id }) else { return }
-        if id == selectedID, attachment != nil { return }
+        if id == selectedID, attachment != nil {
+            if focus { focusTerminal() }
+            return
+        }
         selectedID = id
-        attach(session, using: client, mode: .control)
+        attach(session, using: client, mode: .control, focus: focus)
     }
 
-    func attach(_ session: LocalSessionInfo, using client: LocalAgentClient, mode: LocalAttachmentMode) {
+    func attach(_ session: LocalSessionInfo, using client: LocalAgentClient, mode: LocalAttachmentMode, focus: Bool = true) {
+        focusOnAttach = focus
         let previous = attachment
         attachment = nil
         attachmentID = UUID()

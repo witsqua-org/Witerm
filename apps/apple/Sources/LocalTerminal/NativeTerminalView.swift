@@ -14,6 +14,10 @@ struct NativeTerminalView: NSViewRepresentable {
     var announceOutput: Bool = false
     /// Receives the title, folder, and last line for the sidebar.
     var activity: TerminalActivity? = nil
+    /// Whether the new terminal takes keyboard focus when it appears.
+    var focusOnShow = true
+    /// Each change asks the shown terminal for keyboard focus again.
+    var focusRequest = 0
     let onFailure: (Error) -> Void
     let onEnded: () -> Void
 
@@ -27,6 +31,8 @@ struct NativeTerminalView: NSViewRepresentable {
         )
         surface.updateAppearance(fontSize: fontSize, highContrast: highContrast, scheme: preferredColorScheme, palette: palette)
         surface.terminal.announceOutput = announceOutput
+        surface.terminal.focusWhenShown = focusOnShow
+        context.coordinator.focusRequest = focusRequest
         surface.terminal.terminalDelegate = context.coordinator
         context.coordinator.start(surface.terminal)
         return surface
@@ -35,6 +41,10 @@ struct NativeTerminalView: NSViewRepresentable {
     func updateNSView(_ nsView: TerminalSurface, context: Context) {
         nsView.updateAppearance(fontSize: fontSize, highContrast: highContrast, scheme: preferredColorScheme, palette: palette)
         nsView.terminal.announceOutput = announceOutput
+        if context.coordinator.focusRequest != focusRequest {
+            context.coordinator.focusRequest = focusRequest
+            nsView.terminal.requestFocus()
+        }
     }
 
     static func dismantleNSView(_ nsView: TerminalSurface, coordinator: Coordinator) {
@@ -203,6 +213,8 @@ struct NativeTerminalView: NSViewRepresentable {
         private var stopped = false
         private var serverGrid: (Int, Int)
         private weak var terminalView: TerminalView?
+        /// The last focus request this terminal answered.
+        var focusRequest = 0
 
         init(attachment: LocalTerminalAttachment, mode: LocalAttachmentMode, activity: TerminalActivity?,
              onFailure: @escaping (Error) -> Void, onEnded: @escaping () -> Void) {

@@ -13,7 +13,7 @@ import XCTest
         }
         let app = XCUIApplication(url: URL(fileURLWithPath: path))
         addTeardownBlock { await MainActor.run { app.terminate() } }
-        app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN", "-witerm.onboarding.completedVersion", "1"]
         app.launch()
         app.activate()
         // Saved hosts are listed directly in the sidebar; selecting one shows

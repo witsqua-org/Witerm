@@ -20,7 +20,7 @@ final class TerminalVoiceOverKeyboardTests: XCTestCase {
                 } catch { XCTFail("Could not restore the previous VoiceOver state") }
             }
         }
-        app.launchArguments = ["--witerm-terminal-accessibility-harness"]
+        app.launchArguments = ["-witerm.onboarding.completedVersion", "1", "--witerm-terminal-accessibility-harness"]
         app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         app.launch()
         XCTAssertTrue(app.staticTexts["harnessReady"].waitForExistence(timeout: 10))

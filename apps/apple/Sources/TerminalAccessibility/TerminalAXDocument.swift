@@ -165,7 +165,11 @@ enum TerminalAXViewport {
               visible.minX.isFinite, visible.minY.isFinite, visible.maxX.isFinite, visible.maxY.isFinite,
               origin.x.isFinite, origin.y.isFinite else { return (0..<0, 0..<0) }
         func index(_ value: CGFloat, _ start: CGFloat, _ unit: CGFloat, _ limit: Int, roundUp: Bool) -> Int {
-            let quotient = (value - start) / unit
+            // Far into the scrollback, an edge that falls exactly on a cell
+            // boundary can come out a hair short (14.9999…), which dropped
+            // the last whole row, the prompt, from the page. Snap those.
+            let raw = (value - start) / unit
+            let quotient = abs(raw - raw.rounded()) < 1e-6 ? raw.rounded() : raw
             guard quotient > 0 else { return 0 }
             guard quotient < CGFloat(limit) else { return limit }
             return Int(roundUp ? ceil(quotient) : floor(quotient))

@@ -108,6 +108,12 @@ struct WorkspaceActions {
     var showTerminal: (Int) -> Void = { _ in }
     /// Moves by one open terminal (+1 or −1), wrapping around.
     var showAdjacentTerminal: (Int) -> Void = { _ in }
+    /// The selected Mac session's own commands; nil without one (Mac only).
+    var renameSession: (() -> Void)? = nil
+    var endSession: (() -> Void)? = nil
+    /// Pauses or allows typing from other devices in the selected session.
+    var toggleRemoteTyping: (() -> Void)? = nil
+    var remoteTypingPaused = false
 }
 
 extension FocusedValues {
@@ -182,6 +188,17 @@ struct WitermCommands: Commands {
             }
             #if os(macOS)
             Divider()
+            // The selected session's commands, so none needs the pointer.
+            Button(String(localized: "Rename Session…", bundle: .main)) { actions?.renameSession?() }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .disabled(actions?.renameSession == nil)
+            Button(actions?.remoteTypingPaused == true ? String(localized: "Allow Remote Typing", bundle: .main)
+                   : String(localized: "Pause Remote Typing", bundle: .main)) { actions?.toggleRemoteTyping?() }
+                .keyboardShortcut("p", modifiers: [.command, .shift])
+                .disabled(actions?.toggleRemoteTyping == nil)
+            Button(String(localized: "End Session", bundle: .main)) { actions?.endSession?() }
+                .disabled(actions?.endSession == nil)
+            Divider()
             // Typed into the focused terminal; a view-only terminal ignores it.
             Menu(String(localized: "Insert Snippet", bundle: .main)) {
                 let saved = CommandSnippets.decode(snippets)
@@ -199,5 +216,12 @@ struct WitermCommands: Commands {
             }
             #endif
         }
+        #if os(macOS)
+        CommandGroup(replacing: .help) {
+            Button(String(localized: "Welcome Tour", bundle: .main)) {
+                NotificationCenter.default.post(name: .witermShowWelcomeTour, object: nil)
+            }
+        }
+        #endif
     }
 }

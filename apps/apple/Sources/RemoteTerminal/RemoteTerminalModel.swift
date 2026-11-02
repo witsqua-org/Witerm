@@ -231,11 +231,13 @@ final class RemoteTerminalModel {
         }
         cancelWork()
         let previous = deactivate()
+        // Typing or watching the same session, rather than opening another one.
+        let changingMode = previous != nil && selectedSession?.id == session.id
         selectedSession = session
         reconnectMode = targetMode
         let switching = previous != nil
         connectionState = switching ? .switching : .connecting
-        busy = switching ? (targetMode == .view ? String(localized: "Releasing control…", bundle: .main) : String(localized: "Requesting control…", bundle: .main)) : String(localized: "Connecting to terminal…", bundle: .main)
+        busy = changingMode ? (targetMode == .view ? String(localized: "Releasing control…", bundle: .main) : String(localized: "Requesting control…", bundle: .main)) : String(localized: "Connecting to terminal…", bundle: .main)
         issue = nil
         do {
             let pairing = try pairingClient()

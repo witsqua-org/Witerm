@@ -23,11 +23,13 @@ Mac and iOS share **Terminal Display** settings: text size from 11 to 32 pt (iOS
 
 **Bell.** A program's BEL plays the system alert sound on the Mac, and bounces the Dock icon once when Witerm is in the background. iOS plays a short haptic. Bells closer than 300 ms apart are dropped. **Ring the terminal bell** turns it off.
 
-**Switching terminals.** The Terminal menu lists open terminals: ⌘1–⌘9 show one, ⇧⌘] and ⇧⌘[ step through them. On the Mac, these are sessions on this Mac followed by connected SSH hosts; on iPad, connected SSH hosts.
+**Switching terminals.** The Terminal menu lists open terminals: ⌘1–⌘9 show one, ⇧⌘] and ⇧⌘[ step through them. On the Mac, these are sessions on this Mac followed by connected SSH hosts; on iPad, connected SSH hosts. On the Mac the terminal shown takes keyboard focus, as it does after ⌘N, a click on its sidebar row, Return on the row, or a sheet closing over it; arrowing through the sidebar leaves focus in the list. Focus never changes the grid, and a view-only terminal doesn't take it.
 
 **Color schemes.** System (the platform's text colors), Graphite, Paper, and Ocean. Each scheme has a light and a dark variant and follows the system appearance; there's no in-app light/dark switch. Enhanced contrast, from the setting or the system's Increase Contrast, overrides the scheme. In every scheme, body text reaches at least 13:1 and every ANSI color programs use for text reaches 4.5:1 against the background; `WitermMacTerminalTests` checks both. Changing the scheme repaints colors only: it never changes the grid or its contents. Reduce Transparency applies to the surrounding interface.
 
 **Scrollback.** The Mac and iOS renderers keep their own scrollback. When one attaches, the Mac sends up to 1,000 lines (128 KiB) of the session's earlier output, with colors, above tmux's redraw of the live screen, and keeps tmux off the outer alternate screen so new output scrolls into it. While a full-screen program runs, only its screen is shown. `witerm attach` in a real terminal is unchanged.
+
+**Long output (SSH).** Output is drained off the main thread and fed to the renderer in batches, up to 8 MiB waiting; only beyond that does the session end with a backpressure error. The view follows new output while you're at the bottom; scrolled back, it stays where you put it until you return to the bottom. A view that follows output stays exactly on the bottom after the keyboard's animation and after a scroll that comes to rest within half a row of it, so the prompt is never cut off. The reading page VoiceOver reads is rebuilt at most once per run-loop turn, and follows touch scrolling.
 
 **Touch (iPhone and iPad).**
 
@@ -36,15 +38,17 @@ Mac and iOS share **Terminal Display** settings: text size from 11 to 32 pt (iOS
 | Drag | Scrolls the output. In a program that asked for the mouse, with typing allowed, it goes to the program. A grid wider than the screen pans one direction at a time. |
 | Long press | Selects the word under your finger; keep dragging to extend. Lifting shows Copy, Select Line, Select All, and Paste where typing is allowed. Works in view-only terminals too. |
 | Double / triple tap | Selects a word / line. |
-| Tap | Shows the keyboard when typing is allowed, or clears a selection. |
+| Tap | Shows the keyboard when typing is allowed, or clears a selection. A terminal that can type shows it on its own when it connects. |
 | Pinch | Changes the text size once your fingers lift. |
 | Swipe from the left edge | Back: from a terminal to its sessions, from sessions to Terminals. A Mac terminal stays connected until the Mac confirms it released control. |
 
-**Keyboard row.** Esc, Ctrl, Tab, and the arrows come first, so they fit an iPhone's width; then Ctrl+C, Paste, Snippets, symbols, and Home/End/PgUp/PgDn. Arrows and page keys repeat while held. A row you reordered in Settings → Keyboard Row is kept.
+**Keyboard row.** Esc, Ctrl, Tab, and the arrows come first and fit an iPhone's width (each key keeps its own width, at least 44 pt); then Ctrl+C, Paste, Snippets, symbols, and Home/End/PgUp/PgDn. The Snippets key appears once a snippet is saved. Arrows and page keys repeat while held. A row you reordered in Settings → Keyboard Row is kept.
 
-**Header.** On iPhone the navigation bar names the session, with the Mac and whether you can type underneath; the keyboard, typing, and More buttons sit beside it. iPad keeps the terminal header.
+**Header.** On iPhone the navigation bar is the header, for SSH and paired terminals alike: the name, with the destination underneath (`user@host:port`, or the Mac with a typing or watching symbol), a 2 pt edge in the machine's hue, and two buttons. The keyboard button shows `keyboard` or `keyboard.chevron.compact.down` for what it will do. The actions menu starts with smaller and larger text, then Find in Terminal, then SFTP Files and Port Forwarding (SSH) or Display and Watch Only / Start Typing (paired), and ends with Disconnect or Leave. With other terminals open, a chevron beside the title lists them. iPad keeps the terminal header. The Mac has none: the window title and subtitle name the session or `user@host:port` and any state worth a glance, and the toolbar holds the actions.
 
-**Find.** On the Mac, Edit → Find… (⌘F), Find Next (⌘G), Find Previous (⇧⌘G), and Use Selection for Find (⌘E) open SwiftTerm's find bar over the focused terminal. On iPhone and iPad, **Find in Terminal** (also ⌘F with a hardware keyboard) shows a find bar under the terminal header with a match count. Search covers the scrollback held by this view; it selects and scrolls only your view and never sends input or resizes the session. A full-screen program's alternate screen isn't scrolled.
+**Keyboard and layout.** The keyboard never changes the terminal's width. A terminal you type in fits the rows left above the keyboard and its key row, with the prompt as the last whole line, and gets every row back when the keyboard hides; the same rows return each time. For SSH that's a window-size change on the server. A paired session follows the session's grid rules above: a view-only terminal ignores the keyboard, and a typing device's new size applies only once it types. Under the terminal, the area past the home indicator uses the terminal's own background.
+
+**Find.** On the Mac, Edit → Find… (⌘F), Find Next (⌘G), Find Previous (⇧⌘G), and Use Selection for Find (⌘E) open SwiftTerm's find bar over the focused terminal. On iPhone, **Find in Terminal** is in the terminal's actions menu; on iPad it's in the header; ⌘F works on both with a hardware keyboard. It shows a find bar under the header with a match count. Search covers the scrollback held by this view; it selects and scrolls only your view and never sends input or resizes the session. A full-screen program's alternate screen isn't scrolled.
 
 **Snippets.** Saved commands, managed in Settings → Snippets on the Mac and Settings → Snippets on iOS (up to 50, 4 KB each, no control characters except tabs and line breaks). They're stored in this device's preferences only and never sent to a server.
 - Mac: Terminal → Insert Snippet types into the focused terminal (⌥⌘1–⌥⌘9 for the first nine). With no terminal focused, the Mac beeps.

@@ -55,20 +55,23 @@ final class PhoneContinuityFlowTests: XCTestCase {
         try? FileManager.default.removeItem(at: outbox)
         try FileManager.default.createDirectory(at: outbox, withIntermediateDirectories: true)
         app = XCUIApplication(url: URL(fileURLWithPath: path))
-        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-witerm.onboarding.completedVersion", "1"]
         app.launch()
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 15))
         let enable = app.buttons["enableLocalTerminal"]
         if enable.waitForExistence(timeout: 3) { enable.click() }
 
-        // A fresh session, the only one this test shares or ends.
+        // A fresh session, the only one this test shares or ends: ⌘N opens
+        // it at once, and Rename Session… (⇧⌘R) gives it this run's name.
         let name = "Phone E2E " + String(UUID().uuidString.prefix(6))
         app.typeKey("n", modifierFlags: .command)
+        XCTAssertTrue(app.descendants(matching: .any)["localTerminalSurface"].firstMatch.waitForExistence(timeout: 15))
+        app.typeKey("r", modifierFlags: [.command, .shift])
         let nameField = app.textFields["localSessionName"]
         XCTAssertTrue(nameField.waitForExistence(timeout: 10))
         nameField.typeKey("a", modifierFlags: .command)
         nameField.typeText(name)
-        app.buttons["createLocalSession"].click()
+        app.buttons["renameLocalSession"].click()
         let row = app.descendants(matching: .any).matching(NSPredicate(
             format: "identifier BEGINSWITH %@ AND label == %@", "localSession-", name)).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 15))
@@ -79,7 +82,7 @@ final class PhoneContinuityFlowTests: XCTestCase {
                 for button in ["continueCancel", "continueDone"] where app.buttons[button].exists { app.buttons[button].click() }
                 guard row.waitForExistence(timeout: 3) else { return }
                 row.rightClick()
-                app.menuItems["End Session"].click()
+                app.menuItems["endSessionMenu"].click()
                 let confirm = app.buttons["action-button-1"]
                 if confirm.waitForExistence(timeout: 5) { confirm.click() }
             }
@@ -101,11 +104,16 @@ final class PhoneContinuityFlowTests: XCTestCase {
             }
             if title.label == "Connect This Mac" { primary.click() }
         }
+        // With nothing paired, the sheet goes straight to the code;
+        // otherwise choose Pair a New Device.
         let newDevice = app.descendants(matching: .any)["continueNewDevice"].firstMatch
-        XCTAssertTrue(newDevice.waitForExistence(timeout: 30), "The device step didn't appear")
-        newDevice.click()
-        app.buttons["continuePrimary"].click()
         let copy = app.buttons["copyPairingInvitation"]
+        let deadline = Date().addingTimeInterval(30)
+        while Date() < deadline, !copy.exists, !newDevice.exists { RunLoop.current.run(until: Date().addingTimeInterval(0.5)) }
+        if !copy.exists, newDevice.exists {
+            newDevice.click()
+            app.buttons["continuePrimary"].click()
+        }
         XCTAssertTrue(copy.waitForExistence(timeout: 30), "The sheet didn't show a code")
         XCTAssertTrue(app.sheets.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", host)).firstMatch.exists,
                       "The code step didn't name its server")
@@ -134,9 +142,12 @@ final class PhoneContinuityFlowTests: XCTestCase {
         let phone = try XCTUnwrap(awaitSignal("phone-attached", timeout: 300), "The phone never attached")
         row.click()
         let terminal = app.descendants(matching: .any)["localTerminalSurface"].firstMatch
-        if terminal.waitForExistence(timeout: 10) { terminal.click() }
-        let status = app.descendants(matching: .any)["sessionSharingStatus"].firstMatch
-        XCTAssertTrue(status.waitForExistence(timeout: 15), "The header didn't show the attached phone")
+        XCTAssertTrue(terminal.waitForExistence(timeout: 10))
+        if (terminal.value(forKey: "hasKeyboardFocus") as? Bool) != true { terminal.click() }
+        // A phone that can type brings Pause Remote Typing into the toolbar;
+        // the window subtitle names it.
+        let pause = app.descendants(matching: .any)["toggleRemoteTyping"].firstMatch
+        XCTAssertTrue(pause.waitForExistence(timeout: 15), "The toolbar didn't show the attached phone")
         // Take turns, as people do: the grid stays with whoever is typing.
         XCTAssertNotNil(awaitSignal("phone-typed", timeout: 120), "The phone never typed")
         RunLoop.current.run(until: Date().addingTimeInterval(2.5))

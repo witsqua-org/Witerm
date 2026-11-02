@@ -18,6 +18,8 @@ struct MobileWorkspaceView: View {
     @State private var activeServerID: ConnectionModel.ID?
     @State private var loaded = false
     @State private var continuing: ContinueFlowRequest?
+    /// The Welcome Tour: shown once on first launch, again from Settings → Help.
+    @State private var touring = false
     @Environment(ServerList.self) private var servers
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -69,7 +71,7 @@ struct MobileWorkspaceView: View {
                     RemoteTerminalWorkspace(model: activeMac)
                 } else {
                     SSHWorkspaceView(model: ssh, ui: sshUI) {
-                        TerminalsHome(ssh: ssh, ui: sshUI, macs: macs, openMac: { openMac($0, $1) },
+                        TerminalsHome(ssh: ssh, ui: sshUI, macs: macs, openMac: { openMac($0, $1, openingSole: true) },
                                       continueFromDevice: continueFromDevice)
                     }
                 }
@@ -80,12 +82,14 @@ struct MobileWorkspaceView: View {
                         continueFromDevice: continueFromDevice)
                 .tabItem { Label(String(localized: "Devices", bundle: .main), systemImage: "laptopcomputer.and.iphone") }
                 .tag(MobileTab.devices)
-            MobileSettingsView()
+            MobileSettingsView(showTour: { touring = true })
                 .tabItem { Label(String(localized: "Settings", bundle: .main), systemImage: "gearshape") }
                 .tag(MobileTab.settings)
         }
         .witermTint()
         .modifier(SSHPresentations(model: ssh, ui: sshUI, showsUndo: false))
+        // Finishing lands on Terminals, where the first connection starts.
+        .modifier(IOSWelcomeTourPresentation(touring: $touring) { tab = .terminals })
         .sheet(item: $continuing) { request in
             ContinueFromDeviceFlow(invitation: request.invitation) { server, grant in
                 openMac(server, grant, openingSole: true)
@@ -115,6 +119,15 @@ struct MobileWorkspaceView: View {
                 tab = .terminals
                 activeServerID = nil
                 sshUI.requestedSession = open[index].id
+            },
+            // ⇧⌘] and ⇧⌘[ step through open SSH terminals, wrapping around.
+            showAdjacentTerminal: { step in
+                let open = ssh.orderedProfiles().filter { ssh.session(for: $0.id) != nil }
+                guard !open.isEmpty else { return }
+                let current = open.firstIndex { $0.id == sshUI.shownID } ?? (step > 0 ? -1 : 0)
+                tab = .terminals
+                activeServerID = nil
+                sshUI.requestedSession = open[(current + step + open.count) % open.count].id
             }
         ))
         // A connection someone just started is shown in Terminals, from any tab.
@@ -145,6 +158,8 @@ struct MobileWorkspaceView: View {
 /// A short index in three groups: how the terminal looks, how you type, and
 /// where connections go. Details and actions live one tap away.
 private struct MobileSettingsView: View {
+    /// Reopens the Welcome Tour.
+    let showTour: () -> Void
     @Environment(ServerList.self) private var servers
     @AppStorage(TerminalFontSize.key) private var fontSize = TerminalFontSize.standard
     @AppStorage(TerminalColorScheme.key) private var palette = TerminalColorScheme.system
@@ -205,8 +220,14 @@ private struct MobileSettingsView: View {
                     .accessibilityIdentifier("settingsServers")
                 } header: {
                     Text(String(localized: "Connections", bundle: .main))
-                } footer: {
-                    Text(String(localized: "Your devices reach each other through these servers. SSH hosts connect directly.", bundle: .main))
+                }
+
+                Section(String(localized: "Help", bundle: .main)) {
+                    Button(action: showTour) {
+                        Label(String(localized: "Welcome Tour", bundle: .main), systemImage: "sparkles")
+                            .foregroundStyle(WitermTheme.ink)
+                    }
+                    .accessibilityIdentifier("settingsWelcomeTour")
                 }
             }
             .formStyle(.grouped)
@@ -239,9 +260,7 @@ private struct ServersPage: View {
                     .disabled(servers.isFull)
                     .accessibilityIdentifier(servers.servers.isEmpty ? "settingsEditServer" : "settingsAddServer")
             } footer: {
-                Text(servers.isFull
-                     ? ServerList.Failure.full.message
-                     : String(localized: "Your devices reach each other through these servers, all at once. SSH hosts connect directly.", bundle: .main))
+                if servers.isFull { Text(ServerList.Failure.full.message) }
             }
         }
         .formStyle(.grouped)

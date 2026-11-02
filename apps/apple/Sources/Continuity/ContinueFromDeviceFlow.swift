@@ -133,7 +133,7 @@ struct ContinueFromDeviceFlow: View {
     }
 
     private var instructions: some View {
-        Text(String(localized: "On the other device, choose Continue on Another Device. It shows a code to scan or an invitation to copy.", bundle: .main))
+        Text(String(localized: "On the other device, choose Continue on Another Device.", bundle: .main))
             .font(.subheadline).foregroundStyle(WitermTheme.secondary)
             .fixedSize(horizontal: false, vertical: true)
     }

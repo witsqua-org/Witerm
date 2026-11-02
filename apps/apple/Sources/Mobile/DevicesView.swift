@@ -42,12 +42,8 @@ struct DevicesView: View {
                     Button(action: continueFromDevice) {
                         HStack(spacing: 14) {
                             IconTile(systemImage: "laptopcomputer.and.iphone", tint: IdentityHue.sky)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(String(localized: "Continue from Another Device", bundle: .main))
-                                    .font(.headline).foregroundStyle(WitermTheme.ink)
-                                Text(String(localized: "Scan or paste an invitation", bundle: .main))
-                                    .font(.subheadline).foregroundStyle(WitermTheme.secondary)
-                            }
+                            Text(String(localized: "Continue from Another Device", bundle: .main))
+                                .font(.headline).foregroundStyle(WitermTheme.ink)
                             Spacer(minLength: 8)
                             Image(systemName: "chevron.right")
                                 .font(.footnote.weight(.semibold))

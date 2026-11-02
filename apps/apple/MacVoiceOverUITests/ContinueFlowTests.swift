@@ -22,7 +22,7 @@ final class ContinueFlowTests: XCTestCase {
         }
         let url = URL(fileURLWithPath: path)
         let app = XCUIApplication(url: url)
-        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-witerm.onboarding.completedVersion", "1"]
         app.launch()
         addTeardownBlock { await MainActor.run { app.terminate() } }
 
@@ -36,7 +36,7 @@ final class ContinueFlowTests: XCTestCase {
                 if app.buttons["continueCancel"].exists { app.buttons["continueCancel"].click() }
                 guard row.exists else { return }
                 row.rightClick()
-                app.menuItems["End Session"].click()
+                app.menuItems["endSessionMenu"].click()
                 let confirm = app.buttons["action-button-1"]
                 XCTAssertTrue(confirm.waitForExistence(timeout: 5))
                 confirm.click()
@@ -49,9 +49,16 @@ final class ContinueFlowTests: XCTestCase {
         app.menuItems["Continue on Another Device…"].click()
         let title = app.staticTexts["continueStepTitle"]
         XCTAssertTrue(title.waitForExistence(timeout: 10))
-        // Remote access stays off in this run, so the sheet stops at the server
-        // step unless this Mac already allows it; it never skips ahead silently.
-        XCTAssertTrue(["Connect This Mac", "Choose a Device"].contains(title.label), title.label)
+        // The sheet stops at the server step unless this Mac already allows
+        // remote access. Past it, with nothing paired, it goes straight to
+        // the code for a new device, and Back offers the other choices.
+        RunLoop.current.run(until: Date().addingTimeInterval(3))
+        XCTAssertTrue(["Connect This Mac", "Choose a Device", "Scan with the Other Device"].contains(title.label), title.label)
+        if title.label == "Scan with the Other Device" {
+            app.buttons["continueBack"].click()
+            let device = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Choose a Device"), object: title)
+            XCTAssertEqual(XCTWaiter.wait(for: [device], timeout: 5), .completed, title.label)
+        }
         if title.label == "Choose a Device" {
             XCTAssertTrue(app.descendants(matching: .any)["continueNewDevice"].firstMatch.exists)
             XCTAssertTrue(app.descendants(matching: .any)["continueGuest"].firstMatch.exists)
@@ -90,7 +97,7 @@ final class ContinueFlowTests: XCTestCase {
         }
         let app = XCUIApplication(url: URL(fileURLWithPath: path))
         // Settings opens on General, so only the service control is clicked.
-        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-witerm.settingsTab", "general"]
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-witerm.settingsTab", "general", "-witerm.onboarding.completedVersion", "1"]
         app.launch()
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 15))
         app.typeKey(",", modifierFlags: .command)
@@ -117,6 +124,84 @@ final class ContinueFlowTests: XCTestCase {
         }
     }
 
+    /// Release QA, with the person's approval: turns Allow Remote Access on
+    /// or off through Settings → Devices, adding the continuation server
+    /// first when none is set up, and waits for this Mac's live state.
+    /// Opt-in: WITERM_HCI_REMOTE_ACCESS=on|off and
+    /// WITERM_HCI_REMOTE_ACCESS_SERVER (an https address).
+    func testRemoteAccessSwitch() throws {
+        continueAfterFailure = false
+        let environment = ProcessInfo.processInfo.environment
+        guard let path = environment["WITERM_HCI_FIXED_APP"], let action = environment["WITERM_HCI_REMOTE_ACCESS"],
+              ["on", "off"].contains(action), let server = environment["WITERM_HCI_REMOTE_ACCESS_SERVER"],
+              let host = URL(string: server)?.host else {
+            throw XCTSkip("Set WITERM_HCI_FIXED_APP, WITERM_HCI_REMOTE_ACCESS=on|off and WITERM_HCI_REMOTE_ACCESS_SERVER")
+        }
+        let app = XCUIApplication(url: URL(fileURLWithPath: path))
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-witerm.settingsTab", "devices",
+                               "-witerm.onboarding.completedVersion", "1"]
+        app.launch()
+        addTeardownBlock { await MainActor.run { app.terminate() } }
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 15))
+        app.typeKey(",", modifierFlags: .command)
+        XCTAssertTrue(app.windows["Devices"].firstMatch.waitForExistence(timeout: 10))
+        app.activate()
+
+        func enterAddress() {
+            let field = app.textFields["serverAddressField"]
+            XCTAssertTrue(field.waitForExistence(timeout: 5))
+            field.click()
+            field.typeText(server)
+            app.buttons["saveServerAddress"].click()
+            XCTAssertTrue(field.waitForNonExistence(timeout: 10), "The server address wasn't accepted")
+        }
+        let devices = app.windows["Devices"].firstMatch
+        let named = devices.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", host, host)).firstMatch
+        let addServer = app.buttons["serverSettings"]
+        if addServer.waitForExistence(timeout: 3) {
+            // No server yet.
+            addServer.click()
+            enterAddress()
+        } else if !named.waitForExistence(timeout: 3) {
+            // Another server is set up; add this one beside it.
+            app.buttons["manageServers"].click()
+            let addAnother = app.buttons["addServer"]
+            XCTAssertTrue(addAnother.waitForExistence(timeout: 5))
+            addAnother.click()
+            enterAddress()
+            app.sheets.buttons["Done"].firstMatch.click()
+        }
+        // The server answers before remote access can be switched.
+        let status = app.descendants(matching: .any)["connectionFeedback"].firstMatch
+        XCTAssertTrue(status.waitForExistence(timeout: 30))
+        let picker = app.popUpButtons["continuationServerPicker"].firstMatch
+        if picker.exists, !(picker.value as? String ?? "").contains(host) {
+            picker.click()
+            app.menuItems.matching(NSPredicate(format: "title CONTAINS %@", host)).firstMatch.click()
+        }
+        let toggle = app.descendants(matching: .any)["allowRemoteConnections"].firstMatch
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: toggle)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 30), .completed, "Allow Remote Access stayed unavailable")
+        let isOn = { (toggle.value as? Int ?? (toggle.value as? NSNumber)?.intValue ?? 0) == 1 }
+        if isOn() != (action == "on") { toggle.click() }
+        let state = app.descendants(matching: .any)["remoteAccessState"].firstMatch
+        if action == "on" {
+            // This Mac's row reads what the service reports, as VoiceOver hears it.
+            XCTAssertTrue(state.waitForExistence(timeout: 30), "No live remote-access row")
+            let online = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS 'Online' OR label CONTAINS 'Online'"), object: state)
+            let result = XCTWaiter.wait(for: [online], timeout: 60)
+            if result != .completed { print("WITERM_TREE_BEGIN\n\(devices.debugDescription)\nWITERM_TREE_END") }
+            XCTAssertEqual(result, .completed, "This Mac never came online through \(host): \(state.label)")
+        } else {
+            XCTAssertTrue(state.waitForNonExistence(timeout: 15))
+        }
+        let shot = XCTAttachment(screenshot: app.windows["Devices"].firstMatch.screenshot())
+        shot.name = "settings-devices-remote-access-\(action)"
+        shot.lifetime = .keepAlways
+        add(shot)
+        app.typeKey("w", modifierFlags: .command)
+    }
+
     /// Every Settings tab keeps one window size, so switching never resizes it.
     func testSettingsTabsKeepOneWindowSize() throws {
         continueAfterFailure = false
@@ -124,7 +209,7 @@ final class ContinueFlowTests: XCTestCase {
             throw XCTSkip("Set WITERM_HCI_FIXED_APP")
         }
         let app = XCUIApplication(url: URL(fileURLWithPath: path))
-        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-witerm.onboarding.completedVersion", "1"]
         app.launch()
         addTeardownBlock { await MainActor.run { app.terminate() } }
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 15))

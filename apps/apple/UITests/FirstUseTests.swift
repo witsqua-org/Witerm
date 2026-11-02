@@ -6,7 +6,7 @@ import XCTest
     private func launchFirstUse(largeText: Bool = false) -> XCUIApplication {
         continueAfterFailure = false
         let app = XCUIApplication()
-        app.launchArguments = ["-witerm.serverAddresses", "()",
+        app.launchArguments = ["-witerm.onboarding.completedVersion", "1", "-witerm.serverAddresses", "()",
                                "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         if largeText {
             app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]

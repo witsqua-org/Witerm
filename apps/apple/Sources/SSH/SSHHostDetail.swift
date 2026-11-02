@@ -3,7 +3,10 @@ import SwiftUI
 import WitermSSH
 
 /// A saved SSH host: its route and actions, or its live terminal. Leaving
-/// this page keeps the session connected; Disconnect is explicit.
+/// this page keeps the session connected; Disconnect is explicit. Once
+/// connected, the window title and subtitle name the host and where typing
+/// goes, the toolbar holds its tools, and a line in the host's hue tops the
+/// terminal.
 struct SSHHostDetail: View {
     let profile: SSHProfile
     @Bindable var model: SSHWorkspaceModel
@@ -14,27 +17,24 @@ struct SSHHostDetail: View {
     var body: some View {
         Group {
             if let session = model.session(for: profile.id) {
-                VStack(spacing: 0) {
-                    TerminalHeader(nil, destination: profile.endpointSummary, status: String(localized: "Input Enabled", bundle: .main),
-                                   statusImage: "keyboard", live: true, hue: profile.identityHue) {
-                        Button(String(localized: "SFTP Files", bundle: .main), systemImage: "folder") { ui.files = session }
-                            .labelStyle(.iconOnly)
-                            .touchTarget(square: true)
-                            .help(String(localized: "SFTP Files", bundle: .main))
-                            .accessibilityIdentifier("sshFiles")
-                        Button(String(localized: "Port Forwarding", bundle: .main), systemImage: "arrow.left.arrow.right") { ui.forwarding = session }
-                            .labelStyle(.iconOnly)
-                            .touchTarget(square: true)
-                            .help(String(localized: "Port Forwarding", bundle: .main))
-                            .accessibilityIdentifier("sshForwarding")
-                        Button(String(localized: "Disconnect", bundle: .main), systemImage: "xmark.circle") { model.disconnect(session) }
-                            .touchTarget()
-                            .accessibilityIdentifier("sshDisconnect")
+                SSHTerminalSurface(session: session)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .safeAreaInset(edge: .top, spacing: 0) {
+                        Rectangle().fill(profile.identityHue).frame(height: 2).accessibilityHidden(true)
                     }
-                    .buttonStyle(.borderless)
-                    SSHTerminalSurface(session: session)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
+                    .toolbar {
+                        ToolbarItemGroup(placement: .primaryAction) {
+                            Button(String(localized: "SFTP Files", bundle: .main), systemImage: "folder") { ui.files = session }
+                                .help(String(localized: "SFTP Files", bundle: .main))
+                                .accessibilityIdentifier("sshFiles")
+                            Button(String(localized: "Port Forwarding", bundle: .main), systemImage: "arrow.left.arrow.right") { ui.forwarding = session }
+                                .help(String(localized: "Port Forwarding", bundle: .main))
+                                .accessibilityIdentifier("sshForwarding")
+                            Button(String(localized: "Disconnect", bundle: .main), systemImage: "xmark.circle") { model.disconnect(session) }
+                                .help(String(localized: "Disconnect", bundle: .main))
+                                .accessibilityIdentifier("sshDisconnect")
+                        }
+                    }
             } else {
                 ScrollView { overview.readableContent(padding: 32) }
             }
@@ -42,6 +42,8 @@ struct SSHHostDetail: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(WitermTheme.canvas)
         .navigationTitle(profile.name)
+        // Where typing goes, while it goes somewhere.
+        .navigationSubtitle(model.session(for: profile.id) == nil ? "" : profile.endpointSummary)
     }
 
     private var overview: some View {
@@ -87,12 +89,10 @@ struct SSHHostDetail: View {
                         .disabled(model.connecting)
                         .accessibilityIdentifier("sshEditProfile")
                 }
-                Text(String(localized: "Saved credentials connect immediately. Otherwise Witerm asks for them.", bundle: .main))
-                    .font(.footnote)
-                    .foregroundStyle(WitermTheme.secondary)
             }
 
-            route
+            // A direct route is already the address above.
+            if !profile.jumpHosts.isEmpty { route }
         }
     }
 

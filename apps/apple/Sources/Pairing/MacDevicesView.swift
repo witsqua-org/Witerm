@@ -38,8 +38,6 @@ struct MacDevicesView: View {
             } else {
                 ContentUnavailableView {
                     Label(String(localized: "Add a Continuation Server", bundle: .main), systemImage: "server.rack")
-                } description: {
-                    Text(String(localized: "Your devices reach each other through a continuation server, such as witerm.example.com.", bundle: .main))
                 } actions: {
                     Button(String(localized: "Add Server…", bundle: .main)) { editing = .add }
                         .buttonStyle(.borderedProminent)
@@ -113,21 +111,18 @@ struct MacDevicesView: View {
                                              serviceReady: service.state == .ready, relays: relays,
                                              address: server.address)
             if state == .ready || state == .connecting {
-                LabeledContent {
-                    StatusBadge(state.title, systemImage: state.systemImage, tone: state.tone)
-                } label: {
+                // A plain row: combining LabeledContent dropped the badge, so
+                // VoiceOver heard only "This Mac". Now it hears "This Mac, Online".
+                HStack {
                     Text(String(localized: "This Mac", bundle: .main))
-                    Text(state == .ready
-                         ? String(localized: "Paired devices can reach the sessions you allow now.", bundle: .main)
-                         : String(localized: "Waiting for the server to accept this Mac. Paired devices can’t reach it yet.", bundle: .main))
+                    Spacer()
+                    StatusBadge(state.title, systemImage: state.systemImage, tone: state.tone)
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("remoteAccessState")
             }
             if service.state != .ready {
                 HStack {
-                    Text(String(localized: "Turn on the local terminal service first.", bundle: .main))
-                        .font(.subheadline).foregroundStyle(WitermTheme.secondary)
                     Spacer()
                     if service.state == .requiresApproval {
                         Button(String(localized: "Open Login Items Settings", bundle: .main), action: service.openSettings)
@@ -149,8 +144,6 @@ struct MacDevicesView: View {
             HStack {
                 if server.phase.isAvailable, !server.supportsPairing {
                     Text(String(localized: "This server doesn’t offer device pairing.", bundle: .main))
-                } else {
-                    Text(String(localized: "Witerm relays only end-to-end encrypted data through it.", bundle: .main))
                 }
                 Spacer()
                 Button(String(localized: "Manage Servers…", bundle: .main)) { managingServers = true }

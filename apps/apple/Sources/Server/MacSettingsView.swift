@@ -67,9 +67,6 @@ private struct MacGeneralSettings: View {
                         Button(String(localized: "Enable Local Terminal", bundle: .main)) { Task { await service.start() } }
                     }
                     Spacer()
-                    if service.state != .requiresApproval {
-                        Button(String(localized: "Open Login Items Settings", bundle: .main), action: service.openSettings)
-                    }
                 }
                 if let issue = service.issue {
                     Text(issue).font(.subheadline).foregroundStyle(WitermTheme.warning)
