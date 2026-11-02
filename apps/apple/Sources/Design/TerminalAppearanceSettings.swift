@@ -68,10 +68,10 @@ struct TerminalDisplaySections: View {
             #endif
             TerminalSchemePreview(scheme: palette, highContrast: highContrast)
             #if os(iOS)
-            Toggle(String(localized: "Increase Terminal Contrast", bundle: .main), isOn: $highContrast).tint(WitermTheme.positive)
+            Toggle(String(localized: "Increase Terminal Contrast", bundle: .main), isOn: $highContrast).witermSwitchTint()
                 .accessibilityIdentifier("terminalHighContrast")
             #else
-            Toggle("Increase terminal contrast", isOn: $highContrast).tint(WitermTheme.positive)
+            Toggle("Increase terminal contrast", isOn: $highContrast).witermSwitchTint()
                 .accessibilityIdentifier("terminalHighContrast")
             #endif
             Button {
@@ -101,10 +101,10 @@ struct TerminalFeedbackSections: View {
     var body: some View {
         Section {
             #if os(iOS)
-            Toggle(String(localized: "Terminal Bell", bundle: .main), isOn: $bell).tint(WitermTheme.positive)
+            Toggle(String(localized: "Terminal Bell", bundle: .main), isOn: $bell).witermSwitchTint()
                 .accessibilityIdentifier("terminalBell")
             #else
-            Toggle("Ring the terminal bell", isOn: $bell).tint(WitermTheme.positive)
+            Toggle("Ring the terminal bell", isOn: $bell).witermSwitchTint()
                 .accessibilityIdentifier("terminalBell")
             #endif
         } header: {
@@ -118,10 +118,10 @@ struct TerminalFeedbackSections: View {
         }
         Section {
             #if os(iOS)
-            Toggle(String(localized: "Announce New Output", bundle: .main), isOn: $announceOutput).tint(WitermTheme.positive)
+            Toggle(String(localized: "Announce New Output", bundle: .main), isOn: $announceOutput).witermSwitchTint()
                 .accessibilityIdentifier("terminalAnnounceOutput")
             #else
-            Toggle("Announce output updates", isOn: $announceOutput).tint(WitermTheme.positive)
+            Toggle("Announce output updates", isOn: $announceOutput).witermSwitchTint()
                 .accessibilityIdentifier("terminalAnnounceOutput")
             #endif
         } header: {

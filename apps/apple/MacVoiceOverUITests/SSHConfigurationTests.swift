@@ -45,7 +45,7 @@ import XCTest
         app.buttons["sshSaveProfile"].click()
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         row.rightClick()
-        app.menuItems["Add to Favorites"].click()
+        app.menuItems["Favorite"].click()
         let search = app.searchFields.firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         search.click(); search.typeText(name)

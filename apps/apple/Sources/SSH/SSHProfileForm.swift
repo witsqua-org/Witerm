@@ -66,6 +66,7 @@ struct SSHProfileForm: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     /// How saved credentials are protected on this device, read once.
     @State private var protection = SSHUnlock.method
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(profile: SSHProfile?, credentials: [UUID: SSHCredential], purpose: SSHFormPurpose, address: String? = nil,
          onSave: @escaping (SSHProfile, [UUID: SSHCredential], Set<UUID>) async throws -> Void,
@@ -92,7 +93,7 @@ struct SSHProfileForm: View {
                 Section(String(localized: "Sign In", bundle: .main)) { signInFields($target) }
                 Section {
                     Button {
-                        withAnimation { showMore.toggle() }
+                        withAnimation(WitermMotion.transition(reduceMotion: reduceMotion)) { showMore.toggle() }
                     } label: {
                         HStack {
                             Text(String(localized: "More Options", bundle: .main))
@@ -161,10 +162,14 @@ struct SSHProfileForm: View {
             #endif
             .disabled(saving)
             .interactiveDismissDisabled(saving)
+            #if os(iOS)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(String(localized: "Cancel", bundle: .main)) { dismiss() }.disabled(saving) }
             }
-            // The actions sit at the bottom, within reach of a thumb.
+            #endif
+            // The actions sit at the bottom, within reach of a thumb; on the
+            // Mac, one footer with Cancel beside them. At iOS accessibility
+            // sizes they end the form instead.
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if !actionsInForm { actions }
             }
@@ -216,16 +221,18 @@ struct SSHProfileForm: View {
 
     private var actions: some View {
         actionButtons
-            .padding(.horizontal, WitermMetrics.Space.xl)
+            .padding(.horizontal, WitermMetrics.sheetInset)
             .padding(.vertical, WitermMetrics.Space.m)
             .background(.bar)
     }
 
     private var actionButtons: some View {
+        #if os(iOS)
         let primary = PrimaryButton(primaryTitle, fullWidth: true) { submit(connect: purpose != .edit) }
             .accessibilityIdentifier(purpose == .edit ? "sshSaveProfile" : "sshConnect")
             .keyboardShortcut(.defaultAction)
             .disabled(saving)
+        #endif
         let later = Button { submit(connect: false) } label: {
             ContentActionLabel(String(localized: "Save for Later", bundle: .main), systemImage: "tray.and.arrow.down")
         }
@@ -233,11 +240,21 @@ struct SSHProfileForm: View {
             .disabled(saving)
         return Group {
             #if os(macOS)
-            HStack(spacing: WitermMetrics.Space.m) {
-                Spacer()
-                if purpose == .new { later.buttonStyle(.bordered).witermControl() }
-                primary.frame(maxWidth: 200)
+            // The sheet footer: Save for Later leading, Cancel and the
+            // primary trailing, at the system's regular size.
+            HStack(spacing: WitermMetrics.Space.s) {
+                if purpose == .new { later }
+                Spacer(minLength: WitermMetrics.Space.s)
+                Button(String(localized: "Cancel", bundle: .main)) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                    .disabled(saving)
+                Button(primaryTitle) { submit(connect: purpose != .edit) }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(saving)
+                    .accessibilityIdentifier(purpose == .edit ? "sshSaveProfile" : "sshConnect")
             }
+            .controlSize(.regular)
             #else
             VStack(spacing: WitermMetrics.Space.xs) {
                 primary
@@ -332,7 +349,7 @@ struct SSHProfileForm: View {
                 .font(WitermType.meta).foregroundStyle(WitermTheme.secondary)
         }
         Toggle(String(localized: "Save Credentials on This Device", bundle: .main), isOn: draft.remember)
-            .tint(WitermTheme.positive)
+            .witermSwitchTint()
             .disabled(protection == .unavailable)
         // Saved credentials always need Face ID, Touch ID, or the passcode.
         if protection == .unavailable || draft.wrappedValue.remember {
@@ -498,7 +515,8 @@ private struct AddressChips: View {
     }
 }
 
-/// One way to sign in with a key; outlined when it is the one in use.
+/// One way to sign in with a key, as a `SelectableCard`. iOS keeps its 12 pt
+/// corners and 44 pt minimum height.
 private struct KeyChoiceCard: View {
     let title: String
     let detail: String
@@ -507,25 +525,19 @@ private struct KeyChoiceCard: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 4) {
+        #if os(macOS)
+        let radius = WitermMetrics.Radius.l
+        #else
+        let radius = WitermMetrics.Radius.m
+        #endif
+        SelectableCard(selected: selected, cornerRadius: radius, padding: WitermMetrics.Space.m, action: action) {
+            VStack(alignment: .leading, spacing: WitermMetrics.Space.xs) {
                 Label(title, systemImage: systemImage).font(.subheadline.weight(.semibold))
                     .foregroundStyle(WitermTheme.ink)
-                Text(detail).font(.caption).foregroundStyle(WitermTheme.secondary)
+                Text(detail).font(WitermType.meta).foregroundStyle(WitermTheme.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .topLeading)
-            .padding(10)
-            .background(WitermTheme.surface, in: .rect(cornerRadius: 12))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(selected ? WitermTheme.accent : WitermTheme.divider, lineWidth: selected ? 2 : 1)
-            }
-            .contentShape(.rect(cornerRadius: 12))
-            #if os(macOS)
-            .witermHover(cornerRadius: 12)
-            #endif
         }
-        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }

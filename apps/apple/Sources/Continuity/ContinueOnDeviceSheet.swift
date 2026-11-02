@@ -45,6 +45,8 @@ struct ContinueOnDeviceSheet: View {
     @State private var guestPermission = PairingPermission.view
     @State private var guestDuration: TimeInterval = 3600
     @State private var copied = false
+    /// Approving also ends older pairings with a device of the same name and kind.
+    @State private var unpairOlder = true
     @State private var editing: ServerEditRequest?
     @State private var problem: String?
     /// The device that may now open the session; the Open step watches for it.
@@ -60,38 +62,32 @@ struct ContinueOnDeviceSheet: View {
     enum Choice: Hashable { case paired(String), new, guest }
     enum Reach: Hashable { case only, chosen, all }
 
-    static let size = CGSize(width: 560, height: 540)
+    static let height: CGFloat = 540
 
     private var server: ConnectionModel? { servers.selected }
     private var session: LocalSessionInfo? { sessionID.flatMap { id in sessions.first { $0.id == id } } }
     private var sessionName: String { session?.name ?? "" }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-                .opacity(ready ? 1 : 0)
-            ScrollView {
-                // A new identity per step: the old content fades out and the
-                // new one fades in at its final size, never growing.
+        // A fixed height, so moving between steps never resizes the sheet.
+        SheetScaffold(nil, width: .flow, height: Self.height, onEscape: { if step == .open { dismiss() } }) {
+            // A new identity per step: the old content fades out and the new
+            // one fades in at its final size, never growing.
+            VStack(alignment: .leading, spacing: 0) {
                 content
-                    .padding(.horizontal, 24)
-                    .padding(.top, 4)
-                    .padding(.bottom, 16)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .id(step)
                     .transition(.opacity)
             }
-            .opacity(ready ? 1 : 0)
             .animation(ready ? WitermMotion.transition(reduceMotion: reduceMotion) : nil, value: step)
-            Divider()
-            footer
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
-                .opacity(ready ? 1 : 0)
+            .opacity(ready ? 1 : 0)
+        } header: {
+            header.opacity(ready ? 1 : 0)
+        } leading: {
+            footerLeading.opacity(ready ? 1 : 0)
+        } trailing: {
+            footerTrailing.opacity(ready ? 1 : 0)
         }
-        .frame(width: Self.size.width, height: Self.size.height)
-        .background(WitermTheme.surface)
-        .witermTint()
         .serverEditor($editing)
         .task {
             remoteAccess.load()
@@ -137,73 +133,70 @@ struct ContinueOnDeviceSheet: View {
 
     // MARK: Header and footer
 
+    /// The steps, then the step's title and one line. The terminal's name is
+    /// in the first step's title, so there's no separate caption.
     private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(sessionID == nil ? String(localized: "Pair a Device", bundle: .main)
-                 : String(localized: "Open “\(sessionName)” on Another Device", bundle: .main))
-                .font(.caption.weight(.medium))
-                .foregroundStyle(WitermTheme.secondary)
+        VStack(alignment: .leading, spacing: WitermMetrics.Space.xs) {
             StepStrip(titles: path.map(\.title), current: currentIndex)
-                .padding(.vertical, 4)
+                .padding(.bottom, WitermMetrics.Space.xs)
             Text(title(for: step))
-                .font(.title2.weight(.semibold))
+                .font(WitermType.pageTitle)
+                .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("continueStepTitle")
             if let subtitle {
                 Text(subtitle)
-                    .font(.subheadline)
+                    .font(WitermType.rowDetail)
                     .foregroundStyle(WitermTheme.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 24)
-        .padding(.top, 20)
-        .padding(.bottom, 14)
     }
 
-    @ViewBuilder private var footer: some View {
-        HStack(spacing: 8) {
-            switch step {
-            case .approve, .inviteReview:
-                Button(String(localized: "Reject", bundle: .main), role: .destructive) {
-                    autoAdvance = false
-                    if step == .approve { pairing?.reject(); step = .code } else { invite?.cancel(agent: agent); step = .invite }
-                }
+    /// Back, or Reject on a review step. Reject has no shortcut: Esc
+    /// always means Cancel.
+    @ViewBuilder private var footerLeading: some View {
+        switch step {
+        case .approve, .inviteReview:
+            Button(String(localized: "Reject", bundle: .main), role: .destructive) {
+                autoAdvance = false
+                if step == .approve { pairing?.reject(); step = .code } else { invite?.cancel(agent: agent); step = .invite }
+            }
+            .accessibilityIdentifier("continueReject")
+        case .server, .open:
+            EmptyView()
+        default:
+            Button(String(localized: "Back", bundle: .main), action: back)
+                .accessibilityIdentifier("continueBack")
+        }
+    }
+
+    /// Cancel (Esc), then the step's primary. Approve has no Return: it's a
+    /// trust decision.
+    @ViewBuilder private var footerTrailing: some View {
+        switch step {
+        case .open:
+            Button(String(localized: "Done", bundle: .main)) { dismiss() }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .accessibilityIdentifier("continueDone")
+        default:
+            Button(String(localized: "Cancel", bundle: .main)) { dismiss() }
                 .keyboardShortcut(.cancelAction)
-                .accessibilityIdentifier("continueReject")
-                Spacer()
-                // No Return shortcut: approving is a trust decision.
+                .accessibilityIdentifier("continueCancel")
+            if step == .approve || step == .inviteReview {
                 Button(String(localized: "Approve", bundle: .main), action: approve)
                     .buttonStyle(.borderedProminent)
                     .disabled(!mayApprove)
                     .accessibilityIdentifier("continueApprove")
-            case .open:
-                Spacer()
-                Button(String(localized: "Done", bundle: .main)) { dismiss() }
+            } else if let primary {
+                Button(primary.title, action: primary.action)
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
-                    .accessibilityIdentifier("continueDone")
-            default:
-                if step != .server {
-                    Button(String(localized: "Back", bundle: .main), action: back)
-                        .accessibilityIdentifier("continueBack")
-                }
-                Spacer()
-                Button(String(localized: "Cancel", bundle: .main)) { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                    .accessibilityIdentifier("continueCancel")
-                if let primary {
-                    Button(primary.title, action: primary.action)
-                        .buttonStyle(.borderedProminent)
-                        .keyboardShortcut(.defaultAction)
-                        .disabled(primary.disabled)
-                        .accessibilityIdentifier("continuePrimary")
-                }
+                    .disabled(primary.disabled)
+                    .accessibilityIdentifier("continuePrimary")
             }
         }
-        .controlSize(.large)
-        .buttonBorderShape(.capsule)
     }
 
     private struct Primary {
@@ -249,7 +242,7 @@ struct ContinueOnDeviceSheet: View {
                 }
                 return Primary(title: String(localized: "Allow “\(sessionName)”", bundle: .main)) { allow(device) }
             case .new?:
-                return Primary(title: String(localized: "Show Code", bundle: .main)) { showCode() }
+                return Primary(title: String(localized: "Show QR Code", bundle: .main)) { showCode() }
             case .guest?:
                 return Primary(title: String(localized: "Continue", bundle: .main)) { step = .invite }
             case nil:
@@ -268,15 +261,15 @@ struct ContinueOnDeviceSheet: View {
     private struct PathStep { let title: String; let steps: Set<Step> }
 
     private var path: [PathStep] {
-        let server = PathStep(title: String(localized: "Server", bundle: .main), steps: [.server])
+        let server = PathStep(title: String(localized: "Relay Server", bundle: .main), steps: [.server])
         let approve = PathStep(title: String(localized: "Approve", bundle: .main), steps: [.approve, .inviteReview])
-        let open = PathStep(title: sessionID == nil ? String(localized: "Done", bundle: .main) : String(localized: "Open", bundle: .main), steps: [.open])
+        let open = PathStep(title: sessionID == nil ? String(localized: "Done", bundle: .main) : Self.openStepTitle, steps: [.open])
         if sessionID == nil {
-            return [server, PathStep(title: String(localized: "Code", bundle: .main), steps: [.code]), approve, open]
+            return [server, PathStep(title: Self.qrStepTitle, steps: [.code]), approve, open]
         }
         if choice == .guest, step != .device, step != .server {
             var steps = [server, PathStep(title: String(localized: "Invite", bundle: .main), steps: [.invite]),
-                         PathStep(title: String(localized: "Code", bundle: .main), steps: [.inviteCode])]
+                         PathStep(title: Self.qrStepTitle, steps: [.inviteCode])]
             if guestPermission == .control { steps.append(approve) }
             return steps + [open]
         }
@@ -287,10 +280,20 @@ struct ContinueOnDeviceSheet: View {
 
     private var currentIndex: Int { path.firstIndex { $0.steps.contains(step) } ?? 0 }
 
+    /// The step where the other device scans: what it scans is the QR code.
+    static var qrStepTitle: String { String(localized: "QR Code", bundle: .main) }
+    /// The last step's name, "where it opens": its own key, so it can't be
+    /// translated as a state ("Opened").
+    static var openStepTitle: String {
+        String(localized: "step.open", defaultValue: "Open", bundle: .main,
+               comment: "Step name in the Open On sheet: the step where the terminal opens on the other device")
+    }
+
     private func title(for step: Step) -> String {
         switch step {
         case .server: String(localized: "Connect This Mac", bundle: .main)
-        case .device: String(localized: "Choose a Device", bundle: .main)
+        case .device: sessionID == nil ? String(localized: "Choose a Device", bundle: .main)
+            : String(localized: "Open “\(sessionName)” on Another Device", bundle: .main)
         case .code: String(localized: "Scan with the Other Device", bundle: .main)
         case .approve: String(localized: "Approve \(pairing?.pairing?.client?.name ?? String(localized: "the Other Device", bundle: .main))", bundle: .main)
         case .invite: String(localized: "Invite Someone", bundle: .main)
@@ -323,9 +326,11 @@ struct ContinueOnDeviceSheet: View {
     // MARK: Content
 
     @ViewBuilder private var content: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: WitermMetrics.Space.m) {
+            // Nothing here reaches another device without a network.
+            OfflineBanner()
             if let issue = pairing?.issue, step != .server, step != .invite, step != .inviteCode {
-                IssueBanner(issue.title, message: issue.recovery, systemImage: "exclamationmark.shield.fill") {
+                IssueBanner(issue.title, message: issue.recovery, systemImage: WitermSymbols.unpaired) {
                     if issue.integrityFailure {
                         Button(String(localized: "Start Over", bundle: .main)) { pairing?.resetPairing() }
                     } else {
@@ -368,18 +373,17 @@ struct ContinueOnDeviceSheet: View {
 
     @ViewBuilder private var serverStep: some View {
         if let server {
-            Form {
-                Section {
+            // A group box rather than a fixed-height Form: it takes the height
+            // its rows need at any text size or language.
+            GroupBox {
+                VStack(alignment: .leading, spacing: WitermMetrics.Space.s) {
                     ContinuationServerPicker()
                     LabeledContent(String(localized: "Status", bundle: .main)) {
                         StatusBadge(server.statusTitle, systemImage: server.statusSymbol, tone: server.statusTone)
                     }
                 }
+                .padding(WitermMetrics.Space.xs)
             }
-            .formStyle(.grouped)
-            .scrollDisabled(true)
-            .frame(height: 110)
-            .padding(.horizontal, -20)
             switch blocker {
             case .failed(let issue)?:
                 IssueBanner(issue.title, message: issue.recovery) {
@@ -427,7 +431,7 @@ struct ContinueOnDeviceSheet: View {
     }
 
     @ViewBuilder private var deviceStep: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: WitermMetrics.Space.s) {
             ForEach(pairedDevices, id: \.id) { device in
                 ChoiceRow(selected: choice == .paired(device.id), title: device.name,
                           detail: deviceDetail(device), symbol: device.platform == .macos ? "laptopcomputer" : "iphone",
@@ -435,7 +439,7 @@ struct ContinueOnDeviceSheet: View {
                     .accessibilityIdentifier("continueDevice-\(device.id)")
             }
             ChoiceRow(selected: choice == .new, title: String(localized: "Pair a New Device", bundle: .main),
-                      detail: nil, symbol: "plus", hue: nil) { choice = .new; autoAdvance = false }
+                      detail: nil, symbol: WitermSymbols.pair, hue: nil) { choice = .new; autoAdvance = false }
                 .accessibilityIdentifier("continueNewDevice")
             ChoiceRow(selected: choice == .guest, title: String(localized: "Someone Else’s Device", bundle: .main),
                       detail: String(localized: "A one-time invitation to this terminal only", bundle: .main),
@@ -478,56 +482,56 @@ struct ContinueOnDeviceSheet: View {
         return true
     }
 
-    // MARK: Code
+    // MARK: QR code
 
-    /// One layout from the first frame: while the code is being made, the
-    /// QR tile is blank, Copy is disabled, and the status line says so. Nothing
-    /// grows or moves when the code arrives.
+    /// One layout from the first frame: while the QR code is being made, the
+    /// tile is blank, Copy is disabled, and the status line says so. Nothing
+    /// grows or moves when the QR code arrives. Beside it, this Mac's code,
+    /// which the other device compares.
     @ViewBuilder private var codeStep: some View {
         if let status = pairing?.pairing?.status, status == .expired || status == .rejected {
-            note(status == .expired ? String(localized: "The code expired before a device used it.", bundle: .main)
+            note(status == .expired ? String(localized: "The QR code expired before a device used it.", bundle: .main)
                  : String(localized: "The request was rejected. Nothing was paired.", bundle: .main))
-            Button(String(localized: "Show New Code", bundle: .main), action: showCode)
+            Button(String(localized: "Show New QR Code", bundle: .main), action: showCode)
         } else if pairing?.issue == nil {
             let invitation = pairing?.pairing?.status == .waiting ? pairing?.invitation : nil
-            HStack(alignment: .top, spacing: 18) {
+            HStack(alignment: .top, spacing: WitermMetrics.Space.l) {
                 if let invitation {
                     PairingQRCode(value: invitation.urlString)
                 } else {
                     // The tile's own size (168 + 2 × 12), blank.
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: WitermMetrics.Radius.xl, style: .continuous)
                         .fill(WitermTheme.statusFill)
                         .frame(width: 192, height: 192)
                         .accessibilityHidden(true)
                 }
-                VStack(alignment: .leading, spacing: 10) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(String(localized: "This Mac’s code", bundle: .main)).font(.caption).foregroundStyle(WitermTheme.secondary)
+                VStack(alignment: .leading, spacing: WitermMetrics.Space.m) {
+                    VStack(alignment: .leading, spacing: WitermMetrics.Space.xxs) {
+                        Text(String(localized: "This Mac’s code", bundle: .main))
+                            .font(WitermType.meta).foregroundStyle(WitermTheme.secondary)
                         Text(pairing?.device.map { PairingFingerprint.display(publicKey: $0.publicKey) } ?? " ")
-                            .font(.system(.callout, design: .monospaced))
+                            .font(WitermType.code)
                             .textSelection(.enabled)
                     }
                     serverLine
-                    Button(copied ? String(localized: "Invitation Copied", bundle: .main) : String(localized: "Copy Invitation", bundle: .main),
-                           systemImage: copied ? "checkmark" : "doc.on.doc") { if let invitation { copy(invitation.urlString) } }
-                        .disabled(invitation == nil)
+                    copyInvitationButton(invitation?.urlString)
                         .accessibilityIdentifier("copyPairingInvitation")
                     IconText((pairing?.pairing?.expiresAt).map { String(localized: "Expires at \(String($0.formatted(date: .omitted, time: .shortened)))", bundle: .main) } ?? " ",
                              systemImage: "clock")
-                        .font(.caption).foregroundStyle(WitermTheme.secondary)
+                        .font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
                         .opacity(invitation == nil ? 0 : 1)
-                    Text(invitation == nil ? String(localized: "Making a code…", bundle: .main)
+                    Text(invitation == nil ? String(localized: "Making a QR code…", bundle: .main)
                          : String(localized: "Waiting for the other device…", bundle: .main))
-                        .font(.caption).foregroundStyle(WitermTheme.secondary)
+                        .font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
                 }
             }
         }
     }
 
-    /// The server the code belongs to, so it is never made for one you didn't see.
+    /// The relay server the QR code belongs to, so it is never made for one you didn't see.
     private var serverLine: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "server.rack").foregroundStyle(WitermTheme.secondary).accessibilityHidden(true)
+        HStack(spacing: WitermMetrics.Space.s) {
+            Image(systemName: WitermSymbols.relayServer).foregroundStyle(WitermTheme.secondary).accessibilityHidden(true)
             Text(server?.displayName ?? "")
             Button(String(localized: "Change…", bundle: .main)) {
                 autoAdvance = false
@@ -540,11 +544,33 @@ struct ContinueOnDeviceSheet: View {
             .help(String(localized: "Use another relay server", bundle: .main))
             .accessibilityIdentifier("continueChangeServer")
         }
-        .font(.callout)
+        .font(WitermType.rowDetail)
         .accessibilityElement(children: .combine)
     }
 
+    /// Copy Invitation: ✓ Copied for 2 seconds, announced, as in Settings.
+    private func copyInvitationButton(_ value: String?) -> some View {
+        Button(copied ? String(localized: "Copied", bundle: .main) : String(localized: "Copy Invitation", bundle: .main),
+               systemImage: copied ? "checkmark" : "doc.on.doc") { if let value { copy(value) } }
+            .disabled(value == nil)
+            .task(id: copied) {
+                guard copied else { return }
+                try? await Task.sleep(for: .seconds(2))
+                copied = false
+            }
+    }
+
     // MARK: Approve
+
+    /// Other pairings this Mac has with a device of the same name and kind:
+    /// most likely the same device before it got a new identity.
+    private var olderPairings: [DeviceGrant] {
+        guard let pairing, let me = pairing.device, let requester = pairing.pairing?.client else { return [] }
+        return pairing.grants.filter {
+            $0.host.id == me.id && $0.client.id != requester.id
+                && $0.client.name == requester.name && $0.client.platform == requester.platform
+        }
+    }
 
     @ViewBuilder private var approveStep: some View {
         if let client = pairing?.pairing?.client {
@@ -554,26 +580,30 @@ struct ContinueOnDeviceSheet: View {
             // VoiceOver or a UI test read this step. The code is compared by
             // eye, and VoiceOver reads it from the label.
             Text(PairingFingerprint.display(publicKey: client.publicKey))
-                .font(.system(.title3, design: .monospaced))
-                .padding(.horizontal, 14).padding(.vertical, 10)
+                .font(WitermType.codeHero)
+                .padding(.horizontal, WitermMetrics.Space.m).padding(.vertical, WitermMetrics.Space.s)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(WitermTheme.statusFill, in: .rect(cornerRadius: 10, style: .continuous))
+                .background(WitermTheme.statusFill, in: .rect(cornerRadius: WitermMetrics.Radius.m, style: .continuous))
                 .accessibilityLabel(String(localized: "Device code \(PairingFingerprint.display(publicKey: client.publicKey))", bundle: .main))
             if pairing?.existingGrantForRequest != nil {
                 IconText(String(localized: "Already paired. Approving replaces its current access.", bundle: .main), systemImage: "arrow.triangle.2.circlepath")
-                    .font(.subheadline).foregroundStyle(WitermTheme.warning)
+                    .font(WitermType.rowDetail).foregroundStyle(WitermTheme.warning)
                     .accessibilityIdentifier("pairingReplacesGrant")
+            }
+            if let older = olderPairings.first {
+                Toggle(String(localized: "Also unpair the older “\(older.client.name)”", bundle: .main), isOn: $unpairOlder)
+                    .toggleStyle(.checkbox)
+                    .help(String(localized: "A device with this name is already paired, probably this one before it was set up again", bundle: .main))
+                    .accessibilityIdentifier("pairingUnpairOlder")
             }
             SessionReachPicker(reach: $reach, chosen: $chosen, sessions: reachableSessions, startingSession: session,
                                activity: activity)
-            Form {
+            GroupBox {
                 PermissionPicker(canType: $canType)
                     .accessibilityIdentifier("continueCanType")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(WitermMetrics.Space.xs)
             }
-            .formStyle(.grouped)
-            .scrollDisabled(true)
-            .frame(height: 96)
-            .padding(.horizontal, -20)
         }
     }
 
@@ -627,13 +657,13 @@ struct ContinueOnDeviceSheet: View {
                     }
                 }
             }
-            .background(WitermTheme.statusFill, in: .rect(cornerRadius: 10, style: .continuous))
+            .background(WitermTheme.statusFill, in: .rect(cornerRadius: WitermMetrics.Radius.m, style: .continuous))
             note(sessionID != nil && live == nil && pairing?.pairing?.status != .approved
                  ? String(localized: "On \(continuing.name), open Witerm. “\(sessionName)” is under Terminals → \(pairing?.device?.name ?? String(localized: "this Mac", bundle: .main)).", bundle: .main)
                  : String(localized: "Change what it can open in Settings → Devices.", bundle: .main))
         } else if case .joined = invite?.phase {
             checkRow(String(localized: "They can open “\(sessionName)” until the invitation ends.", bundle: .main))
-                .background(WitermTheme.statusFill, in: .rect(cornerRadius: 10, style: .continuous))
+                .background(WitermTheme.statusFill, in: .rect(cornerRadius: WitermMetrics.Radius.m, style: .continuous))
             note(String(localized: "End their access at any time in Settings → Devices.", bundle: .main))
         }
     }
@@ -644,22 +674,22 @@ struct ContinueOnDeviceSheet: View {
     }
 
     private func waitRow(_ text: String) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: WitermMetrics.Space.s) {
             ProgressView().controlSize(.small)
             Text(text)
             Spacer(minLength: 0)
         }
-        .padding(.vertical, 9).padding(.horizontal, 12)
+        .padding(.vertical, WitermMetrics.Space.s).padding(.horizontal, WitermMetrics.Space.m)
         .accessibilityElement(children: .combine)
     }
 
     private func checkRow(_ text: String) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: WitermMetrics.Space.s) {
             Image(systemName: "checkmark.circle.fill").foregroundStyle(WitermTheme.positive).accessibilityHidden(true)
             Text(text)
             Spacer(minLength: 0)
         }
-        .padding(.vertical, 9).padding(.horizontal, 12)
+        .padding(.vertical, WitermMetrics.Space.s).padding(.horizontal, WitermMetrics.Space.m)
     }
 
     // MARK: Invite
@@ -669,50 +699,47 @@ struct ContinueOnDeviceSheet: View {
             IssueBanner(message, message: String(localized: "Nothing was shared. Try again.", bundle: .main))
         }
         if case .working(let message) = invite?.phase { ActivityRow(message) }
-        Form {
-            Section {
-                Picker(String(localized: "What they can do", bundle: .main), selection: $guestPermission) {
-                    Text(PermissionPicker.watchOnly).tag(PairingPermission.view)
-                    VStack(alignment: .leading) {
-                        Text(PermissionPicker.canType)
-                        Text(String(localized: "You approve their device first.", bundle: .main))
-                            .font(.caption).foregroundStyle(WitermTheme.secondary)
-                    }
-                    .tag(PairingPermission.control)
+        GroupBox {
+            Picker(String(localized: "What they can do", bundle: .main), selection: $guestPermission) {
+                Text(PermissionPicker.watchOnly).tag(PairingPermission.view)
+                VStack(alignment: .leading) {
+                    Text(PermissionPicker.canType)
+                    Text(String(localized: "You approve their device first.", bundle: .main))
+                        .font(WitermType.meta).foregroundStyle(WitermTheme.secondary)
                 }
-                .pickerStyle(.radioGroup)
-                .labelsHidden()
-                .accessibilityIdentifier("inviteAccess")
+                .tag(PairingPermission.control)
             }
-            Section {
-                Picker(String(localized: "Access Ends After", bundle: .main), selection: $guestDuration) {
-                    Text(String(localized: "1 hour", bundle: .main)).tag(TimeInterval(3600))
-                    Text(String(localized: "8 hours", bundle: .main)).tag(TimeInterval(8 * 3600))
-                    Text(String(localized: "24 hours", bundle: .main)).tag(SessionInvitation.longestAccess)
-                }
-                .accessibilityIdentifier("inviteDuration")
-            }
+            .pickerStyle(.radioGroup)
+            .labelsHidden()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(WitermMetrics.Space.xs)
+            .accessibilityIdentifier("inviteAccess")
         }
-        .formStyle(.grouped)
-        .scrollDisabled(true)
-        .frame(height: 200)
-        .padding(.horizontal, -20)
+        GroupBox {
+            Picker(String(localized: "Access Ends After", bundle: .main), selection: $guestDuration) {
+                Text(String(localized: "1 hour", bundle: .main)).tag(TimeInterval(3600))
+                Text(String(localized: "8 hours", bundle: .main)).tag(TimeInterval(8 * 3600))
+                Text(String(localized: "24 hours", bundle: .main)).tag(SessionInvitation.longestAccess)
+            }
+            .padding(WitermMetrics.Space.xs)
+            .accessibilityIdentifier("inviteDuration")
+        }
     }
 
     @ViewBuilder private var inviteCodeStep: some View {
         if case .waiting(let invitation) = invite?.phase {
-            HStack(alignment: .top, spacing: 18) {
+            HStack(alignment: .top, spacing: WitermMetrics.Space.l) {
                 PairingQRCode(value: invitation.urlString)
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: WitermMetrics.Space.m) {
                     serverLine
-                    Button(copied ? String(localized: "Link Copied", bundle: .main) : String(localized: "Copy Link", bundle: .main),
-                           systemImage: copied ? "checkmark" : "doc.on.doc") { copy(invitation.urlString) }
+                    copyInvitationButton(invitation.urlString)
                         .accessibilityIdentifier("copySessionInvitation")
                     IconText(String(localized: "Works once · join within 5 minutes · access until \(String(invitation.expiresAt.formatted(date: .omitted, time: .shortened)))", bundle: .main), systemImage: "clock")
-                        .font(.caption).foregroundStyle(WitermTheme.secondary)
-                    HStack(spacing: 8) {
+                        .font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
+                    HStack(spacing: WitermMetrics.Space.s) {
                         ProgressView().controlSize(.small)
-                        Text(String(localized: "Waiting for them to join…", bundle: .main)).font(.caption).foregroundStyle(WitermTheme.secondary)
+                        Text(String(localized: "Waiting for them to join…", bundle: .main))
+                            .font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
                     }
                 }
             }
@@ -723,12 +750,12 @@ struct ContinueOnDeviceSheet: View {
 
     @ViewBuilder private var inviteReviewStep: some View {
         if case .review(_, let device) = invite?.phase {
-            Text(device.name).font(.headline)
+            Text(device.name).font(WitermType.cardTitle)
             Text(PairingFingerprint.display(publicKey: device.publicKey))
-                .font(.system(.title3, design: .monospaced))
-                .padding(.horizontal, 14).padding(.vertical, 10)
+                .font(WitermType.codeHero)
+                .padding(.horizontal, WitermMetrics.Space.m).padding(.vertical, WitermMetrics.Space.s)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(WitermTheme.statusFill, in: .rect(cornerRadius: 10, style: .continuous))
+                .background(WitermTheme.statusFill, in: .rect(cornerRadius: WitermMetrics.Radius.m, style: .continuous))
             note(String(localized: "They can watch and type in this terminal until the invitation ends.", bundle: .main))
         }
     }
@@ -736,13 +763,14 @@ struct ContinueOnDeviceSheet: View {
     // MARK: Actions
 
     private func note(_ text: String) -> some View {
-        Text(text).font(.subheadline).foregroundStyle(WitermTheme.secondary).fixedSize(horizontal: false, vertical: true)
+        Text(text).font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary).fixedSize(horizontal: false, vertical: true)
     }
 
     private func copy(_ value: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(value, forType: .string)
         copied = true
+        AccessibilityNotification.Announcement(String(localized: "Copied", bundle: .main)).post()
     }
 
     private func advanceFromServer() {
@@ -846,10 +874,11 @@ struct ContinueOnDeviceSheet: View {
         }
         let access = LocalDeviceAccess(deviceID: client.id, scope: reach == .all ? .all : .shared,
                                        permission: permission == .view ? .view : .control, sessionIDs: listed)
+        let older = unpairOlder ? olderPairings : []
         Task {
             do {
                 _ = try await agent.deviceAccess(access)
-                pairing.approve(permission: permission)
+                pairing.approve(permission: permission, alsoUnpair: older)
             } catch {
                 problem = String(localized: "This Mac couldn’t save what the device may open. Nothing was approved.", bundle: .main)
             }
@@ -951,6 +980,8 @@ struct PermissionPicker: View {
 }
 
 /// Which terminals a device may open: the starting one, a chosen few, or all.
+/// A group box with its own height, never a fixed-height Form, so rows with
+/// a second line, longer languages and larger text are never cut off.
 struct SessionReachPicker: View {
     @Binding var reach: ContinueOnDeviceSheet.Reach
     @Binding var chosen: Set<String>
@@ -960,8 +991,8 @@ struct SessionReachPicker: View {
     var activity: (String) -> String? = { _ in nil }
 
     var body: some View {
-        Form {
-            Section(String(localized: "Terminals", bundle: .main)) {
+        GroupBox {
+            VStack(alignment: .leading, spacing: WitermMetrics.Space.s) {
                 Picker(String(localized: "Terminals", bundle: .main), selection: $reach) {
                     if let startingSession {
                         Text(String(localized: "Only “\(startingSession.name)”", bundle: .main)).tag(ContinueOnDeviceSheet.Reach.only)
@@ -970,7 +1001,8 @@ struct SessionReachPicker: View {
                     VStack(alignment: .leading) {
                         Text(String(localized: "All terminals", bundle: .main))
                         Text(String(localized: "Including ones you start later. Private ones stay hidden.", bundle: .main))
-                            .font(.caption).foregroundStyle(WitermTheme.secondary)
+                            .font(WitermType.meta).foregroundStyle(WitermTheme.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     .tag(ContinueOnDeviceSheet.Reach.all)
                 }
@@ -980,31 +1012,35 @@ struct SessionReachPicker: View {
                 if reach == .chosen {
                     if sessions.isEmpty {
                         Text(String(localized: "No terminals yet. Choose later in Settings → Devices.", bundle: .main))
-                            .font(.caption).foregroundStyle(WitermTheme.secondary)
+                            .font(WitermType.meta).foregroundStyle(WitermTheme.secondary)
                     }
                     ForEach(sessions) { session in
                         let shared = session.sharing?.shared == true
                         Toggle(isOn: Binding(get: { shared || chosen.contains(session.id) },
                                              set: { if $0 { chosen.insert(session.id) } else { chosen.remove(session.id) } })) {
-                            Text(session.name)
-                            if shared {
-                                Text(String(localized: "Shared: every paired device can open it", bundle: .main))
-                            } else if let doing = activity(session.id) {
-                                Text(verbatim: doing).font(.caption.monospaced())
+                            VStack(alignment: .leading, spacing: WitermMetrics.Space.xxs) {
+                                Text(session.name)
+                                if shared {
+                                    Text(String(localized: "Shared: every paired device can open it", bundle: .main))
+                                        .font(WitermType.meta).foregroundStyle(WitermTheme.secondary)
+                                } else if let doing = activity(session.id) {
+                                    Text(verbatim: doing).font(WitermType.codeInline).foregroundStyle(WitermTheme.secondary)
+                                        .lineLimit(1).truncationMode(.middle)
+                                }
                             }
                         }
                         .toggleStyle(.checkbox)
                         .disabled(shared)
-                        .padding(.leading, 20)
+                        .padding(.leading, WitermMetrics.Space.xl)
                         .accessibilityIdentifier("reachSession-\(session.id)")
                     }
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(WitermMetrics.Space.xs)
+        } label: {
+            Text(String(localized: "Terminals", bundle: .main)).font(WitermType.cardTitle)
         }
-        .formStyle(.grouped)
-        .scrollDisabled(true)
-        .frame(height: reach == .chosen ? CGFloat(120 + max(sessions.count, 1) * 26) : 130)
-        .padding(.horizontal, -20)
     }
 }
 
@@ -1038,21 +1074,21 @@ private struct StepStrip: View {
     let current: Int
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: WitermMetrics.Space.s) {
             ForEach(Array(titles.enumerated()), id: \.offset) { index, title in
                 if index > 0 {
-                    Rectangle().fill(WitermTheme.divider).frame(width: 16, height: 1).accessibilityHidden(true)
+                    Rectangle().fill(WitermTheme.hairline).frame(width: WitermMetrics.Space.l, height: 1).accessibilityHidden(true)
                 }
-                HStack(spacing: 5) {
+                HStack(spacing: WitermMetrics.Space.xs) {
                     if index < current {
                         Image(systemName: "checkmark.circle.fill").foregroundStyle(WitermTheme.positive)
                     } else {
                         Text(verbatim: "\(index + 1)")
-                            .font(.caption2.weight(.semibold))
+                            .font(WitermType.meta.weight(.semibold))
                             .frame(width: 16, height: 16)
                             .foregroundStyle(index == current ? WitermTheme.actionLabel : WitermTheme.secondary)
                             .background(index == current ? WitermTheme.accent : Color.clear, in: Circle())
-                            .overlay { Circle().strokeBorder(index == current ? Color.clear : WitermTheme.divider) }
+                            .overlay { Circle().strokeBorder(index == current ? Color.clear : WitermTheme.secondary.opacity(0.6)) }
                     }
                     Text(title)
                         .fontWeight(index == current ? .semibold : .regular)
@@ -1064,12 +1100,12 @@ private struct StepStrip: View {
                                     : index == current ? String(localized: "Current step", bundle: .main) : "")
             }
         }
-        .font(.caption)
+        .font(WitermType.meta)
         .accessibilityElement(children: .contain)
     }
 }
 
-/// One option in a list of mutually exclusive cards.
+/// One option in the device step, as a `SelectableCard`.
 private struct ChoiceRow: View {
     let selected: Bool
     let title: String
@@ -1079,30 +1115,24 @@ private struct ChoiceRow: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                Image(systemName: selected ? "largecircle.fill.circle" : "circle")
-                    .foregroundStyle(selected ? WitermTheme.accent : WitermTheme.secondary)
-                    .accessibilityHidden(true)
+        SelectableCard(selected: selected, action: action) {
+            HStack(spacing: WitermMetrics.Space.m) {
                 IconTile(systemImage: symbol, tint: hue ?? WitermTheme.secondary)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.subheadline.weight(.semibold))
-                    if let detail { Text(detail).font(.caption).foregroundStyle(WitermTheme.secondary) }
+                VStack(alignment: .leading, spacing: WitermMetrics.Space.xxs) {
+                    Text(title).font(WitermType.rowTitle.weight(.semibold))
+                    if let detail {
+                        Text(detail).font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 Spacer(minLength: 0)
+                Image(systemName: "checkmark")
+                    .font(WitermType.rowTitle.weight(.semibold))
+                    .foregroundStyle(WitermTheme.accent)
+                    .opacity(selected ? 1 : 0)
+                    .accessibilityHidden(true)
             }
-            .padding(10)
-            .background(selected ? WitermTheme.accent.opacity(0.06) : Color.clear, in: .rect(cornerRadius: 12, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(selected ? WitermTheme.accent.opacity(0.55) : WitermTheme.divider, lineWidth: 1)
-            }
-            .contentShape(Rectangle())
-            // Outermost, so the row's own hit shape doesn't hide the hover.
-            .witermHover(cornerRadius: 12)
         }
-        .buttonStyle(.plain)
-        .accessibilityValue(selected ? String(localized: "Selected", bundle: .main) : String(localized: "Not Selected", bundle: .main))
     }
 }
 #endif

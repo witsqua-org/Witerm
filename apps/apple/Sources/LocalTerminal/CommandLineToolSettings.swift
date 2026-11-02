@@ -117,25 +117,25 @@ struct CommandLineToolSettings: View {
                 }
                 LabeledContent(String(localized: "Command", bundle: .main)) {
                     Text(model.linkURL.path)
-                        .font(.system(.body, design: .monospaced))
+                        .font(WitermType.code)
                         .textSelection(.enabled)
                         .multilineTextAlignment(.trailing)
                 }
                 LabeledContent(String(localized: "Version", bundle: .main), value: model.version)
                 if case .otherCopy(let path) = model.state {
                     Text(String(localized: "The installed command belongs to another copy of Witerm at \(path).", bundle: .main))
-                        .font(.subheadline).foregroundStyle(WitermTheme.secondary)
+                        .font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
                 }
                 if model.state == .blocked {
                     Text(String(localized: "Another file already uses this path. Witerm won't replace it.", bundle: .main))
-                        .font(.subheadline).foregroundStyle(WitermTheme.warning)
+                        .font(WitermType.rowDetail).foregroundStyle(WitermTheme.warning)
                 }
                 if !model.isBundled {
                     Text(String(localized: "This copy of Witerm doesn't include the command. Reinstall Witerm.", bundle: .main))
-                        .font(.subheadline).foregroundStyle(WitermTheme.warning)
+                        .font(WitermType.rowDetail).foregroundStyle(WitermTheme.warning)
                 }
                 if let issue = model.issue {
-                    Text(issue).font(.subheadline).foregroundStyle(WitermTheme.warning)
+                    Text(issue).font(WitermType.rowDetail).foregroundStyle(WitermTheme.warning)
                 }
                 HStack {
                     switch model.state {
@@ -209,15 +209,15 @@ struct CopyableCommand: View {
     }
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            VStack(alignment: .leading, spacing: 3) {
+        HStack(alignment: .firstTextBaseline, spacing: WitermMetrics.Space.s) {
+            VStack(alignment: .leading, spacing: WitermMetrics.Space.xxs) {
                 Text(command)
-                    .font(.system(.body, design: .monospaced))
+                    .font(WitermType.code)
                     .textSelection(.enabled)
                     .lineLimit(2)
                     .truncationMode(.middle)
                 if let caption {
-                    Text(caption).font(.caption).foregroundStyle(WitermTheme.secondary)
+                    Text(caption).font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
                 }
             }
             Spacer(minLength: 8)

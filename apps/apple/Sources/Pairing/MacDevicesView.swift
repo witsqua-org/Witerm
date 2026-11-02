@@ -11,6 +11,7 @@ struct MacDevicesView: View {
     @Environment(MacPairedDevices.self) private var known
     @Environment(\.localAgent) private var agent
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(NetworkStatus.self) private var network: NetworkStatus?
     @State private var remoteAccess = MacRemoteAccessModel()
     @State private var pairing: DevicePairingModel?
     @State private var accesses: [String: LocalDeviceAccess] = [:]
@@ -29,6 +30,10 @@ struct MacDevicesView: View {
         Group {
             if let server {
                 Form {
+                    // Remote access and pairing need a network; say so here too.
+                    if network?.online == false {
+                        Section { OfflineBanner() }
+                    }
                     serverSection(server)
                     if server.supportsPairing {
                         devicesSection
@@ -89,11 +94,11 @@ struct MacDevicesView: View {
         Section {
             ContinuationServerPicker()
             LabeledContent(String(localized: "Status", bundle: .main)) {
-                HStack(spacing: 10) {
+                HStack(spacing: WitermMetrics.Space.s) {
                     StatusBadge(server.statusTitle, systemImage: server.statusSymbol, tone: server.statusTone)
                     if case .available(let date) = server.phase {
                         Text(date, format: .relative(presentation: .named))
-                            .font(.caption).foregroundStyle(WitermTheme.secondary)
+                            .font(WitermType.meta).foregroundStyle(WitermTheme.secondary)
                     }
                     if server.phase.isChecking {
                         Button(String(localized: "Cancel Check", bundle: .main), action: server.cancel)
@@ -106,11 +111,11 @@ struct MacDevicesView: View {
             }
             .accessibilityIdentifier("connectionFeedback")
             if case .failed(let issue) = server.phase {
-                Text(issue.recovery).font(.subheadline).foregroundStyle(WitermTheme.secondary)
+                Text(issue.recovery).font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
             }
             Toggle(isOn: Binding(get: { remoteAccess.isEnabled(for: server.address) },
                                  set: { remoteAccess.setEnabled($0, address: server.address) })) {
-                Text(String(localized: "Allow Remote Access", bundle: .main))
+                Text(String(localized: "Allow remote access", bundle: .main))
                 Text(String(localized: "Paired devices can open only the terminals you allow.", bundle: .main))
             }
             .toggleStyle(.switch)
@@ -144,18 +149,17 @@ struct MacDevicesView: View {
                 }
             }
             if let issue = remoteAccess.issue {
-                Text(issue).font(.subheadline).foregroundStyle(WitermTheme.warning)
+                Text(issue).font(WitermType.rowDetail).foregroundStyle(WitermTheme.warning)
                     .accessibilityIdentifier("remoteAccessSettingsError")
             }
-        } header: {
-            Text(String(localized: "Relay Server", bundle: .main))
         } footer: {
+            // The picker's row already says Relay Server, so no header repeats it.
             HStack {
                 if server.phase.isAvailable, !server.supportsPairing {
                     Text(String(localized: "This relay server can’t pair devices.", bundle: .main))
                 }
                 Spacer()
-                Button(String(localized: "Manage Servers…", bundle: .main)) { managingServers = true }
+                Button(String(localized: "Manage Relay Servers…", bundle: .main)) { managingServers = true }
                     .accessibilityIdentifier("manageServers")
             }
             .foregroundStyle(WitermTheme.secondary)
@@ -173,18 +177,18 @@ struct MacDevicesView: View {
     private var devicesSection: some View {
         Section {
             if let issue = pairing?.issue {
-                Text(issue.title + " " + issue.recovery).font(.subheadline).foregroundStyle(WitermTheme.warning)
+                Text(issue.title + " " + issue.recovery).font(WitermType.rowDetail).foregroundStyle(WitermTheme.warning)
                     .accessibilityIdentifier("pairingError")
             } else if pairing?.device == nil {
                 ActivityRow(pairing?.busy ?? String(localized: "Loading paired devices…", bundle: .main))
             }
             ForEach(pairedGrants) { grant in
                 let device = grant.client
-                HStack(spacing: 12) {
+                HStack(spacing: WitermMetrics.Space.m) {
                     IconTile(systemImage: device.platform == .macos ? "laptopcomputer" : "iphone", tint: device.identityHue)
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: WitermMetrics.Space.xxs) {
                         Text(device.name)
-                        Text(summary(grant)).font(.caption).foregroundStyle(WitermTheme.secondary)
+                        Text(summary(grant)).font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
                     }
                     Spacer()
                     Button(String(localized: "Edit…", bundle: .main)) { editingDevice = device }
@@ -195,9 +199,9 @@ struct MacDevicesView: View {
             }
             if pairing?.device != nil, pairedGrants.isEmpty {
                 Text(String(localized: "No paired devices yet.", bundle: .main))
-                    .font(.subheadline).foregroundStyle(WitermTheme.secondary)
+                    .font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
             }
-            Button(String(localized: "Pair a Device…", bundle: .main), systemImage: "plus") { pairingDevice = true }
+            Button(String(localized: "Pair a Device…", bundle: .main), systemImage: WitermSymbols.pair) { pairingDevice = true }
                 .buttonStyle(.link)
                 .witermLinkPointer()
                 .disabled(agent == nil)
@@ -236,12 +240,12 @@ struct MacDevicesView: View {
                 HStack {
                     Image(systemName: invite.permission == .control ? "keyboard" : "eye")
                         .foregroundStyle(WitermTheme.secondary).accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: WitermMetrics.Space.xxs) {
                         let name = sessions.first { $0.id == invite.sessionID }?.name ?? ""
                         Text("\(name) · " + (invite.permission == .control ? PermissionPicker.canType : PermissionPicker.watchOnly))
                         Text(invite.redeemed ? String(localized: "In use · until \(String(invite.expiresAt.formatted(date: .omitted, time: .shortened)))", bundle: .main)
                              : String(localized: "Not used yet", bundle: .main))
-                            .font(.caption).foregroundStyle(WitermTheme.secondary)
+                            .font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
                     }
                     Spacer()
                     Button(String(localized: "End Invitation", bundle: .main), role: .destructive) {
@@ -312,69 +316,60 @@ struct MacDeviceEditSheet: View {
     private var device: PairedDevice { grant.client }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                IconTile(systemImage: device.platform == .macos ? "laptopcomputer" : "iphone", tint: device.identityHue)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(device.name).font(.headline)
-                    if let server = URL(string: pairing.serverAddress)?.host {
-                        Text(String(localized: "Paired through \(server)", bundle: .main)).font(.caption).foregroundStyle(WitermTheme.secondary)
-                    }
-                }
-                Spacer()
-            }
-            .padding(.horizontal, 24).padding(.top, 20).padding(.bottom, 8)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    if let problem { IssueBanner(problem).padding(.horizontal, 24) }
-                    SessionReachPicker(reach: $reach, chosen: $chosen, sessions: sessions.filter { $0.sharing?.keepPrivate != true },
-                                       startingSession: nil)
-                        .padding(.horizontal, 24)
-                    Form {
+        // Each change is saved at once, so Done and Esc both just close.
+        SheetScaffold(nil, width: .form, onEscape: { dismiss() }) {
+            VStack(alignment: .leading, spacing: WitermMetrics.Space.m) {
+                if let problem { IssueBanner(problem) }
+                SessionReachPicker(reach: $reach, chosen: $chosen, sessions: sessions.filter { $0.sharing?.keepPrivate != true },
+                                   startingSession: nil)
+                GroupBox {
+                    VStack(alignment: .leading, spacing: WitermMetrics.Space.s) {
                         if grant.permission == .control {
-                            Section {
-                                PermissionPicker(canType: Binding(
-                                    get: { access.permission == .control },
-                                    set: { save(permission: $0 ? .control : .view) }))
-                                    .accessibilityIdentifier("deviceCanType-\(device.id)")
-                                Toggle(String(localized: "Type at the Same Time as This Mac", bundle: .main), isOn: Binding(
-                                    get: { access.coTyping }, set: { save(coTyping: $0) }))
-                                    .disabled(access.permission != .control)
-                                    .help(String(localized: "Off: it can type only while nobody types on this Mac", bundle: .main))
-                                    .accessibilityIdentifier("deviceCoTyping-\(device.id)")
-                            }
+                            PermissionPicker(canType: Binding(
+                                get: { access.permission == .control },
+                                set: { save(permission: $0 ? .control : .view) }))
+                                .accessibilityIdentifier("deviceCanType-\(device.id)")
+                            Toggle(String(localized: "Type at the same time as this Mac", bundle: .main), isOn: Binding(
+                                get: { access.coTyping }, set: { save(coTyping: $0) }))
+                                .toggleStyle(.checkbox)
+                                .disabled(access.permission != .control)
+                                .help(String(localized: "Off: it can type only while nobody types on this Mac", bundle: .main))
+                                .accessibilityIdentifier("deviceCoTyping-\(device.id)")
                         } else {
-                            Section { Text(String(localized: "Paired to only watch. To let it type, pair it again.", bundle: .main)) }
-                        }
-                        Section {
-                            LabeledContent(String(localized: "Device Code", bundle: .main)) {
-                                Text(PairingFingerprint.display(publicKey: device.publicKey))
-                                    .font(.system(.callout, design: .monospaced)).textSelection(.enabled)
-                            }
+                            Text(String(localized: "Paired to only watch. To let it type, pair it again.", bundle: .main))
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
-                    .formStyle(.grouped)
-                    .scrollDisabled(true)
-                    .frame(height: grant.permission == .control ? 220 : 150)
-                    .padding(.horizontal, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(WitermMetrics.Space.xs)
+                }
+                GroupBox {
+                    LabeledContent(String(localized: "Device Code", bundle: .main)) {
+                        Text(PairingFingerprint.display(publicKey: device.publicKey))
+                            .font(WitermType.code).textSelection(.enabled)
+                    }
+                    .padding(WitermMetrics.Space.xs)
                 }
             }
-            Divider()
-            HStack {
-                Button(String(localized: "Unpair…", bundle: .main), role: .destructive) { unpairing = true }
-                    .accessibilityIdentifier("revokeGrant-\(grant.id)")
-                Spacer()
-                Button(String(localized: "Done", bundle: .main)) { dismiss() }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.defaultAction)
+        } header: {
+            HStack(spacing: WitermMetrics.Space.m) {
+                IconTile(systemImage: device.platform == .macos ? "laptopcomputer" : "iphone", tint: device.identityHue)
+                VStack(alignment: .leading, spacing: WitermMetrics.Space.xxs) {
+                    Text(device.name).font(WitermType.pageTitle).accessibilityAddTraits(.isHeader)
+                    if let server = URL(string: pairing.serverAddress)?.host {
+                        Text(String(localized: "Paired through \(server)", bundle: .main))
+                            .font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
+                    }
+                }
             }
-            .controlSize(.large)
-            .buttonBorderShape(.capsule)
-            .padding(.horizontal, 20).padding(.vertical, 12)
+        } leading: {
+            Button(String(localized: "Unpair…", bundle: .main), role: .destructive) { unpairing = true }
+                .accessibilityIdentifier("revokeGrant-\(grant.id)")
+        } trailing: {
+            Button(String(localized: "Done", bundle: .main)) { dismiss() }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
         }
-        .frame(width: 480, height: 520)
-        .background(WitermTheme.surface)
-        .witermTint()
         .onChange(of: reach) { _, _ in save() }
         .onChange(of: chosen) { _, _ in save() }
         .alert(String(localized: "Unpair “\(device.name)”?", bundle: .main), isPresented: $unpairing) {
@@ -420,60 +415,32 @@ struct ManageServersSheet: View {
     @State private var removalBlocked = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(String(localized: "Relay Servers", bundle: .main)).font(.title2.weight(.semibold))
-                Text(String(localized: "Up to 8. Your devices use all of them at once. New pairings use the one chosen in Devices.", bundle: .main))
-                    .font(.subheadline).foregroundStyle(WitermTheme.secondary)
-            }
-            .padding(.horizontal, 24).padding(.top, 20)
-            Form {
-                Section {
-                    ForEach(servers.servers) { server in
-                        HStack(spacing: 10) {
-                            Image(systemName: server.statusSymbol)
-                                .foregroundStyle(server.statusTone == .positive ? WitermTheme.positive
-                                                 : server.statusTone == .warning ? WitermTheme.warning : WitermTheme.secondary)
-                                .accessibilityHidden(true)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(server.displayName)
-                                Text(server.address).font(.caption.monospaced()).foregroundStyle(WitermTheme.secondary).textSelection(.enabled)
-                            }
-                            Spacer()
-                            if servers.selected?.id == server.id {
-                                StatusBadge(String(localized: "In Use", bundle: .main), systemImage: "checkmark")
-                            }
-                            Button(String(localized: "Edit…", bundle: .main)) { editing = .edit(server) }
-                                .accessibilityIdentifier("serverSettings")
-                            Button(String(localized: "Remove…", bundle: .main), role: .destructive) { removing = server }
-                                .accessibilityIdentifier("removeServer")
+        SheetScaffold(String(localized: "Relay Servers", bundle: .main), width: .form, onEscape: { dismiss() }) {
+            VStack(alignment: .leading, spacing: WitermMetrics.Space.s) {
+                GroupBox {
+                    VStack(spacing: 0) {
+                        ForEach(servers.servers) { server in
+                            if server.id != servers.servers.first?.id { Divider() }
+                            serverRow(server)
                         }
-                        .accessibilityElement(children: .contain)
                     }
-                } footer: {
-                    if servers.isFull { Text(ServerList.Failure.full.message) }
+                }
+                if servers.isFull {
+                    Text(ServerList.Failure.full.message)
+                        .font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
                 }
             }
-            .formStyle(.grouped)
-            Divider()
-            HStack {
-                Button(String(localized: "Add Relay Server…", bundle: .main)) { editing = .add }
-                    .disabled(servers.isFull)
-                    .accessibilityIdentifier("addServer")
-                Spacer()
-                Button(String(localized: "Done", bundle: .main)) { dismiss() }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.defaultAction)
-            }
-            .controlSize(.large)
-            .buttonBorderShape(.capsule)
-            .padding(.horizontal, 20).padding(.vertical, 12)
+        } leading: {
+            Button(String(localized: "Add Relay Server…", bundle: .main)) { editing = .add }
+                .disabled(servers.isFull)
+                .accessibilityIdentifier("addServer")
+        } trailing: {
+            Button(String(localized: "Done", bundle: .main)) { dismiss() }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
         }
-        .frame(width: 560, height: 420)
-        .background(WitermTheme.surface)
-        .witermTint()
         .serverEditor($editing)
-        .alert(String(localized: "Remove Server?", bundle: .main), isPresented: Binding(
+        .alert(String(localized: "Remove Relay Server?", bundle: .main), isPresented: Binding(
             get: { removing != nil }, set: { if !$0 { removing = nil } })) {
             Button(String(localized: "Cancel", bundle: .main), role: .cancel) {}
             Button(String(localized: "Remove", bundle: .main), role: .destructive) {
@@ -486,11 +453,35 @@ struct ManageServersSheet: View {
         } message: {
             Text(String(localized: "This Mac stops accepting remote access through this server. Paired devices stay paired.", bundle: .main))
         }
-        .alert(String(localized: "Unable to Remove Server", bundle: .main), isPresented: $removalBlocked) {
+        .alert(String(localized: "Unable to Remove Relay Server", bundle: .main), isPresented: $removalBlocked) {
             Button(String(localized: "OK", bundle: .main), role: .cancel) {}
         } message: {
             Text(String(localized: "Remote access settings could not be updated. Try again.", bundle: .main))
         }
+    }
+
+    private func serverRow(_ server: ConnectionModel) -> some View {
+        HStack(spacing: WitermMetrics.Space.s) {
+            Image(systemName: server.statusSymbol)
+                .foregroundStyle(server.statusTone == .positive ? WitermTheme.positive
+                                 : server.statusTone == .warning ? WitermTheme.warning : WitermTheme.secondary)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: WitermMetrics.Space.xxs) {
+                Text(server.displayName)
+                Text(server.address).font(WitermType.codeInline).foregroundStyle(WitermTheme.secondary).textSelection(.enabled)
+            }
+            Spacer()
+            if servers.selected?.id == server.id {
+                StatusBadge(String(localized: "In Use", bundle: .main), systemImage: "checkmark")
+            }
+            Button(String(localized: "Edit…", bundle: .main)) { editing = .edit(server) }
+                .accessibilityIdentifier("serverSettings")
+            Button(String(localized: "Remove…", bundle: .main), role: .destructive) { removing = server }
+                .accessibilityIdentifier("removeServer")
+        }
+        .padding(.vertical, WitermMetrics.Space.s)
+        .padding(.horizontal, WitermMetrics.Space.xs)
+        .accessibilityElement(children: .contain)
     }
 }
 #endif

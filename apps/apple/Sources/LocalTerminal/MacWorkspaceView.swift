@@ -36,6 +36,9 @@ struct MacWorkspaceView: View {
     @AppStorage(SettingsTab.key) private var settingsTab = SettingsTab.general.rawValue
     @AppStorage(WelcomeTour.key) private var tourVersion = 0
     @State private var showingTour = false
+    @State private var connectingTooLong = false
+    @Environment(\.openSettings) private var openSettings
+    @Environment(NetworkStatus.self) private var network: NetworkStatus?
 
     var body: some View {
         NavigationSplitView {
@@ -98,6 +101,16 @@ struct MacWorkspaceView: View {
             }
         }
         .task {
+            #if DEBUG
+            // Test hook only (docs/verification.md): `-witerm.debug.appearance
+            // light|dark` fixes the appearance for screenshot runs. Never in
+            // the UI or in release builds; the app otherwise follows the system.
+            switch UserDefaults.standard.string(forKey: "witerm.debug.appearance") {
+            case "light"?: NSApp.appearance = NSAppearance(named: .aqua)
+            case "dark"?: NSApp.appearance = NSAppearance(named: .darkAqua)
+            default: break
+            }
+            #endif
             if tourVersion < WelcomeTour.version { showingTour = true }
             await refresh()
         }
@@ -312,12 +325,14 @@ struct MacWorkspaceView: View {
                         .contextMenu {
                             // The primary action first, the destructive one last.
                             if let session {
-                                Button(String(localized: "Disconnect", bundle: .main)) { ssh.disconnect(session) }
+                                Button(String(localized: "Disconnect", bundle: .main)) { ssh.disconnectChosen(session) }
                             } else {
                                 Button(String(localized: "Connect", bundle: .main)) { selection = .ssh(profile.id); sshUI.open(profile, model: ssh) }
                                     .disabled(ssh.connecting)
                             }
-                            Button(ssh.isFavorite(profile) ? String(localized: "Remove from Favorites", bundle: .main) : String(localized: "Add to Favorites", bundle: .main)) { ssh.toggleFavorite(profile) }
+                            // A checkmark shows the state, as on iOS.
+                            Toggle(String(localized: "Favorite", bundle: .main),
+                                   isOn: Binding(get: { ssh.isFavorite(profile) }, set: { _ in ssh.toggleFavorite(profile) }))
                             Divider()
                             if session == nil {
                                 Button(String(localized: "Edit Host…", bundle: .main)) { sshUI.open(profile, model: ssh, editing: true) }
@@ -354,6 +369,13 @@ struct MacWorkspaceView: View {
             // reachable is worth a glance. Setup lives in the Continue sheet.
             if footerRemoteState != nil { serverFooter }
         }
+        // Connecting… for more than 10 seconds becomes a reason, not a wait.
+        .task(id: footerRemoteState == .connecting) {
+            connectingTooLong = false
+            guard footerRemoteState == .connecting else { return }
+            try? await Task.sleep(for: .seconds(10))
+            if !Task.isCancelled { connectingTooLong = true }
+        }
         .task { remoteAccess.load() }
         .onChange(of: terminal.relays) { remoteAccess.load() }
         // The paired devices for Open On ▸, rechecked so a device that
@@ -381,31 +403,31 @@ struct MacWorkspaceView: View {
                 let keptPrivate = session.sharing?.keepPrivate == true
                 // Who else has this terminal open right now, at a glance.
                 let elsewhere = session.remoteDeviceNames
-                let elsewhereDetail = session.elsewhere(here: here)
+                let elsewhereDetail = terminal.elsewhere(session)
                 let doing = terminal.activity(for: session.id).summary(home: NSHomeDirectory())
                 Label {
-                    VStack(alignment: .leading, spacing: 1) {
-                        HStack(spacing: 6) {
+                    VStack(alignment: .leading, spacing: WitermMetrics.Space.xxs) {
+                        HStack(spacing: WitermMetrics.Space.xs) {
                             Text(session.name).lineLimit(1)
                             if keptPrivate {
                                 Image(systemName: "lock.fill")
-                                    .font(.caption)
+                                    .font(WitermType.meta)
                                     .foregroundStyle(.secondary)
                                     .help(String(localized: "Private: no paired device can open it", bundle: .main))
                                     .accessibilityHidden(true)
                             } else if shared {
                                 Image(systemName: "antenna.radiowaves.left.and.right")
-                                    .font(.caption)
+                                    .font(WitermType.meta)
                                     .foregroundStyle(.secondary)
                                     .help(String(localized: "Shared: every paired device can open it", bundle: .main))
                                     .accessibilityHidden(true)
                             }
                             if !elsewhere.isEmpty {
-                                HStack(spacing: 2) {
+                                HStack(spacing: WitermMetrics.Space.xxs) {
                                     Image(systemName: "laptopcomputer.and.iphone")
                                     if elsewhere.count > 1 { Text(verbatim: "\(elsewhere.count)").monospacedDigit() }
                                 }
-                                .font(.caption)
+                                .font(WitermType.meta)
                                 .foregroundStyle(WitermTheme.positive)
                                 .help(ListFormatter.localizedString(byJoining: elsewhereDetail))
                                 .accessibilityHidden(true)
@@ -413,7 +435,7 @@ struct MacWorkspaceView: View {
                             // Watching here: nothing typed in this window is sent.
                             if here == .view {
                                 Image(systemName: "eye")
-                                    .font(.caption)
+                                    .font(WitermType.meta)
                                     .foregroundStyle(.secondary)
                                     .help(String(localized: "Watching", bundle: .main))
                                     .accessibilityHidden(true)
@@ -422,7 +444,7 @@ struct MacWorkspaceView: View {
                         // What it was doing when last shown here.
                         if let doing {
                             Text(verbatim: doing)
-                                .font(.caption.monospaced())
+                                .font(WitermType.codeInline)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
@@ -488,7 +510,7 @@ struct MacWorkspaceView: View {
             }
         } else {
             Text(localStatusSummary)
-                .font(.callout)
+                .font(WitermType.rowDetail)
                 .foregroundStyle(.secondary)
                 .selectionDisabled()
         }
@@ -505,29 +527,35 @@ struct MacWorkspaceView: View {
     }
 
     private var serverFooter: some View {
-        SettingsLink {
-            HStack(spacing: 10) {
+        // A button rather than SettingsLink plus a tap gesture: the tab is set
+        // before Settings opens however it's pressed (click, Space with Full
+        // Keyboard Access, or VoiceOver).
+        Button {
+            settingsTab = SettingsTab.devices.rawValue
+            openSettings()
+        } label: {
+            HStack(spacing: WitermMetrics.Space.s) {
                 Image(systemName: footerSymbol)
                     .foregroundStyle(footerTint)
-                    .frame(width: 18)
+                    .frame(width: 16)
                     .accessibilityHidden(true)
                 Text(footerStatus)
-                    .font(.callout)
+                    .font(WitermType.rowDetail)
                     .lineLimit(1)
-                Spacer(minLength: 4)
+                    .truncationMode(.head)
+                Spacer(minLength: WitermMetrics.Space.xs)
                 Image(systemName: "gearshape")
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
+            .padding(.horizontal, WitermMetrics.Space.s)
+            .padding(.vertical, WitermMetrics.Space.s)
             .contentShape(Rectangle())
-            .witermHover()
-            .padding(.horizontal, 6)
-            .padding(.vertical, 4)
+            .witermHover(cornerRadius: WitermMetrics.Radius.s)
+            .padding(.horizontal, WitermMetrics.Space.s)
+            .padding(.vertical, WitermMetrics.Space.xs)
         }
         .buttonStyle(.plain)
-        .simultaneousGesture(TapGesture().onEnded { settingsTab = SettingsTab.devices.rawValue })
         .background(.bar)
         .overlay(alignment: .top) { Divider() }
         .help(String(localized: "Relay server: \(footerTitle). Opens Settings → Devices.", bundle: .main))
@@ -551,8 +579,24 @@ struct MacWorkspaceView: View {
                                     address: server.address)
     }
 
+    /// Why this Mac isn't reachable, when there's a reason worth showing:
+    /// no network at all, or the relay server still not accepting this Mac
+    /// after 10 seconds.
+    private enum FooterProblem { case offline, unreachable }
+
+    private var footerProblem: FooterProblem? {
+        if network?.online == false { return .offline }
+        if footerRemoteState == .connecting, connectingTooLong { return .unreachable }
+        return nil
+    }
+
     private var footerStatus: String {
         if let server = servers.selected, case .failed = server.phase { return server.statusTitle }
+        switch footerProblem {
+        case .offline?: return String(localized: "Remote access on · Offline", bundle: .main)
+        case .unreachable?: return String(localized: "Remote access on · Can’t reach the relay server", bundle: .main)
+        case nil: break
+        }
         switch footerRemoteState {
         case .serviceOff?: return String(localized: "Remote access on · Terminals off", bundle: .main)
         case .ready?: return String(localized: "Remote access on · Online", bundle: .main)
@@ -562,11 +606,16 @@ struct MacWorkspaceView: View {
 
     private var footerSymbol: String {
         if let server = servers.selected, case .failed = server.phase { return server.statusSymbol }
-        return footerRemoteState?.systemImage ?? "antenna.radiowaves.left.and.right"
+        switch footerProblem {
+        case .offline?: return WitermSymbols.offline
+        case .unreachable?: return WitermSymbols.problem
+        case nil: return footerRemoteState?.systemImage ?? WitermSymbols.sharing
+        }
     }
 
     private var footerTint: Color {
         if let server = servers.selected, case .failed = server.phase { return WitermTheme.warning }
+        if footerProblem != nil { return WitermTheme.warning }
         switch footerRemoteState {
         case .ready?: return WitermTheme.positive
         case .serviceOff?: return WitermTheme.warning
