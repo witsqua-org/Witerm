@@ -209,7 +209,7 @@ final class DevicePairingModel {
     }
 
     func revoke(_ grant: DeviceGrant) {
-        run(String(localized: "Revoking access…", bundle: .main)) { client in
+        run(String(localized: "Unpairing…", bundle: .main)) { client in
             try await client.revoke(grantID: grant.id, pairingID: grant.pairingID)
             return .revoked(grant.id)
         }

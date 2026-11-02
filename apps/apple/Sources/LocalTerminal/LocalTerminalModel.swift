@@ -14,32 +14,32 @@ struct LocalTerminalIssue: Equatable {
             || (error as? LocalAgentClientError) == .rejected(.readOnly)
         switch error as? LocalAgentClientError {
         case .rejected(.sessionBusy):
-            title = String(localized: "Session Is in Use Elsewhere", bundle: .main)
-            recovery = String(localized: "View only, or try again after disconnecting elsewhere.", bundle: .main)
+            title = String(localized: "Typing Somewhere Else", bundle: .main)
+            recovery = String(localized: "Watch for now, or stop typing there first.", bundle: .main)
         case .rejected(.readOnly):
-            title = String(localized: "This Connection Is View Only", bundle: .main)
-            recovery = String(localized: "Reconnect in view-only mode.", bundle: .main)
+            title = String(localized: "Can Only Watch", bundle: .main)
+            recovery = String(localized: "Watch this terminal instead.", bundle: .main)
         case .rejected(.dependencyMissing):
             title = String(localized: "tmux Required", bundle: .main)
-            recovery = String(localized: "Install tmux, then check the local terminal again.", bundle: .main)
+            recovery = String(localized: "Install tmux, then choose Check Again.", bundle: .main)
         case .rejected(.notFound):
-            title = String(localized: "Session Ended", bundle: .main)
-            recovery = String(localized: "Choose another session or create a new one.", bundle: .main)
+            title = String(localized: "Terminal Ended", bundle: .main)
+            recovery = String(localized: "Choose another terminal or start a new one.", bundle: .main)
         case .unsafeSocket:
-            title = String(localized: "Unable to Verify Local Service", bundle: .main)
-            recovery = String(localized: "Disable and reenable the local terminal.", bundle: .main)
+            title = String(localized: "Can’t Verify Terminals on This Mac", bundle: .main)
+            recovery = String(localized: "Turn terminals off and on again in Settings → General.", bundle: .main)
         case .backpressure, .rejected(.backpressure):
-            title = String(localized: "Terminal Connection Interrupted", bundle: .main)
-            recovery = String(localized: "Reconnect; paste long input in smaller sections.", bundle: .main)
+            title = String(localized: "Terminal Interrupted", bundle: .main)
+            recovery = String(localized: "Open it again. Paste long text in smaller parts.", bundle: .main)
         case .rejected(.invalidRequest):
             title = String(localized: "Unable to Complete This Action", bundle: .main)
-            recovery = String(localized: "Check the session name and count, then refresh and try again.", bundle: .main)
+            recovery = String(localized: "Check the terminal’s name, or end one you don’t need (16 at most).", bundle: .main)
         case .rejected(.unsupportedVersion), .invalidResponse:
-            title = String(localized: "Unrecognized Local Service Response", bundle: .main)
-            recovery = String(localized: "Update the app, then reenable the local terminal.", bundle: .main)
+            title = String(localized: "Terminals on This Mac Need an Update", bundle: .main)
+            recovery = String(localized: "Update Witerm, then turn terminals off and on again in Settings → General.", bundle: .main)
         default:
-            title = String(localized: "Unable to Connect to Local Terminal", bundle: .main)
-            recovery = String(localized: "Check that the local service is enabled, then try again.", bundle: .main)
+            title = String(localized: "Can’t Open the Terminal", bundle: .main)
+            recovery = String(localized: "Check that terminals are on in Settings → General, then try again.", bundle: .main)
         }
     }
 }
@@ -51,6 +51,25 @@ extension LocalSessionInfo {
         return (sharing?.attachments ?? []).compactMap(\.device)
             .filter { seen.insert($0.deviceID).inserted }
             .map(\.name)
+    }
+
+    /// Where else this terminal is open, in the shared words: "Typing on
+    /// iPhone", "Watching on iPad", and "Typing in another window" for a
+    /// second typist on this Mac (such as `witerm attach`). `here` is how this
+    /// window has it open, if it does, so its own attachment isn't counted.
+    func elsewhere(here: LocalAttachmentMode?) -> [String] {
+        let attachments = sharing?.attachments ?? []
+        var typing: [String] = [], watching: [String] = [], seen = Set<String>()
+        // A device typing anywhere counts as typing, whatever else it has open.
+        for attachment in attachments.sorted(by: { $0.mode == .control && $1.mode != .control }) {
+            guard let device = attachment.device, seen.insert(device.deviceID).inserted else { continue }
+            if attachment.mode == .control { typing.append(device.name) } else { watching.append(device.name) }
+        }
+        var phrases = typing.map { String(localized: "Typing on \($0)", bundle: .main) }
+        let localTypists = attachments.filter { $0.device == nil && $0.mode == .control }.count - (here == .control ? 1 : 0)
+        if localTypists > 0 { phrases.append(String(localized: "Typing in another window", bundle: .main)) }
+        phrases += watching.map { String(localized: "Watching on \($0)", bundle: .main) }
+        return phrases
     }
 }
 
@@ -93,7 +112,7 @@ final class LocalTerminalModel {
 
     func refresh(using client: LocalAgentClient) {
         guard !isWorking else { return }
-        begin(String(localized: "Checking local terminal…", bundle: .main)) { [weak self] expected in
+        begin(String(localized: "Loading terminals…", bundle: .main)) { [weak self] expected in
             let status = try await client.status()
             let sessions = status.tmuxAvailable ? try await client.sessions() : []
             try Task.checkCancellation()
@@ -148,7 +167,7 @@ final class LocalTerminalModel {
                 guard let self else { return }
                 self.sessions = self.sessions.map { $0.id == updated.id ? updated : $0 }
                 AccessibilityNotification.Announcement(shared
-                    ? String(localized: "Session Shared", bundle: .main)
+                    ? String(localized: "Terminal Shared", bundle: .main)
                     : String(localized: "Sharing Stopped", bundle: .main)).post()
             } catch {
                 self?.report(error)
@@ -167,8 +186,8 @@ final class LocalTerminalModel {
                 self.sessions = self.sessions.map { $0.id == updated.id ? updated : $0 }
                 let announcement: String
                 if let keepPrivate {
-                    announcement = keepPrivate ? String(localized: "Session Kept Private", bundle: .main)
-                        : String(localized: "Session Available to Paired Devices", bundle: .main)
+                    announcement = keepPrivate ? String(localized: "Terminal Kept Private", bundle: .main)
+                        : String(localized: "Terminal No Longer Private", bundle: .main)
                 } else {
                     announcement = remoteTyping == false ? String(localized: "Remote Typing Paused", bundle: .main)
                         : String(localized: "Remote Typing Allowed", bundle: .main)
@@ -187,7 +206,7 @@ final class LocalTerminalModel {
                 let updated = try await client.rename(sessionID: session.id, to: name)
                 guard let self else { return }
                 self.sessions = self.sessions.map { $0.id == updated.id ? updated : $0 }
-                AccessibilityNotification.Announcement(String(localized: "Session Renamed", bundle: .main)).post()
+                AccessibilityNotification.Announcement(String(localized: "Terminal Renamed", bundle: .main)).post()
             } catch {
                 self?.report(error)
             }
@@ -206,7 +225,7 @@ final class LocalTerminalModel {
 
     func create(name: String, using client: LocalAgentClient) {
         guard !isWorking else { return }
-        begin(String(localized: "Creating session…", bundle: .main)) { [weak self] expected in
+        begin(String(localized: "Starting terminal…", bundle: .main)) { [weak self] expected in
             let session = try await client.create(name: name)
             let sessions = try await client.sessions()
             try Task.checkCancellation()
@@ -238,7 +257,7 @@ final class LocalTerminalModel {
         selectedID = session.id
         self.mode = mode
         ended = false
-        begin(String(localized: "Connecting to session…", bundle: .main)) { [weak self] expected in
+        begin(String(localized: "Opening terminal…", bundle: .main)) { [weak self] expected in
             await previous?.disconnect()
             try Task.checkCancellation()
             let attachment = try await client.attach(
@@ -255,17 +274,33 @@ final class LocalTerminalModel {
         }
     }
 
+    /// How this window shows the session now, or nil when it doesn't.
+    func openMode(_ session: LocalSessionInfo) -> LocalAttachmentMode? {
+        selectedID == session.id && attachment != nil ? mode : nil
+    }
+
+    /// Start Typing and Stop Typing on the terminal shown here. The shell and
+    /// its screen stay; only whether keys are sent changes.
+    func setTyping(_ typing: Bool, using client: LocalAgentClient) {
+        guard let session = selectedSession, attachment != nil else { return }
+        let next: LocalAttachmentMode = typing ? .control : .view
+        guard next != mode else { return }
+        attach(session, using: client, mode: next)
+        AccessibilityNotification.Announcement(typing ? String(localized: "Typing", bundle: .main)
+                                               : String(localized: "Watching", bundle: .main)).post()
+    }
+
     func close(_ session: LocalSessionInfo, using client: LocalAgentClient) {
         guard !isWorking else { return }
         if selectedID == session.id { detach() }
-        begin(String(localized: "Ending session…", bundle: .main)) { [weak self] expected in
+        begin(String(localized: "Ending terminal…", bundle: .main)) { [weak self] expected in
             try await client.close(sessionID: session.id)
             let sessions = try await client.sessions()
             try Task.checkCancellation()
             guard let self, self.generation == expected else { return }
             self.sessions = sessions
             if self.selectedID == session.id { self.selectedID = nil }
-            AccessibilityNotification.Announcement(String(localized: "Session Ended", bundle: .main)).post()
+            AccessibilityNotification.Announcement(String(localized: "Terminal Ended", bundle: .main)).post()
         }
     }
 

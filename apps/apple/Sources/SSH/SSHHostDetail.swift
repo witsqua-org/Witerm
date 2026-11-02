@@ -31,7 +31,7 @@ struct SSHHostDetail: View {
                                 .help(String(localized: "Port Forwarding", bundle: .main))
                                 .accessibilityIdentifier("sshForwarding")
                             Button(String(localized: "Disconnect", bundle: .main), systemImage: "xmark.circle") { model.disconnect(session) }
-                                .help(String(localized: "Disconnect", bundle: .main))
+                                .help(String(localized: "Disconnect; the remote shell ends", bundle: .main))
                                 .accessibilityIdentifier("sshDisconnect")
                         }
                     }
@@ -82,6 +82,7 @@ struct SSHHostDetail: View {
                         ui.open(profile, model: model)
                     }
                     .disabled(model.connecting)
+                    .help(String(localized: "Sign in to \(profile.endpointSummary)", bundle: .main))
                     .accessibilityIdentifier("sshConnectProfile")
                     Button(String(localized: "Edit…", bundle: .main)) { ui.open(profile, model: model, editing: true) }
                         .buttonStyle(.bordered)
@@ -101,10 +102,12 @@ struct SSHHostDetail: View {
             Button(model.isFavorite(profile) ? String(localized: "Remove from Favorites", bundle: .main) : String(localized: "Add to Favorites", bundle: .main), systemImage: "star") { model.toggleFavorite(profile) }
             Button(String(localized: "Host Keys", bundle: .main), systemImage: "key") { ui.inspectKeys(profile) }
             Divider()
-            Button(String(localized: "Delete Connection", bundle: .main), systemImage: "trash", role: .destructive) { ui.remove(profile) }
+            Button(String(localized: "Delete Host…", bundle: .main), systemImage: "trash", role: .destructive) { ui.remove(profile) }
+                .accessibilityIdentifier("sshDeleteHostMenu")
         } label: {
             Label(String(localized: "More", bundle: .main), systemImage: "ellipsis.circle")
         }
+        .help(String(localized: "Favorites, host keys, and deleting this host", bundle: .main))
         .menuStyle(.borderlessButton)
         .fixedSize()
         .accessibilityLabel(String(localized: "Actions for \(String(profile.name))", bundle: .main))

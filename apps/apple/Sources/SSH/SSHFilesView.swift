@@ -175,6 +175,9 @@ struct SSHFilesView: View {
                                 } icon: { Image(systemName: entry.isDirectory ? "folder" : "doc") }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .contentShape(Rectangle())
+                                #if os(macOS)
+                                .witermHover(cornerRadius: 6)
+                                #endif
                             }.buttonStyle(.plain)
                             Menu {
                                 if !entry.isDirectory { Button(String(localized: "Download", bundle: .main)) { model.download(entry, connection: connection) } }

@@ -3,7 +3,7 @@ import AppKit
 import SwiftUI
 import WitermCore
 
-/// Continues one session on another device, or pairs a device without one.
+/// Continues one terminal on another device, or pairs a device without one.
 /// One question per step, one primary action each; steps already done are
 /// skipped. Server, remote access, pairing and per-device access all belong
 /// to `ServerList.selected`, the server every pairing screen shows.
@@ -184,12 +184,12 @@ struct ContinueOnDeviceSheet: View {
         case .server:
             switch blocker {
             case .noServer?:
-                return Primary(title: String(localized: "Add Server…", bundle: .main)) { editing = .add }
+                return Primary(title: String(localized: "Add Relay Server…", bundle: .main)) { editing = .add }
             case .serviceOff?:
                 if service.state == .requiresApproval {
                     return Primary(title: String(localized: "Open Login Items Settings", bundle: .main), action: service.openSettings)
                 }
-                return Primary(title: String(localized: "Enable Local Terminal", bundle: .main), disabled: service.state == .starting) {
+                return Primary(title: String(localized: "Turn On Terminals", bundle: .main), disabled: service.state == .starting) {
                     Task { await service.start(); remoteAccess.load() }
                 }
             case .checking?:
@@ -294,7 +294,7 @@ struct ContinueOnDeviceSheet: View {
             if let issue = pairing?.issue, step != .server, step != .invite, step != .inviteCode {
                 IssueBanner(issue.title, message: issue.recovery, systemImage: "exclamationmark.shield.fill") {
                     if issue.integrityFailure {
-                        Button(String(localized: "Leave This Pairing", bundle: .main)) { pairing?.resetPairing() }
+                        Button(String(localized: "Start Over", bundle: .main)) { pairing?.resetPairing() }
                     } else {
                         Button(String(localized: "Try Again", bundle: .main)) { pairing?.refresh() }
                     }
@@ -353,18 +353,18 @@ struct ContinueOnDeviceSheet: View {
                     Button(String(localized: "Edit Address…", bundle: .main)) { editing = .edit(server) }
                 }
             case .noContinuation?:
-                IssueBanner(String(localized: "\(server.displayName) doesn’t offer continuation", bundle: .main),
-                            message: String(localized: "Choose another server, or update this one.", bundle: .main))
+                IssueBanner(String(localized: "\(server.displayName) can’t pair devices", bundle: .main),
+                            message: String(localized: "Choose another relay server, or update this one.", bundle: .main))
             case .serviceOff?:
                 if let issue = service.issue { IssueBanner(issue) }
             case .remoteAccessOff?:
-                note(String(localized: "Paired devices reach only the sessions you allow, through this server.", bundle: .main))
+                note(String(localized: "Paired devices can open only the terminals you allow.", bundle: .main))
                 if let issue = remoteAccess.issue { IssueBanner(issue) }
             default:
                 EmptyView()
             }
         } else {
-            note(String(localized: "Add the continuation server your devices will use, such as witerm.example.com.", bundle: .main))
+            note(String(localized: "Add the relay server your devices will use, such as witerm.example.com.", bundle: .main))
         }
     }
 
@@ -402,19 +402,19 @@ struct ContinueOnDeviceSheet: View {
                       detail: nil, symbol: "plus", hue: nil) { choice = .new; autoAdvance = false }
                 .accessibilityIdentifier("continueNewDevice")
             ChoiceRow(selected: choice == .guest, title: String(localized: "Someone Else’s Device", bundle: .main),
-                      detail: String(localized: "A one-time invitation to this session only", bundle: .main),
+                      detail: String(localized: "A one-time invitation to this terminal only", bundle: .main),
                       symbol: "person.badge.plus", hue: nil) { choice = .guest; autoAdvance = false }
                 .accessibilityIdentifier("continueGuest")
             if session?.sharing?.keepPrivate == true, case .paired? = choice {
-                note(String(localized: "“\(sessionName)” is private. Allowing a device makes it reachable again.", bundle: .main))
+                note(String(localized: "“\(sessionName)” is private. Allowing a device turns that off.", bundle: .main))
             }
         }
     }
 
     private func deviceDetail(_ device: PairedDevice) -> String {
-        guard reaches(device) else { return String(localized: "Paired · can’t open “\(sessionName)” yet", bundle: .main) }
-        return typing(device) ? String(localized: "Paired · can open “\(sessionName)”", bundle: .main)
-            : String(localized: "Paired · can open “\(sessionName)” · view only", bundle: .main)
+        guard reaches(device) else { return String(localized: "Can’t open “\(sessionName)” yet", bundle: .main) }
+        return typing(device) ? String(localized: "Can watch and type in “\(sessionName)”", bundle: .main)
+            : String(localized: "Can only watch “\(sessionName)”", bundle: .main)
     }
 
     private func choosePairedDefault() {
@@ -484,6 +484,8 @@ struct ContinueOnDeviceSheet: View {
                 step = .server
             }
             .buttonStyle(.link)
+            .witermLinkPointer()
+            .help(String(localized: "Use another relay server", bundle: .main))
             .accessibilityIdentifier("continueChangeServer")
         }
         .font(.callout)
@@ -513,12 +515,12 @@ struct ContinueOnDeviceSheet: View {
             SessionReachPicker(reach: $reach, chosen: $chosen, sessions: reachableSessions, startingSession: session,
                                activity: activity)
             Form {
-                Toggle(String(localized: "Can Type", bundle: .main), isOn: $canType)
-                .accessibilityIdentifier("continueCanType")
+                PermissionPicker(canType: $canType)
+                    .accessibilityIdentifier("continueCanType")
             }
             .formStyle(.grouped)
             .scrollDisabled(true)
-            .frame(height: 56)
+            .frame(height: 96)
             .padding(.horizontal, -20)
         }
     }
@@ -556,19 +558,20 @@ struct ContinueOnDeviceSheet: View {
                 }
                 Divider()
                 if sessionID != nil {
-                    checkRow(typing(continuing) ? String(localized: "Can open “\(sessionName)” and type", bundle: .main)
-                             : String(localized: "Can open “\(sessionName)” · view only", bundle: .main))
+                    checkRow(typing(continuing) ? String(localized: "Can watch and type in “\(sessionName)”", bundle: .main)
+                             : String(localized: "Can only watch “\(sessionName)”", bundle: .main))
                 } else {
-                    checkRow(openSummary(policy(for: continuing)))
+                    checkRow((typing(continuing) ? PermissionPicker.canType : PermissionPicker.watchOnly)
+                             + " · " + MacDevicesView.reachSummary(policy(for: continuing), sessions: sessions))
                 }
                 if sessionID != nil {
                     Divider()
                     if let live {
-                        checkRow(live.mode == .control ? String(localized: "\(continuing.name) is connected · can type", bundle: .main)
-                                 : String(localized: "\(continuing.name) is connected · view only", bundle: .main))
+                        checkRow(live.mode == .control ? String(localized: "Typing on \(continuing.name)", bundle: .main)
+                                 : String(localized: "Watching on \(continuing.name)", bundle: .main))
                             .accessibilityIdentifier("continueConnected")
                     } else {
-                        waitRow(String(localized: "Waiting for \(continuing.name) to connect…", bundle: .main))
+                        waitRow(String(localized: "Waiting for \(continuing.name) to open “\(sessionName)”…", bundle: .main))
                     }
                 }
             }
@@ -615,12 +618,12 @@ struct ContinueOnDeviceSheet: View {
         }
         if case .working(let message) = invite?.phase { ActivityRow(message) }
         Form {
-            Section(String(localized: "Access", bundle: .main)) {
-                Picker(String(localized: "Access", bundle: .main), selection: $guestPermission) {
-                    Text(String(localized: "View Only", bundle: .main)).tag(PairingPermission.view)
+            Section {
+                Picker(String(localized: "What they can do", bundle: .main), selection: $guestPermission) {
+                    Text(PermissionPicker.watchOnly).tag(PairingPermission.view)
                     VStack(alignment: .leading) {
-                        Text(String(localized: "Can Type", bundle: .main))
-                        Text(String(localized: "You approve the device before it can type.", bundle: .main))
+                        Text(PermissionPicker.canType)
+                        Text(String(localized: "You approve their device first.", bundle: .main))
                             .font(.caption).foregroundStyle(WitermTheme.secondary)
                     }
                     .tag(PairingPermission.control)
@@ -674,7 +677,7 @@ struct ContinueOnDeviceSheet: View {
                 .padding(.horizontal, 14).padding(.vertical, 10)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(WitermTheme.statusFill, in: .rect(cornerRadius: 10, style: .continuous))
-            note(String(localized: "They can type in this session until the invitation ends.", bundle: .main))
+            note(String(localized: "They can watch and type in this terminal until the invitation ends.", bundle: .main))
         }
     }
 
@@ -861,17 +864,27 @@ struct ContinueOnDeviceSheet: View {
         }
     }
 
-    private func openSummary(_ access: LocalDeviceAccess) -> String {
-        if access.scope == .all { return String(localized: "Can open every session on this Mac", bundle: .main) }
-        switch access.sessionIDs.count {
-        case 0: return String(localized: "Can’t open any session yet", bundle: .main)
-        case 1: return String(localized: "Can open 1 session", bundle: .main)
-        default: return String(localized: "Can open \(access.sessionIDs.count) sessions", bundle: .main)
+}
+
+/// What another device may do, in the shared words: "Can watch and type" or
+/// "Can only watch". Never "View Only" or "Can Type" on its own.
+struct PermissionPicker: View {
+    @Binding var canType: Bool
+
+    static var canType: String { String(localized: "Can watch and type", bundle: .main) }
+    static var watchOnly: String { String(localized: "Can only watch", bundle: .main) }
+
+    var body: some View {
+        Picker(String(localized: "What it can do", bundle: .main), selection: $canType) {
+            Text(Self.canType).tag(true)
+            Text(Self.watchOnly).tag(false)
         }
+        .pickerStyle(.radioGroup)
+        .labelsHidden()
     }
 }
 
-/// Which sessions a device may open: the starting one, a chosen few, or all.
+/// Which terminals a device may open: the starting one, a chosen few, or all.
 struct SessionReachPicker: View {
     @Binding var reach: ContinueOnDeviceSheet.Reach
     @Binding var chosen: Set<String>
@@ -882,15 +895,15 @@ struct SessionReachPicker: View {
 
     var body: some View {
         Form {
-            Section(String(localized: "Can Open", bundle: .main)) {
-                Picker(String(localized: "Can Open", bundle: .main), selection: $reach) {
+            Section(String(localized: "Terminals", bundle: .main)) {
+                Picker(String(localized: "Terminals", bundle: .main), selection: $reach) {
                     if let startingSession {
                         Text(String(localized: "Only “\(startingSession.name)”", bundle: .main)).tag(ContinueOnDeviceSheet.Reach.only)
                     }
-                    Text(String(localized: "Sessions I Choose…", bundle: .main)).tag(ContinueOnDeviceSheet.Reach.chosen)
+                    Text(String(localized: "Terminals you choose", bundle: .main)).tag(ContinueOnDeviceSheet.Reach.chosen)
                     VStack(alignment: .leading) {
-                        Text(String(localized: "All Sessions on This Mac", bundle: .main))
-                        Text(String(localized: "Including sessions you start later. Private sessions stay hidden.", bundle: .main))
+                        Text(String(localized: "All terminals", bundle: .main))
+                        Text(String(localized: "Including ones you start later. Private ones stay hidden.", bundle: .main))
                             .font(.caption).foregroundStyle(WitermTheme.secondary)
                     }
                     .tag(ContinueOnDeviceSheet.Reach.all)
@@ -900,7 +913,7 @@ struct SessionReachPicker: View {
                 .accessibilityIdentifier("pairingScope")
                 if reach == .chosen {
                     if sessions.isEmpty {
-                        Text(String(localized: "No sessions yet. Choose later in Settings → Devices.", bundle: .main))
+                        Text(String(localized: "No terminals yet. Choose later in Settings → Devices.", bundle: .main))
                             .font(.caption).foregroundStyle(WitermTheme.secondary)
                     }
                     ForEach(sessions) { session in
@@ -909,7 +922,7 @@ struct SessionReachPicker: View {
                                              set: { if $0 { chosen.insert(session.id) } else { chosen.remove(session.id) } })) {
                             Text(session.name)
                             if shared {
-                                Text(String(localized: "Shared with every paired device", bundle: .main))
+                                Text(String(localized: "Shared: every paired device can open it", bundle: .main))
                             } else if let doing = activity(session.id) {
                                 Text(verbatim: doing).font(.caption.monospaced())
                             }
@@ -929,26 +942,26 @@ struct SessionReachPicker: View {
     }
 }
 
-/// The continuation server every pairing screen uses, shared through
+/// The relay server every pairing screen uses, shared through
 /// `ServerList.selected`; picking one here picks it everywhere.
 struct ContinuationServerPicker: View {
     @Environment(ServerList.self) private var servers
 
     var body: some View {
         if servers.servers.count > 1 {
-            Picker(String(localized: "Continuation Server", bundle: .main), selection: Binding(
+            Picker(String(localized: "Relay Server", bundle: .main), selection: Binding(
                 get: { servers.selected?.id },
                 set: { id in if let server = servers.server(id: id) { servers.select(server) } })) {
                 ForEach(servers.servers) { server in
                     Text(server.supportsRelay && server.supportsPairing || !server.phase.isAvailable
                          ? server.displayName
-                         : String(localized: "\(server.displayName) (doesn’t offer continuation)", bundle: .main))
+                         : String(localized: "\(server.displayName) (can’t pair devices)", bundle: .main))
                         .tag(Optional(server.id))
                 }
             }
             .accessibilityIdentifier("continuationServerPicker")
         } else if let server = servers.selected {
-            LabeledContent(String(localized: "Continuation Server", bundle: .main), value: server.displayName)
+            LabeledContent(String(localized: "Relay Server", bundle: .main), value: server.displayName)
         }
     }
 }
@@ -1019,6 +1032,8 @@ private struct ChoiceRow: View {
                     .strokeBorder(selected ? WitermTheme.accent.opacity(0.55) : WitermTheme.divider, lineWidth: 1)
             }
             .contentShape(Rectangle())
+            // Outermost, so the row's own hit shape doesn't hide the hover.
+            .witermHover(cornerRadius: 12)
         }
         .buttonStyle(.plain)
         .accessibilityValue(selected ? String(localized: "Selected", bundle: .main) : String(localized: "Not Selected", bundle: .main))

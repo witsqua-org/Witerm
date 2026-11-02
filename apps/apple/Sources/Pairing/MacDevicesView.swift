@@ -2,7 +2,7 @@
 import SwiftUI
 import WitermCore
 
-/// Settings → Devices: the continuation server, remote access through it,
+/// Settings → Devices: the relay server, remote access through it,
 /// the devices paired with this Mac and what each may open, and invitations
 /// still in effect. Pairing itself goes through `ContinueOnDeviceSheet`.
 struct MacDevicesView: View {
@@ -37,9 +37,9 @@ struct MacDevicesView: View {
                 .formStyle(.grouped)
             } else {
                 ContentUnavailableView {
-                    Label(String(localized: "Add a Continuation Server", bundle: .main), systemImage: "server.rack")
+                    Label(String(localized: "Add a Relay Server", bundle: .main), systemImage: "server.rack")
                 } actions: {
-                    Button(String(localized: "Add Server…", bundle: .main)) { editing = .add }
+                    Button(String(localized: "Add Relay Server…", bundle: .main)) { editing = .add }
                         .buttonStyle(.borderedProminent)
                         .accessibilityIdentifier("serverSettings")
                 }
@@ -102,7 +102,7 @@ struct MacDevicesView: View {
             Toggle(isOn: Binding(get: { remoteAccess.isEnabled(for: server.address) },
                                  set: { remoteAccess.setEnabled($0, address: server.address) })) {
                 Text(String(localized: "Allow Remote Access", bundle: .main))
-                Text(String(localized: "Paired devices reach only the sessions you allow, through this server.", bundle: .main))
+                Text(String(localized: "Paired devices can open only the terminals you allow.", bundle: .main))
             }
             .toggleStyle(.switch)
             .disabled(!remoteAccess.loaded || (service.state != .ready && !remoteAccess.isEnabled(for: server.address)))
@@ -127,7 +127,7 @@ struct MacDevicesView: View {
                     if service.state == .requiresApproval {
                         Button(String(localized: "Open Login Items Settings", bundle: .main), action: service.openSettings)
                     } else {
-                        Button(String(localized: "Enable Local Terminal", bundle: .main)) {
+                        Button(String(localized: "Turn On Terminals", bundle: .main)) {
                             Task { await service.start(); remoteAccess.load() }
                         }
                         .disabled(service.state == .starting)
@@ -139,11 +139,11 @@ struct MacDevicesView: View {
                     .accessibilityIdentifier("remoteAccessSettingsError")
             }
         } header: {
-            Text(String(localized: "Continuation Server", bundle: .main))
+            Text(String(localized: "Relay Server", bundle: .main))
         } footer: {
             HStack {
                 if server.phase.isAvailable, !server.supportsPairing {
-                    Text(String(localized: "This server doesn’t offer device pairing.", bundle: .main))
+                    Text(String(localized: "This relay server can’t pair devices.", bundle: .main))
                 }
                 Spacer()
                 Button(String(localized: "Manage Servers…", bundle: .main)) { managingServers = true }
@@ -180,6 +180,7 @@ struct MacDevicesView: View {
                     Spacer()
                     Button(String(localized: "Edit…", bundle: .main)) { editingDevice = device }
                         .accessibilityLabel(String(localized: "Edit \(device.name)", bundle: .main))
+                        .help(String(localized: "Change what \(device.name) can open and do, or unpair it", bundle: .main))
                         .accessibilityIdentifier("editDevice-\(device.id)")
                 }
             }
@@ -189,6 +190,7 @@ struct MacDevicesView: View {
             }
             Button(String(localized: "Pair a Device…", bundle: .main), systemImage: "plus") { pairingDevice = true }
                 .buttonStyle(.link)
+                .witermLinkPointer()
                 .disabled(agent == nil)
                 .accessibilityIdentifier("createPairingInvitation")
         } header: {
@@ -199,21 +201,21 @@ struct MacDevicesView: View {
     private func summary(_ grant: DeviceGrant) -> String {
         let access = accesses[grant.client.id] ?? .default(for: grant.client.id)
         let typing = grant.permission == .control && access.permission == .control
-        let mode = typing ? String(localized: "Can type", bundle: .main) : String(localized: "View only", bundle: .main)
+        let mode = typing ? PermissionPicker.canType : PermissionPicker.watchOnly
         return "\(mode) · \(Self.reachSummary(access, sessions: sessions))"
     }
 
-    /// What a device may open, in words: all, one named session, or a count.
+    /// What a device may open, in words: all, one named terminal, or a count.
     static func reachSummary(_ access: LocalDeviceAccess, sessions: [LocalSessionInfo]) -> String {
-        if access.scope == .all { return String(localized: "All sessions", bundle: .main) }
+        if access.scope == .all { return String(localized: "All terminals", bundle: .main) }
         let shared = sessions.filter { $0.sharing?.shared == true }.map(\.id)
         let reached = Set(access.sessionIDs + shared)
         switch reached.count {
-        case 0: return String(localized: "No sessions yet", bundle: .main)
+        case 0: return String(localized: "No terminals yet", bundle: .main)
         case 1:
             let name = sessions.first { reached.contains($0.id) }?.name ?? ""
             return String(localized: "Only “\(name)”", bundle: .main)
-        default: return String(localized: "\(reached.count) sessions", bundle: .main)
+        default: return String(localized: "\(reached.count) terminals", bundle: .main)
         }
     }
 
@@ -227,14 +229,13 @@ struct MacDevicesView: View {
                         .foregroundStyle(WitermTheme.secondary).accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
                         let name = sessions.first { $0.id == invite.sessionID }?.name ?? ""
-                        Text(invite.permission == .control ? String(localized: "\(name) · Can type", bundle: .main)
-                             : String(localized: "\(name) · View only", bundle: .main))
+                        Text("\(name) · " + (invite.permission == .control ? PermissionPicker.canType : PermissionPicker.watchOnly))
                         Text(invite.redeemed ? String(localized: "In use · until \(String(invite.expiresAt.formatted(date: .omitted, time: .shortened)))", bundle: .main)
                              : String(localized: "Not used yet", bundle: .main))
                             .font(.caption).foregroundStyle(WitermTheme.secondary)
                     }
                     Spacer()
-                    Button(String(localized: "End Access", bundle: .main), role: .destructive) {
+                    Button(String(localized: "End Invitation", bundle: .main), role: .destructive) {
                         guard let agent else { return }
                         let model = SessionInviteModel(serverAddress: server.address, sessionID: invite.sessionID)
                         model.end(invite, agent: agent)
@@ -274,7 +275,7 @@ struct MacDevicesView: View {
 }
 
 /// One paired device: what it may open and do on this Mac, its code, and
-/// revoking it. Each change is stored at once and can only narrow the grant.
+/// unpairing it. Each change is stored at once and can only narrow the grant.
 struct MacDeviceEditSheet: View {
     let pairing: DevicePairingModel
     let grant: DeviceGrant
@@ -285,7 +286,7 @@ struct MacDeviceEditSheet: View {
     @State private var access: LocalDeviceAccess
     @State private var reach: ContinueOnDeviceSheet.Reach
     @State private var chosen: Set<String>
-    @State private var revoking = false
+    @State private var unpairing = false
     @State private var problem: String?
 
     init(pairing: DevicePairingModel, grant: DeviceGrant, sessions: [LocalSessionInfo], access: LocalDeviceAccess,
@@ -323,17 +324,18 @@ struct MacDeviceEditSheet: View {
                     Form {
                         if grant.permission == .control {
                             Section {
-                                Toggle(String(localized: "Can Type", bundle: .main), isOn: Binding(
+                                PermissionPicker(canType: Binding(
                                     get: { access.permission == .control },
                                     set: { save(permission: $0 ? .control : .view) }))
                                     .accessibilityIdentifier("deviceCanType-\(device.id)")
-                                Toggle(String(localized: "Type While This Mac Is Attached", bundle: .main), isOn: Binding(
+                                Toggle(String(localized: "Type at the Same Time as This Mac", bundle: .main), isOn: Binding(
                                     get: { access.coTyping }, set: { save(coTyping: $0) }))
                                     .disabled(access.permission != .control)
+                                    .help(String(localized: "Off: it can type only while nobody types on this Mac", bundle: .main))
                                     .accessibilityIdentifier("deviceCoTyping-\(device.id)")
                             }
                         } else {
-                            Section { Text(String(localized: "This device was paired as view only. Pair it again to let it type.", bundle: .main)) }
+                            Section { Text(String(localized: "Paired to only watch. To let it type, pair it again.", bundle: .main)) }
                         }
                         Section {
                             LabeledContent(String(localized: "Device Code", bundle: .main)) {
@@ -344,13 +346,13 @@ struct MacDeviceEditSheet: View {
                     }
                     .formStyle(.grouped)
                     .scrollDisabled(true)
-                    .frame(height: grant.permission == .control ? 190 : 150)
+                    .frame(height: grant.permission == .control ? 220 : 150)
                     .padding(.horizontal, 4)
                 }
             }
             Divider()
             HStack {
-                Button(String(localized: "Revoke Access…", bundle: .main), role: .destructive) { revoking = true }
+                Button(String(localized: "Unpair…", bundle: .main), role: .destructive) { unpairing = true }
                     .accessibilityIdentifier("revokeGrant-\(grant.id)")
                 Spacer()
                 Button(String(localized: "Done", bundle: .main)) { dismiss() }
@@ -366,14 +368,14 @@ struct MacDeviceEditSheet: View {
         .witermTint()
         .onChange(of: reach) { _, _ in save() }
         .onChange(of: chosen) { _, _ in save() }
-        .alert(String(localized: "Revoke Device Access?", bundle: .main), isPresented: $revoking) {
+        .alert(String(localized: "Unpair “\(device.name)”?", bundle: .main), isPresented: $unpairing) {
             Button(String(localized: "Cancel", bundle: .main), role: .cancel) {}
-            Button(String(localized: "Revoke Access", bundle: .main), role: .destructive) {
+            Button(String(localized: "Unpair", bundle: .main), role: .destructive) {
                 pairing.revoke(grant)
                 dismiss()
             }
         } message: {
-            Text(String(localized: "This device will need to pair again to regain access.", bundle: .main))
+            Text(String(localized: "It can no longer open terminals on this Mac. Pairing again restores it.", bundle: .main))
         }
     }
 
@@ -399,7 +401,7 @@ struct MacDeviceEditSheet: View {
     }
 }
 
-/// Every saved continuation server: add, edit, check and remove. The one in
+/// Every saved relay server: add, edit, check and remove. The one in
 /// use for new pairings is chosen in Devices.
 struct ManageServersSheet: View {
     @Environment(ServerList.self) private var servers
@@ -411,7 +413,7 @@ struct ManageServersSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(String(localized: "Continuation Servers", bundle: .main)).font(.title2.weight(.semibold))
+                Text(String(localized: "Relay Servers", bundle: .main)).font(.title2.weight(.semibold))
                 Text(String(localized: "Up to 8. Your devices use all of them at once. New pairings use the one chosen in Devices.", bundle: .main))
                     .font(.subheadline).foregroundStyle(WitermTheme.secondary)
             }
@@ -446,7 +448,7 @@ struct ManageServersSheet: View {
             .formStyle(.grouped)
             Divider()
             HStack {
-                Button(String(localized: "Add Server…", bundle: .main)) { editing = .add }
+                Button(String(localized: "Add Relay Server…", bundle: .main)) { editing = .add }
                     .disabled(servers.isFull)
                     .accessibilityIdentifier("addServer")
                 Spacer()
@@ -473,7 +475,7 @@ struct ManageServersSheet: View {
                 } catch { removalBlocked = true }
             }
         } message: {
-            Text(String(localized: "This Mac stops accepting remote access through this server. Pairings on the server are not revoked.", bundle: .main))
+            Text(String(localized: "This Mac stops accepting remote access through this server. Paired devices stay paired.", bundle: .main))
         }
         .alert(String(localized: "Unable to Remove Server", bundle: .main), isPresented: $removalBlocked) {
             Button(String(localized: "OK", bundle: .main), role: .cancel) {}

@@ -69,6 +69,31 @@ final class LocalSessionFlowTests: XCTestCase {
         app.typeKey("f", modifierFlags: .command)
         XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 5), "Find did not open the terminal's find bar")
         app.typeKey(.escape, modifierFlags: [])
+
+        // The row's menu shows the current state and changes with it: Stop
+        // Typing while typing; afterwards the row, the toolbar, and the menu
+        // all say watching, and Start Typing switches back.
+        func value(_ text: String) -> XCTNSPredicateExpectation {
+            XCTNSPredicateExpectation(predicate: NSPredicate(format: "value BEGINSWITH %@", text), object: createdRow)
+        }
+        XCTAssertEqual(XCTWaiter.wait(for: [value("Typing")], timeout: 5), .completed, createdRow.value as? String ?? "")
+        createdRow.rightClick()
+        let stop = app.menuItems["watchLocalSession"]
+        XCTAssertTrue(stop.waitForExistence(timeout: 5))
+        XCTAssertEqual(stop.title, "Stop Typing")
+        stop.click()
+        XCTAssertEqual(XCTWaiter.wait(for: [value("Watching")], timeout: 10), .completed, createdRow.value as? String ?? "")
+        XCTAssertTrue(app.buttons["startTypingLocal"].waitForExistence(timeout: 5), "No Start Typing in the toolbar while watching")
+        XCTAssertTrue(app.windows.firstMatch.staticTexts["Watching"].exists || app.windows.firstMatch.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == 'Watching' OR value == 'Watching'")).firstMatch.exists,
+                      "The window subtitle doesn't say Watching")
+        createdRow.rightClick()
+        let start = app.menuItems["typeLocalSession"]
+        XCTAssertTrue(start.waitForExistence(timeout: 5))
+        XCTAssertEqual(start.title, "Start Typing")
+        start.click()
+        XCTAssertEqual(XCTWaiter.wait(for: [value("Typing")], timeout: 10), .completed, createdRow.value as? String ?? "")
+        XCTAssertTrue(app.buttons["startTypingLocal"].waitForNonExistence(timeout: 5))
     }
 
     /// Cleanup after an interrupted run: ends sessions this suite created, by

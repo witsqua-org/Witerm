@@ -41,7 +41,7 @@ import XCTest
         XCTAssertTrue(app.staticTexts["未记住此主机密钥"].waitForExistence(timeout: 5))
         app.buttons["完成"].firstMatch.click()
         menu.click()
-        app.menuItems["删除连接"].click()
+        app.menuItems["sshDeleteHostMenu"].click()
         app.buttons["删除"].firstMatch.click()
         let removed = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "exists == false"),

@@ -47,19 +47,21 @@ struct MacWorkspaceView: View {
             // The list refreshes on its own; ⌘R stays in the View menu.
             ToolbarItem(placement: .navigation) {
                 Menu {
-                    Button(String(localized: "New Terminal Session", bundle: .main), systemImage: "terminal", action: newSession)
+                    Button(String(localized: "New Terminal", bundle: .main), systemImage: "terminal", action: newSession)
                         .disabled(!canCreateSession)
                         .accessibilityIdentifier("newLocalSession")
-                    Button(String(localized: "New SSH Connection", bundle: .main), systemImage: "network", action: sshUI.presentNew)
+                        .help(LocalTerminalHelp.newTerminal)
+                    Button(String(localized: "Add SSH Host…", bundle: .main), systemImage: "network", action: sshUI.presentNew)
                         .disabled(ssh.connecting)
                         .accessibilityIdentifier("newSSHProfile")
+                        .help(LocalTerminalHelp.addSSHHost)
                 } label: {
                     Label(String(localized: "New", bundle: .main), systemImage: "plus")
                 } primaryAction: {
                     if canCreateSession { newSession() } else { sshUI.presentNew() }
                 }
                 .accessibilityIdentifier("newMenu")
-                .help(String(localized: "New Terminal Session", bundle: .main))
+                .help(LocalTerminalHelp.newTerminal)
             }
         }
         .focusedSceneValue(\.workspaceActions, workspaceActions)
@@ -75,20 +77,20 @@ struct MacWorkspaceView: View {
                 terminal.activity(for: id).summary(home: NSHomeDirectory())
             }
         }
-        .alert(String(localized: "End Terminal Session?", bundle: .main), isPresented: Binding(get: { endingSession != nil }, set: { if !$0 { endingSession = nil } })) {
+        .alert(String(localized: "End “\(endingSession?.name ?? "")”?", bundle: .main), isPresented: Binding(get: { endingSession != nil }, set: { if !$0 { endingSession = nil } })) {
             Button(String(localized: "Cancel", bundle: .main), role: .cancel) { endingSession = nil }
-            Button(String(localized: "End Session", bundle: .main), role: .destructive) {
+            Button(String(localized: "End Terminal", bundle: .main), role: .destructive) {
                 if let session = endingSession, let client = service.client { terminal.close(session, using: client) }
                 endingSession = nil
             }
         } message: {
-            Text(String(localized: "Programs in this session will be terminated. Unsaved changes may be lost.", bundle: .main))
+            Text(String(localized: "Its shell and the programs in it stop, here and on every device. Unsaved work in them is lost.", bundle: .main))
         }
         .sheet(isPresented: $showingTour) {
             MacWelcomeTour(service: service) { finished in
                 tourVersion = WelcomeTour.version
                 showingTour = false
-                // Land on the first useful thing: a new session, ready to type.
+                // Land on the first useful thing: a new terminal, ready to type.
                 if finished, canCreateSession, terminal.sessions.isEmpty { newSession() }
             }
         }
@@ -167,6 +169,11 @@ struct MacWorkspaceView: View {
         if let session = selectedLocalSession {
             actions.renameSession = { renamingSession = session }
             actions.endSession = { endingSession = session }
+            if let mode = terminal.openMode(session), let client = service.client {
+                actions.typingHere = mode == .control
+                actions.setTyping = { terminal.setTyping($0, using: client) }
+                actions.leave = { terminal.detach() }
+            }
             actions.remoteTypingPaused = session.sharing?.remoteTyping == false
             if session.sharing?.keepPrivate != true, let client = service.client {
                 let paused = actions.remoteTypingPaused
@@ -287,12 +294,14 @@ struct MacWorkspaceView: View {
                             } else {
                                 Button(String(localized: "Connect", bundle: .main)) { selection = .ssh(profile.id); sshUI.open(profile, model: ssh) }
                                     .disabled(ssh.connecting)
-                                Button(String(localized: "Edit Connection", bundle: .main)) { sshUI.open(profile, model: ssh, editing: true) }
+                                Button(String(localized: "Edit Host…", bundle: .main)) { sshUI.open(profile, model: ssh, editing: true) }
                                     .disabled(ssh.connecting)
+                                    .accessibilityIdentifier("sshEditHostMenu")
                             }
                             Button(String(localized: "Host Keys", bundle: .main)) { sshUI.inspectKeys(profile) }
                             Divider()
-                            Button(String(localized: "Delete Connection", bundle: .main), role: .destructive) { sshUI.remove(profile) }
+                            Button(String(localized: "Delete Host…", bundle: .main), role: .destructive) { sshUI.remove(profile) }
+                                .accessibilityIdentifier("sshDeleteHostMenu")
                         }
                 }
                 // Importing stays in File; one way in here is enough.
@@ -300,13 +309,14 @@ struct MacWorkspaceView: View {
                     Button(String(localized: "Add SSH Host…", bundle: .main), systemImage: "plus", action: sshUI.presentNew)
                         .buttonStyle(.borderless)
                         .foregroundStyle(.secondary)
+                        .help(LocalTerminalHelp.addSSHHost)
                         .accessibilityIdentifier("addSSHHostSidebar")
                 }
             }
         }
         .listStyle(.sidebar)
         .onKeyPress(.return) { openSelection() ? .handled : .ignored }
-        .searchable(text: $search, prompt: String(localized: "Search Sessions and Hosts", bundle: .main))
+        .searchable(text: $search, prompt: String(localized: "Search Terminals and Hosts", bundle: .main))
         // Native selection: the row fills with the tint behind white text, so
         // the sidebar keeps the system accent rather than the app's ink.
         .tint(Color.accentColor)
@@ -324,11 +334,14 @@ struct MacWorkspaceView: View {
     private var localRows: some View {
         if service.state == .ready, terminal.tmuxAvailable {
             ForEach(terminal.sessions.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) }) { session in
-                let attached = terminal.selectedID == session.id && terminal.attachment != nil
+                // How this window has it open, if it does.
+                let here = terminal.openMode(session)
+                let attached = here != nil
                 let shared = session.sharing?.shared == true
                 let keptPrivate = session.sharing?.keepPrivate == true
-                // Who else has this session open right now, at a glance.
+                // Who else has this terminal open right now, at a glance.
                 let elsewhere = session.remoteDeviceNames
+                let elsewhereDetail = session.elsewhere(here: here)
                 let doing = terminal.activity(for: session.id).summary(home: NSHomeDirectory())
                 Label {
                     VStack(alignment: .leading, spacing: 1) {
@@ -338,13 +351,13 @@ struct MacWorkspaceView: View {
                                 Image(systemName: "lock.fill")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
-                                    .help(String(localized: "Kept private from every paired device", bundle: .main))
+                                    .help(String(localized: "Private: no paired device can open it", bundle: .main))
                                     .accessibilityHidden(true)
                             } else if shared {
                                 Image(systemName: "antenna.radiowaves.left.and.right")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
-                                    .help(String(localized: "Shared with paired devices", bundle: .main))
+                                    .help(String(localized: "Shared: every paired device can open it", bundle: .main))
                                     .accessibilityHidden(true)
                             }
                             if !elsewhere.isEmpty {
@@ -354,8 +367,16 @@ struct MacWorkspaceView: View {
                                 }
                                 .font(.caption)
                                 .foregroundStyle(WitermTheme.positive)
-                                .help(String(localized: "Open on \(ListFormatter.localizedString(byJoining: elsewhere))", bundle: .main))
+                                .help(ListFormatter.localizedString(byJoining: elsewhereDetail))
                                 .accessibilityHidden(true)
+                            }
+                            // Watching here: nothing typed in this window is sent.
+                            if here == .view {
+                                Image(systemName: "eye")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .help(String(localized: "Watching", bundle: .main))
+                                    .accessibilityHidden(true)
                             }
                         }
                         // What it was doing when last shown here.
@@ -373,18 +394,28 @@ struct MacWorkspaceView: View {
                 }
                 .tag(MacDestination.local(session.id))
                 .accessibilityLabel(session.name)
-                .accessibilityValue([attached ? String(localized: "Connected", bundle: .main) : nil,
+                .accessibilityValue([here == .control ? String(localized: "Typing", bundle: .main)
+                                        : here == .view ? String(localized: "Watching", bundle: .main) : nil,
                                      keptPrivate ? String(localized: "Kept private", bundle: .main)
                                         : shared ? String(localized: "Shared", bundle: .main) : nil,
-                                     elsewhere.isEmpty ? nil
-                                        : String(localized: "Open on \(ListFormatter.localizedString(byJoining: elsewhere))", bundle: .main),
+                                     elsewhereDetail.isEmpty ? nil : ListFormatter.localizedString(byJoining: elsewhereDetail),
                                      doing]
                     .compactMap { $0 }.joined(separator: ", "))
                 .accessibilityIdentifier("localSession-\(session.id)")
                 .contextMenu {
                     if let client = service.client {
-                        Button(String(localized: "Connect", bundle: .main)) { terminal.attach(session, using: client, mode: .control) }
-                        Button(String(localized: "View Only", bundle: .main)) { terminal.attach(session, using: client, mode: .view) }
+                        // Shown here: the switch, titled by what it does next,
+                        // and Leave. Not shown: the two ways to open it.
+                        if let here {
+                            TypingMenuItems(mode: here) { terminal.setTyping($0, using: client) }
+                            Button(String(localized: "Leave", bundle: .main), systemImage: "rectangle.portrait.and.arrow.right") { terminal.detach() }
+                                .accessibilityIdentifier("leaveLocalSession")
+                        } else {
+                            Button(LocalTerminalHelp.open, systemImage: "keyboard") { terminal.attach(session, using: client, mode: .control) }
+                                .accessibilityIdentifier("typeLocalSession")
+                            Button(String(localized: "Watch", bundle: .main), systemImage: "eye") { terminal.attach(session, using: client, mode: .view) }
+                                .accessibilityIdentifier("watchLocalSession")
+                        }
                         Divider()
                         Button(String(localized: "Continue on Another Device…", bundle: .main)) { continuing = ContinueRequest(sessionID: session.id) }
                             .accessibilityIdentifier("continueOnDeviceMenu")
@@ -396,17 +427,18 @@ struct MacWorkspaceView: View {
                         }
                         Divider()
                         Button(String(localized: "Rename…", bundle: .main)) { renamingSession = session }
-                        Button(String(localized: "End Session", bundle: .main), role: .destructive) { endingSession = session }
+                        Button(String(localized: "End Terminal…", bundle: .main), role: .destructive) { endingSession = session }
                             .accessibilityIdentifier("endSessionMenu")
                     }
                 }
                 .disabled(terminal.isWorking)
             }
             if terminal.sessions.isEmpty {
-                Button(String(localized: "New Terminal Session", bundle: .main), systemImage: "plus", action: newSession)
+                Button(String(localized: "New Terminal", bundle: .main), systemImage: "plus", action: newSession)
                     .buttonStyle(.borderless)
                     .foregroundStyle(.secondary)
                     .disabled(!canCreateSession)
+                    .help(LocalTerminalHelp.newTerminal)
                     .accessibilityIdentifier("newLocalSessionSidebar")
             }
         } else {
@@ -420,10 +452,10 @@ struct MacWorkspaceView: View {
     private var localStatusSummary: String {
         if service.state == .ready { return String(localized: "tmux Required", bundle: .main) }
         switch service.state {
-        case .starting: return String(localized: "Enabling local terminal…", bundle: .main)
-        case .requiresApproval: return String(localized: "Waiting for background approval", bundle: .main)
-        case .notRegistered: return String(localized: "Local terminal is off", bundle: .main)
-        case .unavailable, .ready: return String(localized: "Local Terminal Unavailable", bundle: .main)
+        case .starting: return String(localized: "Turning on terminals…", bundle: .main)
+        case .requiresApproval: return String(localized: "Waiting for approval in System Settings", bundle: .main)
+        case .notRegistered: return String(localized: "Terminals are off", bundle: .main)
+        case .unavailable, .ready: return String(localized: "Terminals not responding", bundle: .main)
         }
     }
 
@@ -442,23 +474,26 @@ struct MacWorkspaceView: View {
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
             }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
             .contentShape(Rectangle())
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .witermHover()
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
         }
         .buttonStyle(.plain)
         .simultaneousGesture(TapGesture().onEnded { settingsTab = SettingsTab.devices.rawValue })
         .background(.bar)
         .overlay(alignment: .top) { Divider() }
-        .help(footerTitle)
-        .accessibilityLabel(String(localized: "Continuation server: \(footerTitle), \(footerStatus)", bundle: .main))
-        .accessibilityHint(String(localized: "Opens Settings", bundle: .main))
+        .help(String(localized: "Relay server: \(footerTitle). Opens Settings → Devices.", bundle: .main))
+        .accessibilityLabel(String(localized: "Relay server: \(footerTitle), \(footerStatus)", bundle: .main))
+        .accessibilityHint(String(localized: "Opens Settings → Devices", bundle: .main))
         .accessibilityIdentifier("serverStatusFooter")
     }
 
     /// The server new pairings go through, the same one Settings → Devices shows.
     private var footerTitle: String {
-        servers.selected?.displayName ?? String(localized: "No Continuation Server", bundle: .main)
+        servers.selected?.displayName ?? String(localized: "No Relay Server", bundle: .main)
     }
 
     /// What the background service reports for the selected server, not only
@@ -474,7 +509,7 @@ struct MacWorkspaceView: View {
     private var footerStatus: String {
         if let server = servers.selected, case .failed = server.phase { return server.statusTitle }
         switch footerRemoteState {
-        case .serviceOff?: return String(localized: "Remote access on · Local terminal off", bundle: .main)
+        case .serviceOff?: return String(localized: "Remote access on · Terminals off", bundle: .main)
         case .ready?: return String(localized: "Remote access on · Online", bundle: .main)
         case .connecting?, .off?, nil: return String(localized: "Remote access on · Connecting…", bundle: .main)
         }

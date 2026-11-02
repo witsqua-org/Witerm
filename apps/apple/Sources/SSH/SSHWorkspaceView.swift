@@ -248,7 +248,7 @@ struct SSHTrustView: View {
                             Text(String(localized: "First Connection to This Host", bundle: .main))
                                 .font(.headline)
                                 .fixedSize(horizontal: false, vertical: true)
-                            Text(String(localized: "Compare the host fingerprint through a trusted channel before continuing.", bundle: .main))
+                            Text(String(localized: "Check that this matches the fingerprint the host's owner gives you.", bundle: .main))
                                 .font(.subheadline)
                                 .foregroundStyle(WitermTheme.secondary)
                                 .fixedSize(horizontal: false, vertical: true)

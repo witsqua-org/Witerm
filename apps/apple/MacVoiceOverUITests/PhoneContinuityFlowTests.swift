@@ -105,7 +105,8 @@ final class PhoneContinuityFlowTests: XCTestCase {
                     // The row can be out of reach; Terminal → End Session acts
                     // on the selected session, which the title shows is this one.
                     app.menuBars.menuBarItems["Terminal"].click()
-                    app.menuBars.menuItems["End Session"].click()
+                    app.menuBars.menuItems.matching(NSPredicate(
+                        format: "title == 'End Terminal…' OR title == 'End Session'")).firstMatch.click()
                 } else { return }
                 let confirm = app.buttons["action-button-1"]
                 if confirm.waitForExistence(timeout: 5) { confirm.click() }

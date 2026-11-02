@@ -24,8 +24,14 @@ struct SnippetSections: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
+                    #if os(macOS)
+                    .witermHover(cornerRadius: 6)
+                    #endif
                 }
                 .buttonStyle(.plain)
+                #if os(macOS)
+                .help(String(localized: "Edit snippet", bundle: .main))
+                #endif
                 .accessibilityHint(String(localized: "Edit snippet", bundle: .main))
                 .contextMenu {
                     Button(String(localized: "Delete", bundle: .main), systemImage: "trash", role: .destructive) { remove(snippet.id) }

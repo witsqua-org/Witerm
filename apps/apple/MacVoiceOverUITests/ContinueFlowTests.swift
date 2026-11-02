@@ -103,12 +103,16 @@ final class ContinueFlowTests: XCTestCase {
         app.typeKey(",", modifierFlags: .command)
         XCTAssertTrue(app.windows["General"].firstMatch.waitForExistence(timeout: 10))
         app.activate()
-        let disable = app.buttons["Disable Local Terminal…"].firstMatch
-        let enable = app.buttons["Enable Local Terminal"].firstMatch
+        // Identifiers, with the labels before Round 8 as a fallback, so the
+        // same runner can turn off an older installed app.
+        let disable = app.buttons.matching(NSPredicate(
+            format: "identifier == 'turnOffTerminals' OR label == 'Disable Local Terminal…'")).firstMatch
+        let enable = app.buttons.matching(NSPredicate(
+            format: "identifier == 'turnOnTerminals' OR label == 'Enable Local Terminal'")).firstMatch
         if action == "off" {
             XCTAssertTrue(disable.waitForExistence(timeout: 10), "the service should be on before turning it off")
             disable.click()
-            let confirm = app.buttons["Disable"].firstMatch
+            let confirm = app.buttons.matching(NSPredicate(format: "label == 'Turn Off' OR label == 'Disable'")).firstMatch
             XCTAssertTrue(confirm.waitForExistence(timeout: 5))
             confirm.click()
             XCTAssertTrue(enable.waitForExistence(timeout: 15), "the service did not turn off")

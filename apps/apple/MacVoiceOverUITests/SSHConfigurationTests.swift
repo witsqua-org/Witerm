@@ -10,7 +10,7 @@ import XCTest
         app.launch()
         addTeardownBlock { await MainActor.run { app.terminate() } }
         app.menuBars.menuBarItems["File"].click()
-        app.menuItems["New SSH Connection"].click()
+        app.menuItems["Add SSH Host…"].click()
         let host = app.textFields["sshHostAddress"]
         XCTAssertTrue(host.waitForExistence(timeout: 5))
         host.click(); host.typeText("fixture@example.invalid")
@@ -32,12 +32,12 @@ import XCTest
                 if app.buttons["Cancel"].exists { app.buttons["Cancel"].click() }
                 guard row.exists else { return }
                 row.rightClick()
-                app.menuItems["Delete Connection"].click()
+                app.menuItems["sshDeleteHostMenu"].click()
             }
         }
         XCTAssertFalse(app.buttons["sshTrustHost"].exists)
         row.rightClick()
-        app.menuItems["Edit Connection"].click()
+        app.menuItems["sshEditHostMenu"].click()
         XCTAssertTrue(app.buttons["sshSaveProfile"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["sshConnect"].exists)
         app.buttons["sshSaveProfile"].click()
