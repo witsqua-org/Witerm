@@ -20,7 +20,7 @@ Saved hosts are under **SSH Hosts** in the Mac sidebar. On iOS they're in **Term
 - Ignored: `Match`, `Include`, `IdentityFile`, agents, and every other option. No credential comes across; you enter it on first connect, and each host key is verified then.
 - Hosts already saved with the same endpoints are skipped. Entries without a user (iOS has no default user) or with an unusable jump chain are listed with the reason.
 
-**Deleting a host** is immediate and can be undone for 10 seconds. The undo snapshot, including saved credentials, is held in memory only for that time.
+**Deleting a host** is immediate and can be undone for 10 seconds. Its saved credentials stay in the Keychain, protected and unread, for that time; Undo brings the host back to them, and otherwise they're deleted when the time runs out (or at the next launch if the app quit first).
 
 **Not supported:** RSA keys (the engine would sign with SHA-1), hardware keys, agent forwarding, certificates, and keyboard-interactive or MFA logins.
 
@@ -47,9 +47,14 @@ Saved hosts are under **SSH Hosts** in the Mac sidebar. On iOS they're in **Term
 ## Credentials
 
 - By default, credentials live in memory for one connection only.
-- **Save Credentials on This Device** opts into the local Keychain: not synced, readable only while unlocked. Saving the host alone doesn't opt in.
-- Host profiles never contain passwords, keys, or passphrases.
+- **Save Credentials on This Device** opts into the local Keychain. Every saved password, key, and passphrase is protected by device-owner authentication: Keychain access control `.userPresence` (Face ID, Touch ID, or Optic ID, with the device passcode, or the Mac's login password, as the fallback) and `kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly`, never synced. The form says what protects them in one line ("Face ID protects them."). Saving the host alone doesn't opt in.
+- **Without a passcode** nothing can be saved: the switch is off and the line says to set one. Credentials then stay in memory for the session. There is no unprotected or file fallback.
+- **Connecting with saved credentials** asks once per attempt ("Sign in to “*host*”"), and the same authentication reads every hop of a jump-host chain. Cancelling ends the attempt quietly and opens the form to type the password for that attempt; so does **Enter Password**, offered after a failed match. A credential typed then doesn't replace the saved one unless you save it. Editing a host with saved credentials asks first; cancelling leaves them as they are.
+- **Migration.** Credentials saved before protection read without a prompt until their next successful connection, which saves them again with protection.
+- Knowing which hosts have saved credentials never asks: only their attributes are read.
+- Host profiles never contain passwords, keys, or passphrases. Host-key pins stay readable without authentication, so verification never waits for Face ID.
 - Changing a host's address, port, or username clears its saved credentials.
+- In the simulator, Keychain access needs a normally signed build, and Face ID is driven with `xcrun simctl spawn <device> notifyutil -s com.apple.BiometricKit.enrollmentChanged 1 && … -p com.apple.BiometricKit.enrollmentChanged` (enroll) and `-p com.apple.BiometricKit_Sim.pearl.match` / `.nomatch`.
 
 ## Mobile keyboard row
 

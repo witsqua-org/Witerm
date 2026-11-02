@@ -44,43 +44,54 @@ struct TerminalActivityCard: View {
     var body: some View {
         HStack(spacing: 0) {
             hue.frame(width: 4).accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(name).font(.headline).foregroundStyle(WitermTheme.ink)
+            VStack(alignment: .leading, spacing: WitermMetrics.Space.xs) {
+                HStack(alignment: .firstTextBaseline, spacing: WitermMetrics.Space.s) {
+                    Text(name).font(WitermType.cardTitle).foregroundStyle(WitermTheme.ink)
                         .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
-                    Spacer(minLength: 4)
+                    Spacer(minLength: WitermMetrics.Space.xs)
                     if let changed = activity?.changedAt {
-                        ActivityAge(date: changed).font(.caption).foregroundStyle(WitermTheme.secondary)
+                        ActivityAge(date: changed).font(WitermType.meta).foregroundStyle(WitermTheme.secondary)
                     }
                 }
-                Text(verbatim: [location, activity?.folder(home: home)].compactMap { $0 }.joined(separator: " · "))
-                    .font(.caption)
-                    .foregroundStyle(WitermTheme.secondary)
-                    .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
-                    .truncationMode(.middle)
+                place
                 if let line = activity?.lastLine {
                     Text(verbatim: line)
-                        .font(.caption.monospaced())
+                        .font(WitermType.codeInline)
                         .foregroundStyle(WitermTheme.ink)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 4)
+                        .padding(.horizontal, WitermMetrics.Space.s)
+                        .padding(.vertical, WitermMetrics.Space.xs)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(WitermTheme.statusFill, in: .rect(cornerRadius: 6))
+                        .background(WitermTheme.statusFill, in: .rect(cornerRadius: WitermMetrics.Radius.s))
                 }
                 if let status {
-                    StatusBadge(status, systemImage: "bolt.horizontal.circle")
+                    StatusBadge(status, systemImage: WitermSymbols.disconnected)
                 } else {
                     StatusBadge(activity?.title.map { String(localized: "Connected · \($0)", bundle: .main) }
                                 ?? String(localized: "Connected", bundle: .main),
-                                systemImage: "circle.fill", tone: .positive)
+                                systemImage: WitermSymbols.connected, tone: .positive)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .padding(.horizontal, WitermMetrics.Space.m)
+            .padding(.vertical, WitermMetrics.Space.s)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
+    }
+
+    /// Where it is and the folder. On iOS an address wraps between
+    /// characters at large sizes, never with a hyphen.
+    @ViewBuilder private var place: some View {
+        let text = [location, activity?.folder(home: home)].compactMap { $0 }.joined(separator: " · ")
+        #if os(iOS)
+        AddressText(text, lines: typeSize.isAccessibilitySize ? 0 : 1, monospaced: false)
+        #else
+        Text(verbatim: text)
+            .font(WitermType.meta)
+            .foregroundStyle(WitermTheme.secondary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+        #endif
     }
 }

@@ -55,7 +55,7 @@ struct IssueBanner<Actions: View>: View {
     let systemImage: String
     let actions: Actions
 
-    init(_ title: String, message: String? = nil, systemImage: String = "exclamationmark.circle.fill",
+    init(_ title: String, message: String? = nil, systemImage: String = WitermSymbols.problem,
          @ViewBuilder actions: () -> Actions) {
         self.title = title
         self.message = message
@@ -64,19 +64,19 @@ struct IssueBanner<Actions: View>: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: WitermMetrics.Space.m) {
             Image(systemName: systemImage)
-                .font(.body)
+                .font(WitermType.rowTitle)
                 .foregroundStyle(WitermTheme.warning)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: WitermMetrics.Space.s) {
                 Text(title)
-                    .font(.subheadline.weight(.semibold))
+                    .font(WitermType.rowDetail.weight(.semibold))
                     .foregroundStyle(WitermTheme.ink)
                     .fixedSize(horizontal: false, vertical: true)
                 if let message {
                     Text(message)
-                        .font(.subheadline)
+                        .font(WitermType.rowDetail)
                         .foregroundStyle(WitermTheme.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -84,10 +84,10 @@ struct IssueBanner<Actions: View>: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(12)
-        .background(WitermTheme.surface, in: .rect(cornerRadius: 16, style: .continuous))
+        .padding(WitermMetrics.Space.m)
+        .background(WitermTheme.surface, in: .rect(cornerRadius: WitermMetrics.Radius.l, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: WitermMetrics.Radius.l, style: .continuous)
                 .strokeBorder(WitermTheme.warning.opacity(0.45), lineWidth: 1)
                 .allowsHitTesting(false)
         }
@@ -96,7 +96,7 @@ struct IssueBanner<Actions: View>: View {
 }
 
 extension IssueBanner where Actions == EmptyView {
-    init(_ title: String, message: String? = nil, systemImage: String = "exclamationmark.circle.fill") {
+    init(_ title: String, message: String? = nil, systemImage: String = WitermSymbols.problem) {
         self.init(title, message: message, systemImage: systemImage) { EmptyView() }
     }
 }
@@ -112,13 +112,13 @@ struct ActivityRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: WitermMetrics.Space.m) {
             ConnectionActivity()
             Text(label)
-                .font(.subheadline)
+                .font(WitermType.rowDetail)
                 .foregroundStyle(WitermTheme.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 8)
+            Spacer(minLength: WitermMetrics.Space.s)
             if let cancel {
                 Button(String(localized: "Cancel", bundle: .main), action: cancel)
                     .touchTarget()
@@ -145,18 +145,18 @@ struct StatusBadge: View {
     // An explicit stack rather than Label: Form rows restyle Labels and would
     // split the symbol from its text.
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: WitermMetrics.Space.xs) {
             Image(systemName: systemImage)
                 .imageScale(.small)
                 .accessibilityHidden(true)
             Text(title)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .font(.caption.weight(.medium))
+        .font(WitermType.meta.weight(.semibold))
         .foregroundStyle(color)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(color.opacity(0.12), in: .capsule)
+        .padding(.horizontal, WitermMetrics.Space.s)
+        .padding(.vertical, WitermMetrics.Space.xs)
+        .background(WitermTheme.tint(color), in: .capsule)
         .accessibilityElement(children: .combine)
     }
 
@@ -173,15 +173,42 @@ struct IconTile: View {
     let systemImage: String
     /// A machine's identity hue, or the neutral accent for everything else.
     var tint: Color = WitermTheme.accent
+    /// Grows with the text on iOS, so a row keeps its proportions at every
+    /// text size; the Mac keeps its fixed tile.
+    #if os(iOS)
+    @ScaledMetric(relativeTo: .body) private var size = WitermMetrics.iconTile
+    #else
     private let size = WitermMetrics.iconTile
+    #endif
 
     var body: some View {
         Image(systemName: systemImage)
             .font(.system(size: size * 0.47, weight: .regular))
             .foregroundStyle(tint)
             .frame(width: size, height: size)
-            .background(tint.opacity(0.12), in: .rect(cornerRadius: size * 0.3, style: .continuous))
+            .background(WitermTheme.tint(tint), in: .rect(cornerRadius: size * 0.3, style: .continuous))
             .accessibilityHidden(true)
+    }
+}
+
+/// An action inside content (Edit Address, Add Host, Save for Later): a
+/// leading symbol and the semibold weight, so it never reads as a label.
+/// The Mac keeps a plain title, where controls already look like controls.
+struct ContentActionLabel: View {
+    let title: String
+    let systemImage: String
+
+    init(_ title: String, systemImage: String) {
+        self.title = title
+        self.systemImage = systemImage
+    }
+
+    var body: some View {
+        #if os(iOS)
+        Label(title, systemImage: systemImage).fontWeight(.semibold)
+        #else
+        Text(title)
+        #endif
     }
 }
 
@@ -263,24 +290,24 @@ struct TerminalHeader<Actions: View>: View {
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 12) {
+            HStack(spacing: WitermMetrics.Space.m) {
                 summary
-                Spacer(minLength: 8)
-                HStack(spacing: 4) { actions }
+                Spacer(minLength: WitermMetrics.Space.s)
+                HStack(spacing: WitermMetrics.Space.xs) { actions }
             }
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: WitermMetrics.Space.xs) {
                 summary
-                HStack(spacing: 4) { actions }
+                HStack(spacing: WitermMetrics.Space.xs) { actions }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 2)
+        .padding(.horizontal, WitermMetrics.Space.m)
+        .padding(.vertical, WitermMetrics.Space.xxs)
         .frame(minHeight: 44)
         // A remote machine's hue washes the header and its edge, so the
         // terminal below always shows where input goes.
-        .background(WitermTheme.surface.overlay((hue ?? .clear).opacity(0.1)))
+        .background(WitermTheme.surface.overlay(WitermTheme.tint(hue ?? .clear)))
         .overlay(alignment: .bottom) {
-            if let hue { Rectangle().fill(hue.opacity(0.55)).frame(height: 1) } else { Divider() }
+            if let hue { Rectangle().fill(WitermTheme.edge(hue)).frame(height: 1) } else { Divider() }
         }
         // Ink rather than an inherited tint, so text actions keep contrast on
         // the header surface.
@@ -288,15 +315,15 @@ struct TerminalHeader<Actions: View>: View {
     }
 
     private var summary: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: WitermMetrics.Space.s) {
             Circle()
-                .fill(live ? WitermTheme.positive : WitermTheme.secondary.opacity(0.45))
+                .fill(live ? WitermTheme.positive : WitermTheme.secondary)
                 .frame(width: 8, height: 8)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: WitermMetrics.Space.xxs) {
                 if let destination {
                     Text(verbatim: destination)
-                        .font(.caption.monospaced())
+                        .font(WitermType.codeInline)
                         .foregroundStyle(WitermTheme.ink)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -305,18 +332,18 @@ struct TerminalHeader<Actions: View>: View {
                 }
                 if let title {
                     Text(title)
-                        .font(.subheadline.weight(.semibold))
+                        .font(WitermType.rowDetail.weight(.semibold))
                         .foregroundStyle(WitermTheme.ink)
                         .lineLimit(1)
                 }
                 Label(status, systemImage: statusImage)
-                    .font(title == nil ? .subheadline : .caption)
+                    .font(title == nil ? WitermType.rowDetail : WitermType.meta)
                     .foregroundStyle(title == nil ? WitermTheme.ink : WitermTheme.secondary)
                     .lineLimit(1)
                     .accessibilityIdentifier("terminalInputStatus")
             }
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, WitermMetrics.Space.s)
         .accessibilityElement(children: .combine)
     }
 }
@@ -324,14 +351,7 @@ struct TerminalHeader<Actions: View>: View {
 extension View {
     /// Stable solid content surface. Glass stays in the control layer.
     func witermCard(padding: CGFloat = WitermMetrics.cardPadding) -> some View {
-        frame(maxWidth: .infinity, alignment: .leading)
-            .padding(padding)
-            .background(WitermTheme.surface, in: .rect(cornerRadius: WitermMetrics.cardRadius, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: WitermMetrics.cardRadius, style: .continuous)
-                    .strokeBorder(WitermTheme.divider, lineWidth: 1)
-                    .allowsHitTesting(false)
-            }
+        modifier(WitermCard(padding: padding))
     }
 
     /// Centers scrolling content at a comfortable reading width.
@@ -339,6 +359,86 @@ extension View {
         self.padding(padding)
             .frame(maxWidth: WitermMetrics.readableWidth)
             .frame(maxWidth: .infinity)
+    }
+}
+
+#if os(iOS)
+import UIKit
+
+/// An address, path, or code. SwiftUI text hyphenates a long word when it
+/// wraps, which would show a host name that doesn't exist ("ex-ample"), so
+/// this breaks only between characters, never adding a hyphen. One line
+/// truncates in the middle; `lines: 0` wraps (accessibility text sizes).
+struct AddressText: UIViewRepresentable {
+    let text: String
+    var lines = 1
+    var style: UIFont.TextStyle = .caption1
+    var monospaced = true
+    var color = UIColor(named: "SecondaryInk") ?? .secondaryLabel
+
+    init(_ text: String, lines: Int = 1, style: UIFont.TextStyle = .caption1, monospaced: Bool = true,
+         color: UIColor = UIColor(named: "SecondaryInk") ?? .secondaryLabel) {
+        self.text = text
+        self.lines = lines
+        self.style = style
+        self.monospaced = monospaced
+        self.color = color
+    }
+
+    func makeUIView(context: Context) -> UILabel {
+        let label = UILabel()
+        label.adjustsFontForContentSizeCategory = true
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        label.setContentHuggingPriority(.required, for: .vertical)
+        return label
+    }
+
+    func updateUIView(_ label: UILabel, context: Context) {
+        let metrics = UIFontMetrics(forTextStyle: style)
+        let base = UIFont.preferredFont(forTextStyle: style, compatibleWith: UITraitCollection(preferredContentSizeCategory: .large))
+        label.font = metrics.scaledFont(for: monospaced ? .monospacedSystemFont(ofSize: base.pointSize, weight: .regular) : base)
+        label.numberOfLines = lines
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.hyphenationFactor = 0
+        paragraph.lineBreakMode = lines == 1 ? .byTruncatingMiddle : .byCharWrapping
+        label.attributedText = NSAttributedString(string: text, attributes: [
+            .paragraphStyle: paragraph, .font: label.font as Any, .foregroundColor: color])
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UILabel, context: Context) -> CGSize? {
+        let width = proposal.width ?? .greatestFiniteMagnitude
+        let size = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        return CGSize(width: min(width, ceil(size.width)), height: ceil(size.height))
+    }
+}
+#endif
+
+/// A card holds one live object. On iOS its outline appears only with
+/// Increase Contrast, like the system's grouped sections; the Mac keeps it.
+private struct WitermCard: ViewModifier {
+    let padding: CGFloat
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    func body(content: Content) -> some View {
+        content
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(padding)
+            .background(WitermTheme.surface, in: .rect(cornerRadius: WitermMetrics.cardRadius, style: .continuous))
+            .overlay {
+                if showsOutline {
+                    RoundedRectangle(cornerRadius: WitermMetrics.cardRadius, style: .continuous)
+                        .strokeBorder(WitermTheme.hairline, lineWidth: 1)
+                        .allowsHitTesting(false)
+                }
+            }
+    }
+
+    private var showsOutline: Bool {
+        #if os(iOS)
+        contrast == .increased
+        #else
+        true
+        #endif
     }
 }
 

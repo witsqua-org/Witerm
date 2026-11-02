@@ -23,6 +23,7 @@ struct MobileWorkspaceView: View {
     @Environment(ServerList.self) private var servers
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     /// A Mac chosen in Terminals, while its sessions or terminal are shown.
     private var activeMac: RemoteTerminalModel? {
@@ -64,23 +65,40 @@ struct MobileWorkspaceView: View {
         if ssh.session(for: profile.id) != nil { sshUI.show(profile.id) } else { sshUI.open(profile, model: ssh) }
     }
 
-    private var workspace: some View {
-        TabView(selection: $tab) {
+    private var home: some View {
+        TerminalsHome(ssh: ssh, ui: sshUI, macs: macs, openMac: { openMac($0, $1, openingSole: true) },
+                      continueFromDevice: continueFromDevice)
+    }
+
+    /// On iPhone a stack that the terminal replaces; on a regular width the
+    /// split view is the tab's root and any terminal, SSH or paired, sits
+    /// beside the list.
+    @ViewBuilder private var terminalsTab: some View {
+        if sizeClass == .regular {
+            SSHWorkspaceView(model: ssh, ui: sshUI, remote: activeMac.map { AnyView(RemoteTerminalWorkspace(model: $0)) }) { home }
+        } else {
             NavigationStack {
                 if let activeMac {
                     RemoteTerminalWorkspace(model: activeMac)
                 } else {
-                    SSHWorkspaceView(model: ssh, ui: sshUI) {
-                        TerminalsHome(ssh: ssh, ui: sshUI, macs: macs, openMac: { openMac($0, $1, openingSole: true) },
-                                      continueFromDevice: continueFromDevice)
-                    }
+                    SSHWorkspaceView(model: ssh, ui: sshUI) { home }
                 }
             }
-            .tabItem { Label(String(localized: "Terminals", bundle: .main), systemImage: "terminal") }
+        }
+    }
+
+    /// The shown terminal's own commands for the hardware keyboard.
+    private var shownSSH: SSHSession? { activeMac == nil ? sshUI.shownID.flatMap(ssh.session(for:)) : nil }
+    private var shownMac: RemoteTerminalModel? { activeMac.flatMap { $0.isInteractive ? $0 : nil } }
+
+    private var workspace: some View {
+        TabView(selection: $tab) {
+            terminalsTab
+            .tabItem { Label(String(localized: "Terminals", bundle: .main), systemImage: WitermSymbols.sshHost) }
             .tag(MobileTab.terminals)
             DevicesView(ssh: ssh, ui: sshUI, macs: macs, openMac: { openMac($0, $1) }, openHost: openHost,
                         continueFromDevice: continueFromDevice)
-                .tabItem { Label(String(localized: "Devices", bundle: .main), systemImage: "laptopcomputer.and.iphone") }
+                .tabItem { Label(String(localized: "Devices", bundle: .main), systemImage: WitermSymbols.openOn) }
                 .tag(MobileTab.devices)
             MobileSettingsView(showTour: { touring = true })
                 .tabItem { Label(String(localized: "Settings", bundle: .main), systemImage: "gearshape") }
@@ -128,7 +146,13 @@ struct MobileWorkspaceView: View {
                 tab = .terminals
                 activeServerID = nil
                 sshUI.requestedSession = open[(current + step + open.count) % open.count].id
-            }
+            },
+            // A paired terminal this device may type in: ⇧⌘T switches, as on the Mac.
+            typingHere: shownMac.flatMap { $0.canRequestControl ? $0.mode == .control : nil },
+            setTyping: shownMac.flatMap { model in model.canRequestControl ? { _ in model.switchMode() } : nil },
+            leave: shownMac.map { model in { model.showSessions() } },
+            disconnect: shownSSH.map { session in { ssh.disconnect(session) } },
+            find: shownSSH != nil || shownMac != nil ? { NotificationCenter.default.post(name: .witermFindInTerminal, object: nil) } : nil
         ))
         // A connection someone just started is shown in Terminals, from any tab.
         .onChange(of: ssh.connectingProfile?.id) { _, id in
@@ -211,9 +235,10 @@ private struct MobileSettingsView: View {
                                 StatusBadge(servers.summaryStatus, systemImage: servers.summarySymbol, tone: servers.summaryTone)
                             }
                         } label: {
-                            VStack(alignment: .leading, spacing: 2) {
+                            VStack(alignment: .leading, spacing: WitermMetrics.Space.xxs) {
                                 Text(String(localized: "Relay Servers", bundle: .main))
-                                Text(servers.servers.count == 1 ? servers.servers[0].displayName : servers.summaryTitle).font(.caption).foregroundStyle(WitermTheme.secondary)
+                                Text(servers.servers.count == 1 ? servers.servers[0].displayName : servers.summaryTitle)
+                                    .font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
                             }
                         }
                     }
@@ -224,8 +249,7 @@ private struct MobileSettingsView: View {
 
                 Section(String(localized: "Help", bundle: .main)) {
                     Button(action: showTour) {
-                        Label(String(localized: "Welcome Tour", bundle: .main), systemImage: "sparkles")
-                            .foregroundStyle(WitermTheme.ink)
+                        ContentActionLabel(String(localized: "Welcome Tour", bundle: .main), systemImage: "sparkles")
                     }
                     .accessibilityIdentifier("settingsWelcomeTour")
                 }
@@ -239,6 +263,7 @@ private struct MobileSettingsView: View {
 /// Every saved server, one row each with its status; each opens its own page.
 private struct ServersPage: View {
     @Environment(ServerList.self) private var servers
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var editing: ServerEditRequest?
 
     var body: some View {
@@ -248,15 +273,28 @@ private struct ServersPage: View {
                     NavigationLink {
                         ServerSettingsPage(server: server, edit: { editing = .edit(server) })
                     } label: {
-                        LabeledContent {
-                            StatusBadge(server.statusTitle, systemImage: server.statusSymbol, tone: server.statusTone)
-                        } label: {
-                            Text(server.displayName).lineLimit(1).truncationMode(.middle)
+                        let badge = StatusBadge(server.statusTitle, systemImage: server.statusSymbol, tone: server.statusTone)
+                        if typeSize.isAccessibilitySize {
+                            // The name, which identifies the server, wraps
+                            // whole; the status goes under it.
+                            VStack(alignment: .leading, spacing: WitermMetrics.Space.xs) {
+                                AddressText(server.displayName, lines: 0, style: .body, monospaced: false,
+                                            color: UIColor(named: "Ink") ?? .label)
+                                badge
+                            }
+                        } else {
+                            LabeledContent {
+                                badge
+                            } label: {
+                                Text(server.displayName).lineLimit(1).truncationMode(.middle)
+                            }
                         }
                     }
                     .accessibilityIdentifier("settingsServerRow-\(index)")
                 }
-                Button(String(localized: "Add Server", bundle: .main), systemImage: "plus") { editing = .add }
+                Button { editing = .add } label: {
+                    ContentActionLabel(String(localized: "Add Relay Server", bundle: .main), systemImage: "plus")
+                }
                     .disabled(servers.isFull)
                     .accessibilityIdentifier(servers.servers.isEmpty ? "settingsEditServer" : "settingsAddServer")
             } footer: {
@@ -282,7 +320,7 @@ private struct ServerSettingsPage: View {
     var body: some View {
         Form { ServerSettingsSection(server: server, edit: edit, remove: { confirmingRemoval = true }) }
             .formStyle(.grouped)
-            .alert(String(localized: "Remove Server?", bundle: .main), isPresented: $confirmingRemoval) {
+            .alert(String(localized: "Remove Relay Server?", bundle: .main), isPresented: $confirmingRemoval) {
                 Button(String(localized: "Cancel", bundle: .main), role: .cancel) {}
                 Button(String(localized: "Remove", bundle: .main), role: .destructive) { servers.remove(server) }
             } message: {
@@ -307,7 +345,7 @@ private struct ServerSettingsSection: View {
         Section {
             LabeledContent(String(localized: "Address", bundle: .main)) {
                 Text(server.address)
-                    .font(.system(.subheadline, design: .monospaced))
+                    .font(WitermType.code)
                     .foregroundStyle(WitermTheme.secondary)
                     .textSelection(.enabled)
                     .multilineTextAlignment(.trailing)
@@ -315,20 +353,28 @@ private struct ServerSettingsSection: View {
             ConnectionFeedback(server: server)
                 .accessibilityIdentifier("settingsConnectionFeedback")
             if server.phase.isChecking {
-                Button(String(localized: "Cancel Check", bundle: .main), action: server.cancel)
-                    .accessibilityIdentifier("cancelConnection")
+                Button(action: server.cancel) {
+                    ContentActionLabel(String(localized: "Cancel Check", bundle: .main), systemImage: "xmark")
+                }
+                .accessibilityIdentifier("cancelConnection")
             } else {
-                Button(String(localized: "Check Connection", bundle: .main), action: server.check)
-                    .accessibilityIdentifier("settingsCheckConnection")
+                Button(action: server.check) {
+                    ContentActionLabel(String(localized: "Check Connection", bundle: .main), systemImage: "arrow.clockwise")
+                }
+                .accessibilityIdentifier("settingsCheckConnection")
             }
         }
         Section {
-            Button(String(localized: "Edit Address", bundle: .main), action: edit)
-                .accessibilityIdentifier("settingsEditServer")
+            Button(action: edit) {
+                ContentActionLabel(String(localized: "Edit Address", bundle: .main), systemImage: "pencil")
+            }
+            .accessibilityIdentifier("settingsEditServer")
         }
         Section {
-            Button(String(localized: "Remove Server", bundle: .main), role: .destructive, action: remove)
-                .accessibilityIdentifier("settingsRemoveServer")
+            Button(role: .destructive, action: remove) {
+                Label(String(localized: "Remove Relay Server…", bundle: .main), systemImage: "trash").fontWeight(.semibold)
+            }
+            .accessibilityIdentifier("settingsRemoveServer")
         }
     }
 }

@@ -135,7 +135,7 @@ struct SSHFilesView: View {
             VStack(spacing: 0) {
                 HStack {
                     TextField(String(localized: "Remote Path", bundle: .main), text: $pathInput)
-                        .font(.system(.body, design: .monospaced)).autocorrectionDisabled().sshLiteralInput()
+                        .font(WitermType.code).autocorrectionDisabled().sshLiteralInput()
                         .onSubmit { navigate() }.accessibilityIdentifier("sshSFTPPath")
                     Button(String(localized: "Go", bundle: .main), action: navigate).touchTarget()
                 }.padding(.horizontal)
@@ -145,7 +145,7 @@ struct SSHFilesView: View {
                             ProgressView(value: Double(model.transferred), total: Double(total))
                         } else { ProgressView() }
                         Text(ByteCountFormatter.string(fromByteCount: Int64(clamping: model.transferred), countStyle: .file))
-                            .font(.caption).monospacedDigit()
+                            .font(WitermType.meta).monospacedDigit()
                         Button(String(localized: "Cancel", bundle: .main), action: model.cancel).touchTarget()
                     }.padding()
                 }
@@ -165,11 +165,11 @@ struct SSHFilesView: View {
                                 } else { model.download(entry, connection: connection) }
                             } label: {
                                 Label {
-                                    VStack(alignment: .leading, spacing: 4) {
+                                    VStack(alignment: .leading, spacing: WitermMetrics.Space.xs) {
                                         Text(entry.name).lineLimit(2)
                                         if let size = entry.size, !entry.isDirectory {
                                             Text(ByteCountFormatter.string(fromByteCount: Int64(clamping: size), countStyle: .file))
-                                                .font(.caption).foregroundStyle(.secondary)
+                                                .font(WitermType.meta).foregroundStyle(.secondary)
                                         }
                                     }
                                 } icon: { Image(systemName: entry.isDirectory ? "folder" : "doc") }
@@ -196,6 +196,9 @@ struct SSHFilesView: View {
                 }
             }
             .navigationTitle(String(localized: "SFTP Files", bundle: .main))
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(String(localized: "Done", bundle: .main)) { model.cancel(); dismiss() } }
                 ToolbarItem(placement: .primaryAction) {

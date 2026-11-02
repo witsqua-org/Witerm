@@ -201,6 +201,15 @@ struct WorkspaceActions {
     var setTyping: ((Bool) -> Void)? = nil
     /// Stops showing the terminal here; it keeps running (Mac).
     var leave: (() -> Void)? = nil
+    /// Closes the shown SSH connection (iOS).
+    var disconnect: (() -> Void)? = nil
+    /// Shows the find bar in the shown terminal (iOS; the Mac routes Find itself).
+    var find: (() -> Void)? = nil
+}
+
+extension Notification.Name {
+    /// Asks the terminal on screen to show its find bar.
+    static let witermFindInTerminal = Notification.Name("witerm.findInTerminal")
 }
 
 extension FocusedValues {
@@ -279,6 +288,23 @@ struct WitermCommands: Commands {
                 Button(name) { actions?.showTerminal(index) }
                     .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
             }
+            #if os(iOS)
+            // The shown terminal's commands, listed while ⌘ is held.
+            Divider()
+            Button(String(localized: "Find in Terminal", bundle: .main)) { actions?.find?() }
+                .keyboardShortcut("f", modifiers: .command)
+                .disabled(actions?.find == nil)
+            Button(actions?.typingHere == false ? String(localized: "Start Typing", bundle: .main)
+                   : String(localized: "Stop Typing", bundle: .main)) {
+                if let typing = actions?.typingHere { actions?.setTyping?(!typing) }
+            }
+                .keyboardShortcut("t", modifiers: [.command, .shift])
+                .disabled(actions?.setTyping == nil)
+            Button(String(localized: "Leave", bundle: .main)) { actions?.leave?() }
+                .disabled(actions?.leave == nil)
+            Button(String(localized: "Disconnect", bundle: .main)) { actions?.disconnect?() }
+                .disabled(actions?.disconnect == nil)
+            #endif
             #if os(macOS)
             Divider()
             // The selected terminal's commands, so none needs the pointer.

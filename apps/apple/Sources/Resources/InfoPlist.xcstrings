@@ -34,6 +34,23 @@
           }
         }
       }
+    },
+    "NSFaceIDUsageDescription": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Witerm uses Face ID to unlock SSH passwords and keys you saved."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Witerm 使用面容 ID 解锁你保存的 SSH 密码和密钥。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

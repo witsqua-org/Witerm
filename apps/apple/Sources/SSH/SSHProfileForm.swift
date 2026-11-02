@@ -64,6 +64,8 @@ struct SSHProfileForm: View {
     @State private var importingKey = false
     @State private var importingKeyHost: UUID?
     @Environment(\.dynamicTypeSize) private var typeSize
+    /// How saved credentials are protected on this device, read once.
+    @State private var protection = SSHUnlock.method
 
     init(profile: SSHProfile?, credentials: [UUID: SSHCredential], purpose: SSHFormPurpose, address: String? = nil,
          onSave: @escaping (SSHProfile, [UUID: SSHCredential], Set<UUID>) async throws -> Void,
@@ -116,8 +118,8 @@ struct SSHProfileForm: View {
                             .onChange(of: name) { _, _ in errors[.name] = nil }
                         fieldError(.name)
                         ForEach(Array($jumps.enumerated()), id: \.element.wrappedValue.id) { index, draft in
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text(String(localized: "Jump Host \(index + 1)", bundle: .main)).font(.headline)
+                            VStack(alignment: .leading, spacing: WitermMetrics.Space.m) {
+                                Text(String(localized: "Jump Host \(index + 1)", bundle: .main)).font(WitermType.cardTitle)
                                 addressFields(draft)
                                 signInFields(draft)
                                 Button(String(localized: "Remove This Jump Host", bundle: .main), role: .destructive) {
@@ -135,18 +137,37 @@ struct SSHProfileForm: View {
                     }
                 }
                 if let issue { Section { Text(issue).foregroundStyle(WitermTheme.warning) } }
+                #if os(iOS)
+                // At accessibility sizes the actions end the form instead of
+                // covering a quarter of it.
+                if typeSize.isAccessibilitySize {
+                    Section { actionButtons }
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets())
+                }
+                #endif
             }
             .formStyle(.grouped)
             .navigationTitle(purpose == .new ? String(localized: "Add SSH Host", bundle: .main)
                              : purpose == .edit ? String(localized: "Edit SSH Host", bundle: .main)
                              : String(localized: "Connect With SSH", bundle: .main))
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            .onAppear {
+                // A new host starts at its address; one being connected or
+                // edited already has it.
+                if purpose == .new, target.address.isEmpty { focused = .address(target.id) }
+            }
+            #endif
             .disabled(saving)
             .interactiveDismissDisabled(saving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(String(localized: "Cancel", bundle: .main)) { dismiss() }.disabled(saving) }
             }
             // The actions sit at the bottom, within reach of a thumb.
-            .safeAreaInset(edge: .bottom, spacing: 0) { actions }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if !actionsInForm { actions }
+            }
             .fileImporter(isPresented: $importingKey, allowedContentTypes: [.data, .plainText]) { result in
                 defer { importingKeyHost = nil }
                 do {
@@ -185,31 +206,45 @@ struct SSHProfileForm: View {
         }
     }
 
+    private var actionsInForm: Bool {
+        #if os(iOS)
+        typeSize.isAccessibilitySize
+        #else
+        false
+        #endif
+    }
+
     private var actions: some View {
+        actionButtons
+            .padding(.horizontal, WitermMetrics.Space.xl)
+            .padding(.vertical, WitermMetrics.Space.m)
+            .background(.bar)
+    }
+
+    private var actionButtons: some View {
         let primary = PrimaryButton(primaryTitle, fullWidth: true) { submit(connect: purpose != .edit) }
             .accessibilityIdentifier(purpose == .edit ? "sshSaveProfile" : "sshConnect")
             .keyboardShortcut(.defaultAction)
             .disabled(saving)
-        let later = Button(String(localized: "Save for Later", bundle: .main)) { submit(connect: false) }
+        let later = Button { submit(connect: false) } label: {
+            ContentActionLabel(String(localized: "Save for Later", bundle: .main), systemImage: "tray.and.arrow.down")
+        }
             .accessibilityIdentifier("sshSaveOnly")
             .disabled(saving)
         return Group {
             #if os(macOS)
-            HStack(spacing: 12) {
+            HStack(spacing: WitermMetrics.Space.m) {
                 Spacer()
                 if purpose == .new { later.buttonStyle(.bordered).witermControl() }
                 primary.frame(maxWidth: 200)
             }
             #else
-            VStack(spacing: 4) {
+            VStack(spacing: WitermMetrics.Space.xs) {
                 primary
                 if purpose == .new { later.touchTarget() }
             }
             #endif
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
-        .background(.bar)
     }
 
     /// One field for `user@host:port`, with what it understood shown below.
@@ -226,8 +261,12 @@ struct SSHProfileForm: View {
         if case .success(let value) = draft.wrappedValue.parsed {
             AddressChips(parsed: value)
         } else if errors[.address(draft.wrappedValue.id)] == nil {
+            // iOS shows what it understood once there's an address; until then
+            // the field's example is the hint.
+            #if os(macOS)
             Text(String(localized: "Add :port after the host if it isn't 22.", bundle: .main))
-                .font(.caption).foregroundStyle(WitermTheme.secondary)
+                .font(WitermType.meta).foregroundStyle(WitermTheme.secondary)
+            #endif
         }
         fieldError(.address(draft.wrappedValue.id))
     }
@@ -270,7 +309,7 @@ struct SSHProfileForm: View {
             }
             if draft.wrappedValue.showingPrivateKey {
                 TextEditor(text: draft.privateKey)
-                    .font(.system(.caption, design: .monospaced))
+                    .font(WitermType.codeInline)
                     .frame(minHeight: 120).accessibilityLabel(String(localized: "OpenSSH Private Key", bundle: .main))
                     .autocorrectionDisabled()
                     .focused($focused, equals: .credential(draft.wrappedValue.id))
@@ -290,10 +329,34 @@ struct SSHProfileForm: View {
         fieldError(.credential(draft.wrappedValue.id))
         if draft.wrappedValue.credentialsReset {
             Text(String(localized: "Credentials cleared because the connection address changed. Enter them again if needed.", bundle: .main))
-                .font(.caption).foregroundStyle(WitermTheme.secondary)
+                .font(WitermType.meta).foregroundStyle(WitermTheme.secondary)
         }
         Toggle(String(localized: "Save Credentials on This Device", bundle: .main), isOn: draft.remember)
             .tint(WitermTheme.positive)
+            .disabled(protection == .unavailable)
+        // Saved credentials always need Face ID, Touch ID, or the passcode.
+        if protection == .unavailable || draft.wrappedValue.remember {
+            Text(Self.protectionNote(protection))
+                .font(WitermType.meta)
+                .foregroundStyle(WitermTheme.secondary)
+                .accessibilityIdentifier("sshCredentialProtection")
+        }
+    }
+
+    /// One line, where saving is chosen, naming what protects saved credentials.
+    static func protectionNote(_ method: SSHUnlock.Method) -> String {
+        switch method {
+        case .faceID: String(localized: "Face ID protects them.", bundle: .main)
+        case .touchID: String(localized: "Touch ID protects them.", bundle: .main)
+        case .opticID: String(localized: "Optic ID protects them.", bundle: .main)
+        #if os(macOS)
+        case .passcode: String(localized: "Your login password protects them.", bundle: .main)
+        case .unavailable: String(localized: "Set a login password to save them.", bundle: .main)
+        #else
+        case .passcode: String(localized: "Your passcode protects them.", bundle: .main)
+        case .unavailable: String(localized: "Set a device passcode to save them.", bundle: .main)
+        #endif
+        }
     }
 
     /// The public half goes into the host's `~/.ssh/authorized_keys`; the
@@ -302,7 +365,7 @@ struct SSHProfileForm: View {
         Text(String(localized: "Add this public key to ~/.ssh/authorized_keys on the host, then connect.", bundle: .main))
             .font(.footnote).foregroundStyle(.secondary)
         Text(verbatim: publicKey)
-            .font(.system(.caption, design: .monospaced))
+            .font(WitermType.codeInline)
             .textSelection(.enabled)
             .accessibilityIdentifier("sshGeneratedPublicKey")
         HStack {
@@ -320,7 +383,7 @@ struct SSHProfileForm: View {
         .buttonStyle(.bordered)
         if !remember {
             Text(String(localized: "Turn on Save Credentials on This Device to keep this key. Otherwise it is discarded when Witerm closes.", bundle: .main))
-                .font(.caption).foregroundStyle(WitermTheme.warning)
+                .font(WitermType.meta).foregroundStyle(WitermTheme.warning)
         }
     }
 
@@ -337,7 +400,7 @@ struct SSHProfileForm: View {
     @ViewBuilder private func fieldError(_ field: Field) -> some View {
         if let error = errors[field] {
             Label(error, systemImage: "exclamationmark.circle")
-                .font(.caption).foregroundStyle(WitermTheme.warning)
+                .font(WitermType.meta).foregroundStyle(WitermTheme.warning)
                 .accessibilityIdentifier("sshFieldError")
         }
     }
@@ -426,10 +489,10 @@ private struct AddressChips: View {
 
     private func chip(_ label: String, _ value: String) -> some View {
         (Text(label + " ").foregroundStyle(WitermTheme.secondary) + Text(verbatim: value).fontWeight(.semibold))
-            .font(.caption)
-            .lineLimit(1)
+            .font(WitermType.meta)
+            .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
             .truncationMode(.middle)
-            .padding(.horizontal, 8)
+            .padding(.horizontal, WitermMetrics.Space.s)
             .padding(.vertical, 3)
             .background(WitermTheme.statusFill, in: .capsule)
     }

@@ -31,10 +31,10 @@ struct IOSWelcomeTour: View {
                  line: String(localized: "Tap +, enter user@host, and connect directly. No server needed.", bundle: .main)),
             Page(symbol: "laptopcomputer.and.iphone",
                  title: String(localized: "Add Device", bundle: .main),
-                 line: String(localized: "On the other device, choose Open On ▸ New Device, then scan its code.", bundle: .main)),
+                 line: String(localized: "On the other device, choose Open On ▸ New Device, then scan its QR code.", bundle: .main)),
             Page(symbol: "hand.tap",
                  title: String(localized: "Keys and Gestures", bundle: .main),
-                 line: String(localized: "Tap to type, long-press to copy, pinch to zoom.", bundle: .main),
+                 line: String(localized: "Tap to type, touch and hold to select, pinch to zoom.", bundle: .main),
                  showsKeys: true),
         ]
     }
@@ -51,16 +51,18 @@ struct IOSWelcomeTour: View {
                             .accessibilityIdentifier("welcomeTourPage-\(index)")
                     }
                 }
-                .tabViewStyle(.page(indexDisplayMode: .always))
-                .indexViewStyle(.page(backgroundDisplayMode: .always))
+                // Our own dots, below the page rather than over it, in ink
+                // so the current page reads at 3:1 or more.
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                PageDots(count: pages.count, page: $page, reduceMotion: reduceMotion)
                 PrimaryButton(isLast ? String(localized: "Get Started", bundle: .main) : String(localized: "Next", bundle: .main),
                               fullWidth: true) {
                     if isLast { done() } else { advance() }
                 }
                 .accessibilityIdentifier(isLast ? "welcomeTourStart" : "welcomeTourNext")
                 .padding(.horizontal, WitermMetrics.pagePadding)
-                .padding(.vertical, 16)
-                .frame(maxWidth: 520)
+                .padding(.bottom, WitermMetrics.Space.l)
+                .frame(maxWidth: WitermMetrics.readableWidth)
             }
             .background(WitermTheme.canvas)
             .toolbar {
@@ -87,20 +89,21 @@ struct IOSWelcomeTour: View {
     /// the largest text sizes instead of truncating.
     private func pageView(_ item: Page) -> some View {
         ScrollView {
-            VStack(spacing: 20) {
+            VStack(spacing: WitermMetrics.Space.xl) {
                 Image(systemName: item.symbol)
+                    .symbolRenderingMode(.monochrome)
                     .font(.system(size: 56, weight: .regular))
                     .foregroundStyle(WitermTheme.ink)
                     .frame(width: 112, height: 112)
-                    .background(WitermTheme.surface, in: .rect(cornerRadius: 28, style: .continuous))
+                    .background(WitermTheme.surface, in: .rect(cornerRadius: WitermMetrics.Radius.xl, style: .continuous))
                     .accessibilityHidden(true)
-                VStack(spacing: 8) {
+                VStack(spacing: WitermMetrics.Space.s) {
                     Text(item.title)
-                        .font(.title2.weight(.bold))
+                        .font(WitermType.heroTitle)
                         .foregroundStyle(WitermTheme.ink)
                         .accessibilityAddTraits(.isHeader)
                     Text(item.line)
-                        .font(.body)
+                        .font(WitermType.rowTitle)
                         .foregroundStyle(WitermTheme.secondary)
                 }
                 .multilineTextAlignment(.center)
@@ -108,9 +111,8 @@ struct IOSWelcomeTour: View {
                 if item.showsKeys { WelcomeKeyRow() }
             }
             .padding(.horizontal, WitermMetrics.pagePadding)
-            .padding(.top, 48)
-            .padding(.bottom, 56)
-            .frame(maxWidth: 520)
+            .padding(.vertical, WitermMetrics.Space.xxl)
+            .frame(maxWidth: WitermMetrics.readableWidth)
             .frame(maxWidth: .infinity)
         }
     }
@@ -141,14 +143,52 @@ struct IOSWelcomeTourPresentation: ViewModifier {
     }
 }
 
+/// The tour's page indicator: ink for the current page, and one adjustable
+/// element for VoiceOver ("Page 2 of 3"); a dot also goes to its page.
+private struct PageDots: View {
+    let count: Int
+    @Binding var page: Int
+    let reduceMotion: Bool
+
+    var body: some View {
+        HStack(spacing: WitermMetrics.Space.s) {
+            ForEach(0..<count, id: \.self) { index in
+                // The current page is longer as well as darker, so it never
+                // depends on color alone.
+                Capsule()
+                    .fill(index == page ? WitermTheme.ink : WitermTheme.secondary)
+                    .frame(width: index == page ? 20 : 8, height: 8)
+                    .frame(width: 28, height: 44)
+                    .contentShape(Rectangle())
+                    .onTapGesture { go(index) }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(String(localized: "Page", bundle: .main))
+        .accessibilityValue(String(localized: "\(page + 1) of \(count)", bundle: .main))
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: go(min(count - 1, page + 1))
+            case .decrement: go(max(0, page - 1))
+            @unknown default: break
+            }
+        }
+        .accessibilityIdentifier("welcomeTourPageDots")
+    }
+
+    private func go(_ index: Int) {
+        if reduceMotion { page = index } else { withAnimation(WitermMotion.transition(reduceMotion: false)) { page = index } }
+    }
+}
+
 /// A miniature of the keys above the terminal keyboard, drawn like them.
 private struct WelcomeKeyRow: View {
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 6) { keys(faces[...]) }
-            VStack(spacing: 6) {
-                HStack(spacing: 6) { keys(faces.prefix(3)) }
-                HStack(spacing: 6) { keys(faces.suffix(4)) }
+            HStack(spacing: WitermMetrics.Space.s) { keys(faces[...]) }
+            VStack(spacing: WitermMetrics.Space.s) {
+                HStack(spacing: WitermMetrics.Space.s) { keys(faces.prefix(3)) }
+                HStack(spacing: WitermMetrics.Space.s) { keys(faces.suffix(4)) }
             }
         }
         .accessibilityElement(children: .ignore)
@@ -160,11 +200,11 @@ private struct WelcomeKeyRow: View {
     private func keys(_ slice: ArraySlice<String>) -> some View {
         ForEach(Array(slice), id: \.self) { face in
             Text(verbatim: face)
-                .font(.callout)
+                .font(WitermType.rowTitle)
                 .foregroundStyle(WitermTheme.ink)
-                .padding(.horizontal, 10)
+                .padding(.horizontal, WitermMetrics.Space.s)
                 .frame(minWidth: 40, minHeight: 36)
-                .background(Color(uiColor: .tertiarySystemFill), in: .rect(cornerRadius: 8))
+                .background(Color(uiColor: .tertiarySystemFill), in: .rect(cornerRadius: WitermMetrics.Radius.s))
         }
     }
 }

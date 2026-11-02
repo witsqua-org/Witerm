@@ -84,6 +84,22 @@ enum MobileKey: String, CaseIterable, Identifiable {
         }
     }
 
+    /// What a Voice Control user can say: the visible face first, so "Tap
+    /// Ctrl" works, then the spoken name.
+    var inputLabels: [String] {
+        var labels = [face]
+        switch self {
+        case .control: labels.append("Control")
+        case .interrupt: labels += ["Control C", "Interrupt"]
+        case .pageUp: labels.append("Page Up")
+        case .pageDown: labels.append("Page Down")
+        default: break
+        }
+        labels.append(label)
+        var seen = Set<String>()
+        return labels.filter { seen.insert($0).inserted }
+    }
+
     var identifier: String {
         switch self {
         case .control: "terminalControlModifier"
@@ -99,14 +115,23 @@ enum MobileKey: String, CaseIterable, Identifiable {
 
 /// One accessible row shared by direct SSH and paired terminals. Actions are
 /// committed on touch-up so scrolling the row never sends a key by accident.
-@MainActor final class MobileTerminalAccessory: UIInputView {
+@MainActor final class MobileTerminalAccessory: UIInputView, UIInputViewAudioFeedback {
     private weak var terminal: RemoteNativeTerminalView.TerminalInputView?
     private let control = UIButton(type: .system)
     private let keys = UIStackView()
     private var keyHeightConstraint: NSLayoutConstraint?
     private var shown: [MobileKey] = []
 
-    private var keyHeight: CGFloat { max(44, UIFont.preferredFont(forTextStyle: .callout, compatibleWith: traitCollection).lineHeight + 12) }
+    /// Keys grow with the text up to the size terminal text stops at, so the
+    /// largest accessibility sizes keep more than four keys on screen; a
+    /// long press shows any key large (Large Content Viewer).
+    private var keyHeight: CGFloat {
+        let category = TerminalTextScale.capped(traitCollection.preferredContentSizeCategory)
+        let font = UIFont.preferredFont(forTextStyle: .callout, compatibleWith: UITraitCollection(preferredContentSizeCategory: category))
+        return max(44, font.lineHeight + 12)
+    }
+
+    var enableInputClicksWhenVisible: Bool { true }
 
     override var intrinsicContentSize: CGSize { CGSize(width: UIView.noIntrinsicMetric, height: keyHeight + 8) }
 
@@ -139,8 +164,10 @@ enum MobileKey: String, CaseIterable, Identifiable {
         configure(control, key: .control) { [weak self, weak terminal] in
             guard let terminal, terminal.acceptsInput else { return }
             terminal.controlModifier.toggle()
+            UISelectionFeedbackGenerator().selectionChanged()
             self?.updateControl()
         }
+        addInteraction(UILargeContentViewerInteraction())
         rebuildKeys()
         NotificationCenter.default.addObserver(self, selector: #selector(updateControl),
                                               name: .terminalViewControlModifierReset, object: terminal)
@@ -169,7 +196,30 @@ enum MobileKey: String, CaseIterable, Identifiable {
         guard wanted != shown else { return }
         shown = wanted
         keys.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        for key in wanted { keys.addArrangedSubview(key == .control ? control : button(for: key)) }
+        for key in wanted {
+            keys.addArrangedSubview(key == .control ? control : key == .paste ? pasteControl() : button(for: key))
+        }
+    }
+
+    /// The system Paste control: pasting from it counts as the person's own
+    /// choice, so iOS doesn't ask "Allow Paste?" each time, and it is
+    /// enabled only when there's text to paste.
+    private func pasteControl() -> UIView {
+        let configuration = UIPasteControl.Configuration()
+        configuration.displayMode = .labelOnly
+        configuration.cornerStyle = .fixed
+        configuration.cornerRadius = 8
+        configuration.baseBackgroundColor = .tertiarySystemFill
+        configuration.baseForegroundColor = .label
+        let paste = UIPasteControl(configuration: configuration)
+        paste.target = terminal
+        paste.accessibilityIdentifier = MobileKey.paste.identifier
+        paste.showsLargeContentViewer = true
+        paste.largeContentTitle = MobileKey.paste.face
+        paste.widthAnchor.constraint(greaterThanOrEqualToConstant: 64).isActive = true
+        paste.setContentHuggingPriority(.required, for: .horizontal)
+        paste.setContentCompressionResistancePriority(.required, for: .horizontal)
+        return paste
     }
 
     private func button(for key: MobileKey) -> UIButton {
@@ -215,6 +265,7 @@ enum MobileKey: String, CaseIterable, Identifiable {
     }
 
     private static func press(_ key: MobileKey, on terminal: RemoteNativeTerminalView.TerminalInputView) {
+        UIDevice.current.playInputClick()
         let application = terminal.getTerminal().applicationCursor
         func cursor(_ code: String) -> [UInt8] { Array(((application ? "\u{1b}O" : "\u{1b}[") + code).utf8) }
         switch key {
@@ -279,7 +330,10 @@ enum MobileKey: String, CaseIterable, Identifiable {
         button.titleLabel?.font = .preferredFont(forTextStyle: .callout)
         button.titleLabel?.adjustsFontForContentSizeCategory = true
         button.accessibilityLabel = key.label
+        button.accessibilityUserInputLabels = key.inputLabels
         button.accessibilityIdentifier = key.identifier
+        button.showsLargeContentViewer = true
+        button.largeContentTitle = key.face
         button.backgroundColor = .tertiarySystemFill
         button.tintColor = .label
         button.layer.cornerRadius = 8

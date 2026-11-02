@@ -22,46 +22,73 @@ struct TerminalDisplaySections: View {
     @AppStorage(TerminalFontSize.key) private var fontSize = TerminalFontSize.standard
     @AppStorage("witerm.terminalHighContrast") private var highContrast = false
     @AppStorage(TerminalColorScheme.key) private var palette = TerminalColorScheme.system
+    #if os(iOS)
+    @Environment(\.dynamicTypeSize) private var typeSize
+    /// What the terminal actually uses: the setting, grown with the text
+    /// size up to the cap, so the preview matches the terminal.
+    private var effectiveSize: Double { fontSize * Double(TerminalTextScale.factor(typeSize)) }
+    #else
+    private var effectiveSize: Double { fontSize }
+    #endif
 
     var body: some View {
         Section("Text") {
             Stepper(value: $fontSize, in: TerminalFontSize.range, step: 1) {
+                #if os(iOS)
+                LabeledContent(String(localized: "Font Size", bundle: .main), value: String(localized: "\(Int(fontSize)) pt"))
+                #else
                 LabeledContent("Font size", value: String(localized: "\(Int(fontSize)) pt"))
+                #endif
             }
             .accessibilityIdentifier("terminalFontSize")
             Text("Aa 0123456789")
-                .font(.system(size: fontSize, design: .monospaced))
+                .font(.system(size: effectiveSize, design: .monospaced))
                 .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
-                .accessibilityLabel(String(localized: "Font preview, \(Int(fontSize)) pt"))
-            #if os(iOS)
-            Text("Terminal text also adjusts to the system text size.")
-                .font(.footnote).foregroundStyle(.secondary)
-            #else
+                .accessibilityLabel(String(localized: "Font preview, \(Int(effectiveSize.rounded())) pt"))
+            #if os(macOS)
             Text("Use Command-Plus and Command-Minus to adjust the size while working.")
                 .font(.footnote).foregroundStyle(.secondary)
             #endif
         }
         Section {
+            #if os(iOS)
+            Picker(String(localized: "Color Scheme", bundle: .main), selection: $palette) {
+                ForEach(TerminalColorScheme.allCases) { scheme in
+                    Text(scheme.title).tag(scheme)
+                }
+            }
+            .accessibilityIdentifier("terminalColorScheme")
+            #else
             Picker("Color scheme", selection: $palette) {
                 ForEach(TerminalColorScheme.allCases) { scheme in
                     Text(scheme.title).tag(scheme)
                 }
             }
             .accessibilityIdentifier("terminalColorScheme")
+            #endif
             TerminalSchemePreview(scheme: palette, highContrast: highContrast)
+            #if os(iOS)
+            Toggle(String(localized: "Increase Terminal Contrast", bundle: .main), isOn: $highContrast).tint(WitermTheme.positive)
+                .accessibilityIdentifier("terminalHighContrast")
+            #else
             Toggle("Increase terminal contrast", isOn: $highContrast).tint(WitermTheme.positive)
                 .accessibilityIdentifier("terminalHighContrast")
-            Button(String(localized: "Restore Display Defaults", bundle: .main)) {
+            #endif
+            Button {
                 fontSize = TerminalFontSize.standard
                 highContrast = false
                 palette = .system
+            } label: {
+                ContentActionLabel(String(localized: "Restore Display Defaults", bundle: .main), systemImage: "arrow.counterclockwise")
             }
             .disabled(fontSize == TerminalFontSize.standard && !highContrast && palette == .system)
             .accessibilityIdentifier("resetTerminalAppearance")
         } header: {
             Text("Appearance")
         } footer: {
+            #if os(macOS)
             Text("Schemes follow the system's light or dark appearance. Increased contrast overrides the scheme.")
+            #endif
         }
     }
 }
@@ -73,8 +100,13 @@ struct TerminalFeedbackSections: View {
 
     var body: some View {
         Section {
+            #if os(iOS)
+            Toggle(String(localized: "Terminal Bell", bundle: .main), isOn: $bell).tint(WitermTheme.positive)
+                .accessibilityIdentifier("terminalBell")
+            #else
             Toggle("Ring the terminal bell", isOn: $bell).tint(WitermTheme.positive)
                 .accessibilityIdentifier("terminalBell")
+            #endif
         } header: {
             Text("Bell")
         } footer: {
@@ -85,8 +117,13 @@ struct TerminalFeedbackSections: View {
             #endif
         }
         Section {
+            #if os(iOS)
+            Toggle(String(localized: "Announce New Output", bundle: .main), isOn: $announceOutput).tint(WitermTheme.positive)
+                .accessibilityIdentifier("terminalAnnounceOutput")
+            #else
             Toggle("Announce output updates", isOn: $announceOutput).tint(WitermTheme.positive)
                 .accessibilityIdentifier("terminalAnnounceOutput")
+            #endif
         } header: {
             Text("VoiceOver")
         } footer: {
@@ -131,9 +168,13 @@ private struct TerminalSchemePreview: View {
             Text(verbatim: "branch main → origin").foregroundStyle(ansi.map { Color(terminalRGB: $0[4]) } ?? .blue)
         }
         .font(.system(.caption, design: .monospaced))
-        .padding(10)
+        .padding(WitermMetrics.Space.s)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(background, in: .rect(cornerRadius: 8))
+        .background(background, in: .rect(cornerRadius: WitermMetrics.Radius.s))
+        #if os(iOS)
+        // An edge, so a preview the color of the row still reads as one.
+        .overlay { RoundedRectangle(cornerRadius: WitermMetrics.Radius.s).strokeBorder(WitermTheme.hairline, lineWidth: 1) }
+        #endif
         .accessibilityHidden(true)
     }
 }
@@ -170,6 +211,10 @@ struct TerminalAppearanceSettings: View {
                 }
         }
         .witermTint()
+        #if os(iOS)
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        #endif
         #if os(macOS)
         .frame(minWidth: 400, idealWidth: 440, minHeight: 400)
         #endif

@@ -33,9 +33,10 @@ struct TerminalsHome: View {
         return ssh.orderedProfiles(search: search, favoritesOnly: favoritesOnly).filter { !openIDs.contains($0.id) }
     }
 
+    /// One row per device and relay server, however many pairings it has.
     private var pairedMacs: [(server: ConnectionModel, grant: DeviceGrant)] {
         servers.relayServers.flatMap { server in
-            macs.model(for: server).grants.map { (server: server, grant: $0) }
+            macs.model(for: server).devices.map { (server: server, grant: $0) }
         }
         .filter { search.isEmpty || $0.grant.host.name.localizedCaseInsensitiveContains(search) }
     }
@@ -46,25 +47,31 @@ struct TerminalsHome: View {
         servers.relayServers.compactMap { macs.existing(for: $0) }.filter { $0.unpairedName != nil }
     }
 
+    private var isFirstUse: Bool { ssh.profiles.isEmpty && pairedMacs.isEmpty && search.isEmpty && unpaired.isEmpty }
+
     var body: some View {
         List {
             ForEach(unpaired, id: \.serverAddress) { model in
                 IssueBanner(String(localized: "No Longer Paired with \(model.unpairedName ?? "")", bundle: .main),
-                            message: RemoteTerminalIssue(RelayError.revoked).recovery, systemImage: "exclamationmark.shield.fill") {
+                            message: RemoteTerminalIssue(RelayError.revoked).recovery, systemImage: WitermSymbols.unpaired) {
                     Button(String(localized: "OK", bundle: .main), action: model.dismissUnpaired)
-                        .font(.subheadline).touchTarget()
+                        .font(WitermType.rowDetail.weight(.semibold)).touchTarget()
                 }
                 .listRowInsets(EdgeInsets())
                 .listRowBackground(Color.clear)
                 .accessibilityIdentifier("remoteUnpaired")
+            }
+            if isFirstUse {
+                firstUse
             }
             if !open.isEmpty {
                 Section(String(localized: "Open", bundle: .main)) {
                     ForEach(open) { profile in hostRow(profile) }
                 }
             }
+            // The tab already says what these are; the section needs no title.
             if !pairedMacs.isEmpty || !hosts.isEmpty || favoritesOnly {
-                Section(String(localized: "Devices", bundle: .main)) {
+                Section {
                     if showsFilters, ssh.profiles.contains(where: ssh.isFavorite) {
                         Toggle(String(localized: "Favorites Only", bundle: .main), isOn: $favoritesOnly)
                             .accessibilityIdentifier("sshFavoritesOnly")
@@ -79,12 +86,8 @@ struct TerminalsHome: View {
         .listStyle(.insetGrouped)
         .modifier(HostSearch(enabled: showsFilters, text: $search))
         .onChange(of: showsFilters) { _, shown in if !shown { search = ""; favoritesOnly = false } }
-        .scrollContentBackground(.hidden)
-        .background(WitermTheme.canvas)
         .overlay {
-            if ssh.profiles.isEmpty, pairedMacs.isEmpty, search.isEmpty, unpaired.isEmpty {
-                firstUse
-            } else if open.isEmpty, hosts.isEmpty, pairedMacs.isEmpty, unpaired.isEmpty {
+            if !isFirstUse, open.isEmpty, hosts.isEmpty, pairedMacs.isEmpty, unpaired.isEmpty {
                 ContentUnavailableView {
                     Label(String(localized: "No Matching Terminals", bundle: .main), systemImage: "magnifyingglass")
                 } actions: {
@@ -100,7 +103,7 @@ struct TerminalsHome: View {
     private func hostRow(_ profile: SSHProfile) -> some View {
         let session = ssh.session(for: profile.id)
         let ended = session == nil ? ssh.disconnected[profile.id] : nil
-        return HStack(spacing: 4) {
+        return HStack(spacing: WitermMetrics.Space.xs) {
             Button {
                 if session != nil { ui.show(profile.id) } else { ui.open(profile, model: ssh) }
             } label: {
@@ -113,7 +116,7 @@ struct TerminalsHome: View {
                         SSHHostRowContent(profile: profile, active: false, expanded: true, favorite: ssh.isFavorite(profile))
                     }
                 }
-                .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -127,8 +130,9 @@ struct TerminalsHome: View {
             .accessibilityAddTraits(ui.shownID == profile.id ? .isSelected : [])
             SSHHostActions(profile: profile, ssh: ssh, ui: ui)
         }
-        .listRowInsets(session != nil || ended != nil ? EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 8) : nil)
-        .listRowBackground(sizeClass == .regular && ui.shownID == profile.id ? profile.identityHue.opacity(0.12) : nil)
+        .listRowInsets(session != nil || ended != nil ? EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: WitermMetrics.Space.s) : nil)
+        .listRowBackground(sizeClass == .regular && ui.shownID == profile.id ? WitermTheme.tint(profile.identityHue) : nil)
+        .modifier(SSHHostSwipeActions(profile: profile, ssh: ssh, ui: ui))
     }
 
     private func accessibilityValue(_ profile: SSHProfile, session: SSHSession?, ended: Bool) -> String {
@@ -143,29 +147,29 @@ struct TerminalsHome: View {
     private func macRow(_ server: ConnectionModel, _ grant: DeviceGrant) -> some View {
         let model = macs.existing(for: server)
         return Button { openMac(server, grant) } label: {
-            HStack(spacing: 14) {
+            HStack(spacing: WitermMetrics.Space.m) {
                 IconTile(systemImage: grant.host.platform == .macos ? "laptopcomputer" : "iphone", tint: grant.host.identityHue)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(grant.host.name).foregroundStyle(WitermTheme.ink)
+                VStack(alignment: .leading, spacing: WitermMetrics.Space.xxs) {
+                    Text(grant.host.name).font(WitermType.rowTitle).foregroundStyle(WitermTheme.ink)
                     // Typing is the norm, so only its absence is stated here;
-                    // Devices → Device Details states either.
+                    // the device's page in Devices states either.
                     let detail = [grant.permission == .view ? String(localized: "Can only watch", bundle: .main) : nil,
                                   servers.servers.count > 1 ? server.displayName : nil].compactMap { $0 }
                     if !detail.isEmpty {
                         Text(detail.joined(separator: " · "))
-                            .font(.caption)
+                            .font(WitermType.rowDetail)
                             .foregroundStyle(WitermTheme.secondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
                 }
-                Spacer(minLength: 8)
+                Spacer(minLength: WitermMetrics.Space.s)
                 Image(systemName: "chevron.right")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(WitermTheme.secondary)
                     .accessibilityHidden(true)
             }
-            .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -176,34 +180,24 @@ struct TerminalsHome: View {
 
     // MARK: First use
 
-    /// Three ways in, each saying what it needs. The Welcome Tour explains;
-    /// this screen only acts.
+    /// Three ways in, each saying what it needs, as one list section. The
+    /// Welcome Tour explains; this screen only acts. Colors stay neutral:
+    /// hues belong to machines.
     private var firstUse: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                BrandEmblem(size: 56).accessibilityHidden(true)
-                VStack(spacing: 0) {
-                    FirstUseRow(title: String(localized: "Connect to an SSH Host", bundle: .main),
-                                detail: String(localized: "Needs an address and a login", bundle: .main),
-                                symbol: "terminal", hue: IdentityHue.rose, action: ui.presentNew)
-                        .accessibilityIdentifier("sshAddFirstHost")
-                    Divider().padding(.leading, 60)
-                    FirstUseRow(title: String(localized: "Add Device", bundle: .main),
-                                detail: String(localized: "Scan or paste an invitation", bundle: .main),
-                                symbol: "laptopcomputer.and.iphone", hue: IdentityHue.sky, action: continueFromDevice)
-                        .accessibilityIdentifier("firstUseContinue")
-                    Divider().padding(.leading, 60)
-                    FirstUseRow(title: String(localized: "Import SSH Hosts", bundle: .main),
-                                detail: String(localized: "From an SSH config file", bundle: .main),
-                                symbol: "square.and.arrow.down", hue: IdentityHue.violet, action: ui.presentImport)
-                        .accessibilityIdentifier("sshImportHosts")
-                }
-                .witermCard(padding: 0)
-            }
-            .readableContent()
-            .padding(.vertical, 24)
+        Section {
+            FirstUseRow(title: String(localized: "Add SSH Host…", bundle: .main),
+                        detail: String(localized: "Needs an address and a login", bundle: .main),
+                        symbol: WitermSymbols.sshHost, action: ui.presentNew)
+                .accessibilityIdentifier("sshAddFirstHost")
+            FirstUseRow(title: String(localized: "Add Device", bundle: .main),
+                        detail: String(localized: "Scan or paste an invitation", bundle: .main),
+                        symbol: WitermSymbols.openOn, action: continueFromDevice)
+                .accessibilityIdentifier("firstUseContinue")
+            FirstUseRow(title: String(localized: "Import SSH Hosts…", bundle: .main),
+                        detail: String(localized: "From an SSH config file", bundle: .main),
+                        symbol: "square.and.arrow.down", action: ui.presentImport)
+                .accessibilityIdentifier("sshImportHosts")
         }
-        .background(WitermTheme.canvas)
     }
 }
 
@@ -212,17 +206,16 @@ private struct FirstUseRow: View {
     let title: String
     let detail: String
     let symbol: String
-    let hue: Color
     let action: () -> Void
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 14) {
-                if !typeSize.isAccessibilitySize { IconTile(systemImage: symbol, tint: hue) }
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title).font(.headline).foregroundStyle(WitermTheme.ink)
-                    Text(detail).font(.subheadline).foregroundStyle(WitermTheme.secondary)
+            HStack(spacing: WitermMetrics.Space.m) {
+                if !typeSize.isAccessibilitySize { IconTile(systemImage: symbol) }
+                VStack(alignment: .leading, spacing: WitermMetrics.Space.xxs) {
+                    Text(title).font(WitermType.rowTitle.weight(.semibold)).foregroundStyle(WitermTheme.ink)
+                    Text(detail).font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
@@ -231,12 +224,36 @@ private struct FirstUseRow: View {
                     .foregroundStyle(WitermTheme.secondary)
                     .accessibilityHidden(true)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .frame(minHeight: 56)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// The host menu's main items as swipes: Favorite leading; Disconnect or
+/// Delete Host trailing (deleting is undoable).
+struct SSHHostSwipeActions: ViewModifier {
+    let profile: SSHProfile
+    let ssh: SSHWorkspaceModel
+    let ui: SSHWorkspaceUI
+
+    func body(content: Content) -> some View {
+        let session = ssh.session(for: profile.id)
+        content
+            .swipeActions(edge: .leading) {
+                Button(ssh.isFavorite(profile) ? String(localized: "Unfavorite", bundle: .main) : String(localized: "Favorite", bundle: .main),
+                       systemImage: ssh.isFavorite(profile) ? "star.slash" : "star") { ssh.toggleFavorite(profile) }
+                    .tint(.orange)
+            }
+            .swipeActions(edge: .trailing) {
+                if let session {
+                    Button(String(localized: "Disconnect", bundle: .main), systemImage: WitermSymbols.disconnect, role: .destructive) {
+                        ssh.disconnect(session)
+                    }
+                } else {
+                    Button(String(localized: "Delete Host", bundle: .main), systemImage: "trash", role: .destructive) { ui.remove(profile) }
+                }
+            }
     }
 }
 
@@ -258,11 +275,11 @@ struct SSHHostActions: View {
             Button(String(localized: "Host Keys", bundle: .main), systemImage: "key") { ui.inspectKeys(profile) }
             Divider()
             if let session {
-                Button(String(localized: "Disconnect", bundle: .main), systemImage: "xmark.circle", role: .destructive) { ssh.disconnect(session) }
+                Button(String(localized: "Disconnect", bundle: .main), systemImage: WitermSymbols.disconnect, role: .destructive) { ssh.disconnect(session) }
             }
             Button(String(localized: "Delete Host", bundle: .main), systemImage: "trash", role: .destructive) { ui.remove(profile) }
         } label: {
-            Image(systemName: "ellipsis").frame(width: 44, height: 44)
+            Image(systemName: WitermSymbols.more).touchTarget(square: true)
         }
         .accessibilityLabel(String(localized: "Actions for \(String(profile.name))", bundle: .main))
         .accessibilityIdentifier("sshProfileActions-\(profile.id.uuidString)")

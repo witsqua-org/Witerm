@@ -3,20 +3,117 @@ import Foundation
 import Security
 import LocalAuthentication
 
+/// What a read that may not ask the person found.
+enum SSHSecretProbe: Equatable {
+    case missing
+    /// Readable without asking: a host-key pin, or a credential saved before
+    /// credentials were protected.
+    case readable(Data)
+    /// Saved behind device-owner authentication.
+    case locked
+}
+
 protocol SSHSecretStorage: Sendable {
     func read(_ account: String) throws -> Data?
     func create(_ data: Data, account: String) throws -> Bool
     func write(_ data: Data, account: String) throws
     func delete(_ account: String) throws
+    /// Reads without any prompt, saying whether an item is there but locked.
+    func probe(_ account: String) throws -> SSHSecretProbe
+    /// Reads a locked item with a context the person already authenticated.
+    func read(_ account: String, unlock: SSHUnlock) throws -> Data?
+    /// Replaces an item with one that needs device-owner authentication to read.
+    func writeProtected(_ data: Data, account: String) throws
+    /// Every account in this store, read from attributes only (no prompt).
+    func accounts() throws -> [String]
+}
+
+extension SSHSecretStorage {
+    func probe(_ account: String) throws -> SSHSecretProbe { try read(account).map(SSHSecretProbe.readable) ?? .missing }
+    func read(_ account: String, unlock: SSHUnlock) throws -> Data? { try read(account) }
+    func writeProtected(_ data: Data, account: String) throws { try write(data, account: account) }
+    func accounts() throws -> [String] { [] }
 }
 
 struct SSHKeychainStorage: SSHSecretStorage {
+    static let service = "com.witerm.ssh.v1"
+
     private func query(_ account: String) -> [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
-         kSecAttrService as String: "com.witerm.ssh.v1",
+         kSecAttrService as String: Self.service,
          kSecAttrAccount as String: account,
          kSecAttrSynchronizable as String: false,
          kSecUseDataProtectionKeychain as String: true]
+    }
+
+    /// A saved credential: readable only after Face ID, Touch ID, or the
+    /// device passcode (the Mac's login password), only on this device, only
+    /// while a passcode is set, and never synced. Nil when the device can't
+    /// protect it, such as without a passcode; nothing is stored then.
+    static func protectedItem(_ data: Data, account: String) -> [String: Any]? {
+        var error: Unmanaged<CFError>?
+        guard let access = SecAccessControlCreateWithFlags(
+            nil, kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly, .userPresence, &error) else { return nil }
+        return [kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: account,
+                kSecAttrSynchronizable as String: false,
+                kSecUseDataProtectionKeychain as String: true,
+                kSecAttrAccessControl as String: access,
+                kSecValueData as String: data]
+    }
+
+    func probe(_ account: String) throws -> SSHSecretProbe {
+        var q = query(account)
+        q[kSecReturnData as String] = true
+        q[kSecMatchLimit as String] = kSecMatchLimitOne
+        let context = LAContext()
+        context.interactionNotAllowed = true
+        q[kSecUseAuthenticationContext as String] = context
+        var item: CFTypeRef?
+        switch SecItemCopyMatching(q as CFDictionary, &item) {
+        case errSecItemNotFound: return .missing
+        case errSecInteractionNotAllowed: return .locked
+        case errSecSuccess:
+            guard let data = item as? Data else { throw SSHFailure.storageUnavailable }
+            return .readable(data)
+        default: throw SSHFailure.storageUnavailable
+        }
+    }
+
+    func read(_ account: String, unlock: SSHUnlock) throws -> Data? {
+        var q = query(account)
+        q[kSecReturnData as String] = true
+        q[kSecMatchLimit as String] = kSecMatchLimitOne
+        q[kSecUseAuthenticationContext as String] = unlock.context
+        var item: CFTypeRef?
+        let result = SecItemCopyMatching(q as CFDictionary, &item)
+        if result == errSecItemNotFound { return nil }
+        if result == errSecUserCanceled || result == errSecAuthFailed { throw SSHFailure.cancelled }
+        guard result == errSecSuccess, let data = item as? Data else { throw SSHFailure.storageUnavailable }
+        return data
+    }
+
+    func writeProtected(_ data: Data, account: String) throws {
+        guard let item = Self.protectedItem(data, account: account) else { throw SSHFailure.storageUnavailable }
+        // Replace rather than update: updating a protected item would ask the
+        // person again, and an older unprotected item gains protection here.
+        try delete(account)
+        guard SecItemAdd(item as CFDictionary, nil) == errSecSuccess else { throw SSHFailure.storageUnavailable }
+    }
+
+    func accounts() throws -> [String] {
+        let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                kSecAttrService as String: Self.service,
+                                kSecAttrSynchronizable as String: false,
+                                kSecUseDataProtectionKeychain as String: true,
+                                kSecReturnAttributes as String: true,
+                                kSecMatchLimit as String: kSecMatchLimitAll]
+        var items: CFTypeRef?
+        let result = SecItemCopyMatching(q as CFDictionary, &items)
+        if result == errSecItemNotFound { return [] }
+        guard result == errSecSuccess, let list = items as? [[String: Any]] else { throw SSHFailure.storageUnavailable }
+        return list.compactMap { $0[kSecAttrAccount as String] as? String }
     }
     func read(_ account: String) throws -> Data? {
         var q = query(account)
@@ -218,19 +315,139 @@ public actor SSHProfileStore {
         }
         try write(values)
     }
-    public func credential(hostID: UUID) throws -> SSHCredential? {
-        Self.diskLock.lock(); defer { Self.diskLock.unlock() }
-        guard try profiles().contains(where: { ($0.jumpHosts + [$0.host]).contains(where: { $0.id == hostID }) }) else { return nil }
-        guard let data = try secrets.read("credential-\(hostID.uuidString)") else { return nil }
-        return try JSONDecoder().decode(StoredSSHCredential.self, from: data).credential()
+    private func account(_ hostID: UUID) -> String { "credential-\(hostID.uuidString)" }
+
+    private func isSaved(_ hostID: UUID) throws -> Bool {
+        try profiles().contains(where: { ($0.jumpHosts + [$0.host]).contains(where: { $0.id == hostID }) })
     }
+
+    /// Which of these hosts have a saved credential, without asking the person.
+    public func savedCredentialHosts(_ hostIDs: [UUID]) throws -> Set<UUID> {
+        Self.diskLock.lock(); defer { Self.diskLock.unlock() }
+        var saved = Set<UUID>()
+        for id in hostIDs where try isSaved(id) {
+            if try secrets.probe(account(id)) != .missing { saved.insert(id) }
+        }
+        return saved
+    }
+
+    /// Whether reading these credentials needs the person to authenticate.
+    /// Credentials saved before they were protected don't, until they're
+    /// next saved (after a successful connection), which protects them.
+    public func credentialsNeedUnlock(_ hostIDs: [UUID]) throws -> Bool {
+        Self.diskLock.lock(); defer { Self.diskLock.unlock() }
+        return try hostIDs.contains { try isSaved($0) && secrets.probe(account($0)) == .locked }
+    }
+
+    /// The saved credentials for these hosts, read with one authentication.
+    /// `unlock` must already be unlocked when any of them is protected.
+    public func credentials(_ hostIDs: [UUID], unlock: SSHUnlock?) throws -> [UUID: SSHCredential] {
+        Self.diskLock.lock(); defer { Self.diskLock.unlock() }
+        var result: [UUID: SSHCredential] = [:]
+        for id in hostIDs where try isSaved(id) {
+            let data: Data?
+            switch try secrets.probe(account(id)) {
+            case .missing: data = nil
+            case .readable(let value): data = value
+            case .locked:
+                guard let unlock else { throw SSHFailure.cancelled }
+                data = try secrets.read(account(id), unlock: unlock)
+            }
+            if let data { result[id] = try JSONDecoder().decode(StoredSSHCredential.self, from: data).credential() }
+        }
+        return result
+    }
+
+    /// One host's credential when it can be read without asking; a protected
+    /// one throws `cancelled` (use `credentials(_:unlock:)`).
+    public func credential(hostID: UUID) throws -> SSHCredential? {
+        try credentials([hostID], unlock: nil)[hostID]
+    }
+
     public func setCredential(_ credential: SSHCredential?, hostID: UUID) throws {
         Self.diskLock.lock(); defer { Self.diskLock.unlock() }
-        guard try profiles().contains(where: { ($0.jumpHosts + [$0.host]).contains(where: { $0.id == hostID }) }) else {
-            throw SSHFailure.invalidConfiguration
+        guard try isSaved(hostID) else { throw SSHFailure.invalidConfiguration }
+        if let credential {
+            try secrets.writeProtected(JSONEncoder().encode(StoredSSHCredential(credential)), account: account(hostID))
+        } else { try secrets.delete(account(hostID)) }
+    }
+
+    /// Deletes a host but keeps its credentials, so Undo can restore it
+    /// without reading them; `purgeCredentials` or the next launch removes them.
+    public func delete(id: UUID, keepingCredentials: Bool) throws {
+        Self.diskLock.lock(); defer { Self.diskLock.unlock() }
+        guard keepingCredentials else { return try delete(id: id) }
+        var values = try profiles()
+        guard values.contains(where: { $0.id == id }) else { return }
+        values.removeAll { $0.id == id }
+        try write(values)
+    }
+
+    /// Removes the credentials of hosts no saved profile uses any more.
+    public func purgeUnusedCredentials() throws {
+        Self.diskLock.lock(); defer { Self.diskLock.unlock() }
+        let used = Set(try profiles().flatMap { $0.jumpHosts + [$0.host] }.map { account($0.id) })
+        for name in try secrets.accounts() where name.hasPrefix("credential-") && !used.contains(name) {
+            try secrets.delete(name)
         }
-        let account = "credential-\(hostID.uuidString)"
-        if let credential { try secrets.write(JSONEncoder().encode(StoredSSHCredential(credential)), account: account) }
-        else { try secrets.delete(account) }
+    }
+}
+
+/// One authentication for one connection attempt: Face ID or Touch ID with
+/// the device passcode (the Mac's login password) as the fallback, reused for
+/// every hop of a jump-host chain.
+public final class SSHUnlock: @unchecked Sendable {
+    public enum Method: Sendable, Equatable {
+        case faceID, touchID, opticID, passcode
+        /// No passcode is set: nothing can be saved.
+        case unavailable
+    }
+
+    public enum Outcome: Sendable, Equatable {
+        case unlocked
+        /// The person cancelled; the attempt ends quietly.
+        case cancelled
+        /// The person chose to type the password for this attempt instead.
+        case enterPassword
+    }
+
+    let context = LAContext()
+
+    public init() {}
+
+    /// How saved credentials are protected on this device.
+    public static var method: Method {
+        let context = LAContext()
+        var error: NSError?
+        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else { return .unavailable }
+        _ = context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil)
+        switch context.biometryType {
+        case .faceID: return .faceID
+        case .touchID: return .touchID
+        case .opticID: return .opticID
+        default: return .passcode
+        }
+    }
+
+    /// Asks once. Biometrics come first, with `fallbackTitle` (Enter Password)
+    /// for typing the SSH password instead; without biometrics, or once they're
+    /// locked out, the device passcode.
+    public func unlock(reason: String, fallbackTitle: String) async throws -> Outcome {
+        context.localizedFallbackTitle = fallbackTitle
+        let biometric = context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil)
+        do {
+            _ = try await context.evaluatePolicy(biometric ? .deviceOwnerAuthenticationWithBiometrics : .deviceOwnerAuthentication,
+                                                 localizedReason: reason)
+            return .unlocked
+        } catch let error as LAError {
+            switch error.code {
+            case .userCancel, .appCancel, .systemCancel: return .cancelled
+            case .userFallback: return .enterPassword
+            case .biometryLockout:
+                _ = try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason)
+                return .unlocked
+            default: throw SSHFailure.storageUnavailable
+            }
+        }
     }
 }

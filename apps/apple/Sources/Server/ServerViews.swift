@@ -19,34 +19,34 @@ struct ConnectionFeedback: View {
             }
             .foregroundStyle(WitermTheme.secondary)
         case .checking:
-            HStack(alignment: .center, spacing: 12) {
+            HStack(alignment: .center, spacing: WitermMetrics.Space.m) {
                 ConnectionActivity()
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: WitermMetrics.Space.xs) {
                     Text(String(localized: "Checking connection…", bundle: .main)).font(.subheadline.weight(.medium))
-                    Text(String(localized: "Waiting for the server", bundle: .main)).font(.caption).foregroundStyle(WitermTheme.secondary)
+                    Text(String(localized: "Waiting for the server", bundle: .main)).font(WitermType.meta).foregroundStyle(WitermTheme.secondary)
                 }
             }
             .accessibilityElement(children: .combine)
         case .available(let date):
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .top, spacing: WitermMetrics.Space.m) {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.body)
                     .foregroundStyle(WitermTheme.positive)
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: WitermMetrics.Space.xs) {
                     Text(String(localized: "The server is reachable", bundle: .main)).font(.subheadline.weight(.medium))
                     Text(String(localized: "Checked at \(String(date.formatted(date: .omitted, time: .shortened)))", bundle: .main))
-                        .font(.caption).foregroundStyle(WitermTheme.secondary)
+                        .font(WitermType.meta).foregroundStyle(WitermTheme.secondary)
                 }
             }
             .accessibilityElement(children: .combine)
         case .failed(let issue):
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .top, spacing: WitermMetrics.Space.m) {
                 Image(systemName: "exclamationmark.circle.fill")
                     .font(.body)
                     .foregroundStyle(WitermTheme.warning)
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: WitermMetrics.Space.xs) {
                     Text(issue.title).font(.subheadline.weight(.medium))
                     Text(issue.recovery)
                         .font(.subheadline)
@@ -130,17 +130,27 @@ private struct ServerEditor: ViewModifier {
     @Binding var request: ServerEditRequest?
     @Environment(ServerList.self) private var servers
 
+    // The check always follows. On iPhone the longer titles pushed the
+    // sheet's own title off ("Add Relay…"), so they say only what's done.
+    #if os(iOS)
+    static let addTitle = String(localized: "Add", bundle: .main)
+    static let saveTitle = String(localized: "Save", bundle: .main)
+    #else
+    static let addTitle = String(localized: "Add and Check", bundle: .main)
+    static let saveTitle = String(localized: "Save and Check", bundle: .main)
+    #endif
+
     func body(content: Content) -> some View {
         content.sheet(item: $request) { request in
             switch request {
             case .add:
                 ServerAddressSheet(title: String(localized: "Add Relay Server", bundle: .main),
-                                   actionTitle: String(localized: "Add and Check", bundle: .main), address: "") { address in
+                                   actionTitle: Self.addTitle, address: "") { address in
                     do throws(ServerList.Failure) { try servers.add(address); return nil } catch { return error.message }
                 }
             case .edit(let server):
                 ServerAddressSheet(title: String(localized: "Edit Relay Server", bundle: .main),
-                                   actionTitle: String(localized: "Save and Check", bundle: .main), address: server.address) { address in
+                                   actionTitle: Self.saveTitle, address: server.address) { address in
                     do throws(ServerList.Failure) { try servers.validate(address, replacing: server) } catch { return error.message }
                     #if os(macOS)
                     if ServerAddressKey(address) != ServerAddressKey(server.address) {

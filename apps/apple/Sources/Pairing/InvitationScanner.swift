@@ -56,20 +56,20 @@ struct InvitationScanner: View {
             if cameraAllowed == true {
                 PairingCamera(failed: $failed) { onInvitation($0) }
                     .overlay(alignment: .bottom) {
-                        Text(String(localized: "Point at the code on the other device", bundle: .main))
-                            .font(.footnote)
+                        Text(String(localized: "Point at the QR code on the other device", bundle: .main))
+                            .font(WitermType.rowDetail)
                             .foregroundStyle(.white)
                             .multilineTextAlignment(.center)
-                            .padding(.horizontal, 16)
-                            .padding(.bottom, 14)
+                            .padding(.horizontal, WitermMetrics.Space.l)
+                            .padding(.bottom, WitermMetrics.Space.m)
                     }
             } else {
                 ProgressView().tint(.white)
             }
         }
         .aspectRatio(1, contentMode: .fit)
-        .clipShape(.rect(cornerRadius: 28, style: .continuous))
-        .frame(maxWidth: 420)
+        .clipShape(.rect(cornerRadius: WitermMetrics.Radius.xl, style: .continuous))
+        .frame(maxWidth: WitermMetrics.readableWidth)
         .frame(maxWidth: .infinity)
     }
 }
@@ -89,14 +89,14 @@ private struct FallbackNote<Actions: View>: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 14) {
+        HStack(alignment: .top, spacing: WitermMetrics.Space.m) {
             if !typeSize.isAccessibilitySize {
                 IconTile(systemImage: "camera", tint: WitermTheme.secondary)
             }
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.headline).foregroundStyle(WitermTheme.ink)
-                Text(detail).font(.subheadline).foregroundStyle(WitermTheme.secondary)
-                actions.padding(.top, 6)
+            VStack(alignment: .leading, spacing: WitermMetrics.Space.xs) {
+                Text(title).font(WitermType.cardTitle).foregroundStyle(WitermTheme.ink)
+                Text(detail).font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
+                actions.padding(.top, WitermMetrics.Space.s)
             }
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)

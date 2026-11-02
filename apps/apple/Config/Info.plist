@@ -27,6 +27,8 @@
     </dict>
     <key>NSLocalNetworkUsageDescription</key>
     <string>Connect to Witerm servers on your local network.</string>
+    <key>NSFaceIDUsageDescription</key>
+    <string>Witerm uses Face ID to unlock SSH passwords and keys you saved.</string>
     <key>NSCameraUsageDescription</key>
     <string>Scan a pairing invitation from your Mac.</string>
     <key>UILaunchScreen</key>

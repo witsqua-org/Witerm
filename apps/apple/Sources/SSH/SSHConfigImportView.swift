@@ -86,18 +86,18 @@ struct SSHConfigImportView: View {
                 if let profile = entry.profile, !alreadySaved(entry) {
                     Toggle(isOn: Binding(get: { selected.contains(entry.alias) },
                                          set: { if $0 { selected.insert(entry.alias) } else { selected.remove(entry.alias) } })) {
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: WitermMetrics.Space.xxs) {
                             Text(verbatim: entry.alias)
                             Text(verbatim: profile.endpointSummary
                                  + (profile.jumpHosts.isEmpty ? "" : " · " + String(localized: "via \(profile.jumpHosts.map(\.hostname).joined(separator: ", "))", bundle: .main)))
-                                .font(.caption.monospaced())
+                                .font(WitermType.codeInline)
                                 .foregroundStyle(WitermTheme.secondary)
                         }
                     }
                     .accessibilityValue(profile.accessibilitySummary)
                 } else {
                     LabeledContent {
-                        Text(reason(entry)).font(.caption).foregroundStyle(WitermTheme.secondary)
+                        Text(reason(entry)).font(WitermType.meta).foregroundStyle(WitermTheme.secondary)
                     } label: {
                         Text(verbatim: entry.alias).foregroundStyle(WitermTheme.secondary)
                     }

@@ -2,6 +2,7 @@
 import SwiftUI
 import UIKit
 import SwiftTerm
+import UniformTypeIdentifiers
 import WitermCore
 
 extension Notification.Name {
@@ -75,6 +76,14 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         private var palette = TerminalColorScheme.system
         private var installedPalette: TerminalColorScheme?
         var announceOutput = false
+        /// Text never touches the screen edge: this much on each side, or
+        /// the safe area in landscape when that's wider.
+        static let edgeInset: CGFloat = 6
+        /// Back to the newest output, shown while scrolled back.
+        private let latestButton = UIButton(type: .system)
+        /// The size a pinch would set, shown while pinching.
+        private let sizeReadout = UILabel()
+        private var pinchStartSize: CGFloat?
 
         init(mode: LocalAttachmentMode, session: LocalSessionInfo, fontSize: CGFloat, isInteractive: Bool) {
             self.mode = mode
@@ -118,16 +127,95 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             readingView.panHorizontal = { [weak self] in self?.panReading(forward: $0) ?? false }
             let pinch = UIPinchGestureRecognizer(target: self, action: #selector(pinched(_:)))
             addGestureRecognizer(pinch)
+            installLatestButton()
+            installSizeReadout()
+            terminal.scrollStateChanged = { [weak self] output in self?.updateLatestButton(output: output) }
         }
 
-        /// Pinching changes the saved text size once the fingers lift, so a
-        /// controlled session is resized once rather than at every step.
+        private func installLatestButton() {
+            var configuration = UIButton.Configuration.gray()
+            configuration.image = UIImage(systemName: "arrow.down.to.line")
+            configuration.cornerStyle = .capsule
+            configuration.baseForegroundColor = .label
+            latestButton.configuration = configuration
+            latestButton.accessibilityLabel = String(localized: "Jump to Latest", bundle: .main)
+            latestButton.accessibilityIdentifier = "terminalJumpToLatest"
+            latestButton.showsLargeContentViewer = true
+            latestButton.largeContentTitle = latestButton.accessibilityLabel
+            latestButton.isHidden = true
+            latestButton.addAction(UIAction { [weak self] _ in self?.jumpToLatest() }, for: .touchUpInside)
+            addSubview(latestButton)
+            addInteraction(UILargeContentViewerInteraction())
+        }
+
+        private func installSizeReadout() {
+            sizeReadout.font = .preferredFont(forTextStyle: .headline)
+            sizeReadout.adjustsFontForContentSizeCategory = true
+            sizeReadout.textAlignment = .center
+            sizeReadout.textColor = .label
+            sizeReadout.backgroundColor = .secondarySystemBackground
+            sizeReadout.layer.cornerRadius = 12
+            sizeReadout.layer.cornerCurve = .continuous
+            sizeReadout.clipsToBounds = true
+            sizeReadout.isHidden = true
+            sizeReadout.isAccessibilityElement = false
+            addSubview(sizeReadout)
+        }
+
+        /// Whether the view shows the newest output.
+        private var following: Bool { !terminal.canScroll || terminal.scrollPosition >= 0.999 }
+
+        /// Shown while scrolled back; new output meanwhile is said in its value.
+        private func updateLatestButton(output: Bool) {
+            let hidden = following
+            if hidden { latestButton.accessibilityValue = nil }
+            else if output { latestButton.accessibilityValue = String(localized: "New output", bundle: .main) }
+            guard latestButton.isHidden != hidden else { return }
+            latestButton.isHidden = hidden
+            accessibilityElements = hidden ? [readingView] : [readingView, latestButton]
+            setNeedsLayout()
+        }
+
+        private func jumpToLatest() {
+            let bottom = max(0, terminal.contentSize.height - terminal.bounds.height)
+            terminal.setContentOffset(CGPoint(x: terminal.contentOffset.x, y: bottom),
+                                      animated: !UIAccessibility.isReduceMotionEnabled)
+            UIAccessibility.post(notification: .layoutChanged, argument: readingView)
+        }
+
+        /// Pinching scales the text live and shows the size it will set; the
+        /// saved size changes once the fingers lift, so a controlled session
+        /// is resized once rather than at every step.
         @objc private func pinched(_ pinch: UIPinchGestureRecognizer) {
-            guard pinch.state == .ended else { return }
             let defaults = UserDefaults.standard
             let current = defaults.object(forKey: TerminalFontSize.key) as? Double ?? TerminalFontSize.standard
             let next = TerminalFontSize.clamped((current * Double(pinch.scale)).rounded())
-            if next != current { defaults.set(next, forKey: TerminalFontSize.key) }
+            switch pinch.state {
+            case .began, .changed:
+                if pinchStartSize == nil { pinchStartSize = terminal.font.pointSize }
+                let scale = CGFloat(next / current)
+                scroll.transform = UIAccessibility.isReduceMotionEnabled ? .identity : CGAffineTransform(scaleX: scale, y: scale)
+                sizeReadout.text = String(localized: "\(Int(next)) pt", bundle: .main)
+                sizeReadout.isHidden = false
+                setNeedsLayout()
+            case .ended:
+                endPinch()
+                if next != current {
+                    defaults.set(next, forKey: TerminalFontSize.key)
+                    UIAccessibility.post(notification: .announcement, argument: String(localized: "\(Int(next)) pt", bundle: .main))
+                }
+                if next == TerminalFontSize.range.lowerBound || next == TerminalFontSize.range.upperBound {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                }
+            default:
+                endPinch()
+            }
+        }
+
+        private func endPinch() {
+            pinchStartSize = nil
+            scroll.transform = .identity
+            sizeReadout.isHidden = true
         }
 
         required init?(coder: NSCoder) { nil }
@@ -137,10 +225,25 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             refreshReadingDocument()
         }
 
+        /// The area the text uses: the view without its side insets.
+        private var contentBounds: CGRect {
+            let left = max(Self.edgeInset, safeAreaInsets.left), right = max(Self.edgeInset, safeAreaInsets.right)
+            return bounds.inset(by: UIEdgeInsets(top: 0, left: left, bottom: 0, right: right))
+        }
+
         override func layoutSubviews() {
             super.layoutSubviews()
-            scroll.frame = bounds
-            readingView.frame = bounds
+            let content = contentBounds
+            if pinchStartSize == nil {
+                scroll.transform = .identity
+                scroll.frame = content
+            }
+            readingView.frame = content
+            let side: CGFloat = 44, margin: CGFloat = WitermMetrics.Space.m
+            latestButton.frame = CGRect(x: content.maxX - side - margin, y: bounds.maxY - side - margin, width: side, height: side)
+            let readout = sizeReadout.intrinsicContentSize
+            sizeReadout.frame = CGRect(x: bounds.midX - (readout.width + 32) / 2, y: bounds.midY - (readout.height + 16) / 2,
+                                       width: readout.width + 32, height: readout.height + 16)
             if let grid = fixedGrid {
                 preserveGrid(grid)
                 terminal.frame = fixedGridFrame()
@@ -154,8 +257,8 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
                 // Large accessibility fonts can require horizontal scrolling
                 // to preserve the protocol's minimum 20-column input grid.
                 terminal.frame = CGRect(origin: .zero, size: CGSize(
-                    width: max(bounds.width, grid.width / CGFloat(columns) * 20 + pixel),
-                    height: max(bounds.height, grid.height / CGFloat(rows) * 5 + pixel)
+                    width: max(content.width, grid.width / CGFloat(columns) * 20 + pixel),
+                    height: max(content.height, grid.height / CGFloat(rows) * 5 + pixel)
                 ))
                 pinToBottomIfFollowing()
             }
@@ -176,6 +279,12 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
                 }
             }
             refreshReadingDocument()
+            updateLatestButton(output: false)
+        }
+
+        override func safeAreaInsetsDidChange() {
+            super.safeAreaInsetsDidChange()
+            setNeedsLayout()
         }
 
         /// The keyboard animates the height through several frames. When the
@@ -198,7 +307,8 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             let cell = cellSize
             guard cell.width > 0, cell.height > 0 else { return (session.columns, session.rows) }
             func whole(_ length: CGFloat, _ unit: CGFloat) -> Int { Int((length / unit) * (1 + 1e-9)) }
-            return (min(500, max(20, whole(bounds.width, cell.width))), min(200, max(5, whole(bounds.height, cell.height))))
+            let content = contentBounds
+            return (min(500, max(20, whole(content.width, cell.width))), min(200, max(5, whole(content.height, cell.height))))
         }
 
         func setInteractive(_ enabled: Bool) {
@@ -365,6 +475,8 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         private var editMenu: UIEditMenuInteraction?
         private var focusTapRecognizer: UITapGestureRecognizer?
         var acceptsInput: Bool { mode == .control && inputEnabled }
+        /// The view scrolled or got output; `true` for output.
+        var scrollStateChanged: ((Bool) -> Void)?
 
         init(mode: LocalAttachmentMode, session: LocalSessionInfo, fontSize: CGFloat, isInteractive: Bool) {
             TerminalView.textInputDebugEnabled = false
@@ -373,6 +485,8 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             super.init(frame: .zero, font: .monospacedSystemFont(ofSize: fontSize, weight: .regular),
                        options: TerminalOptions(cols: session.columns, rows: session.rows))
             inputDestination = session.name
+            // Text from the key row's system Paste control (no paste prompt).
+            pasteConfiguration = UIPasteConfiguration(acceptableTypeIdentifiers: [UTType.utf8PlainText.identifier, UTType.plainText.identifier])
             inputAccessoryView = MobileTerminalAccessory(terminal: self)
             // SwiftTerm leaves the scroll delegate unset; ours only finishes
             // a scroll that comes to rest just short of the bottom.
@@ -472,6 +586,29 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             }
         }
 
+        override func canPaste(_ itemProviders: [NSItemProvider]) -> Bool { acceptsInput }
+
+        override func paste(itemProviders: [NSItemProvider]) {
+            guard acceptsInput,
+                  let provider = itemProviders.first(where: { $0.canLoadObject(ofClass: NSString.self) }) else { return }
+            _ = provider.loadObject(ofClass: NSString.self) { [weak self] object, _ in
+                guard let text = (object as? NSString).map(String.init) else { return }
+                Task { @MainActor in self?.reviewOrPaste(text) }
+            }
+        }
+
+        /// The system's own Paste command among the edit menu's suggestions.
+        /// Choosing it counts as the person's paste, so iOS doesn't ask.
+        static func systemPaste(in elements: [UIMenuElement]) -> UIMenuElement? {
+            for element in elements {
+                if let command = element as? UICommand, command.action == #selector(UIResponderStandardEditActions.paste(_:)) {
+                    return command
+                }
+                if let menu = element as? UIMenu, let found = systemPaste(in: menu.children) { return found }
+            }
+            return nil
+        }
+
         /// The edit actions offered after a selection: Copy and selecting
         /// more always; Paste only where typing is allowed.
         func editActions() -> [UIAction] {
@@ -503,7 +640,9 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
 
         func editMenuInteraction(_ interaction: UIEditMenuInteraction, menuFor configuration: UIEditMenuConfiguration,
                                  suggestedActions: [UIMenuElement]) -> UIMenu? {
-            UIMenu(children: editActions())
+            let paste = String(localized: "Paste", bundle: .main)
+            guard acceptsInput, let system = Self.systemPaste(in: suggestedActions) else { return UIMenu(children: editActions()) }
+            return UIMenu(children: editActions().filter { $0.title != paste } + [system])
         }
 
         required init?(coder: NSCoder) { nil }
@@ -627,6 +766,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         /// turn, however many output chunks or scroll steps arrived in it,
         /// rather than once per chunk while long output streams in.
         func requestReadingRefresh(output: Bool) {
+            if output { scrollStateChanged?(true) }
             readingRefreshHasOutput = readingRefreshHasOutput || output
             guard !readingRefreshQueued else { return }
             readingRefreshQueued = true
@@ -661,7 +801,10 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         /// the reading page follows it too.
         override var contentOffset: CGPoint {
             didSet {
-                if oldValue != contentOffset { requestReadingRefresh(output: false) }
+                if oldValue != contentOffset {
+                    requestReadingRefresh(output: false)
+                    scrollStateChanged?(false)
+                }
             }
         }
 

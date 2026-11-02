@@ -9,6 +9,9 @@ struct SSHEditorRequest: Identifiable {
     let purpose: SSHFormPurpose
     /// `user@host:port` to start a new host from.
     var address: String? = nil
+    /// Hosts whose saved credential wasn't read (Face ID was cancelled, or the
+    /// person chose Enter Password): it stays unless they save a new one.
+    var preserving: Set<UUID> = []
 }
 
 /// Sheet and alert state for the SSH workspace, shared by the Mac sidebar and
@@ -17,7 +20,7 @@ struct SSHEditorRequest: Identifiable {
 @MainActor @Observable
 final class SSHWorkspaceUI {
     var editorRequest: SSHEditorRequest?
-    var pendingConnection: (SSHProfile, [UUID: SSHCredential], Set<UUID>)?
+    var pendingConnection: (SSHProfile, [UUID: SSHCredential], Set<UUID>, Set<UUID>)?
     var removing: SSHProfile?
     var inspectingKeys: SSHProfile?
     /// The session whose files or forwards are shown; sheets follow it.
@@ -58,21 +61,40 @@ final class SSHWorkspaceUI {
     }
 
     /// Connects at once when every hop has credentials the person explicitly
-    /// saved; otherwise opens the prefilled connection form.
-    /// `reviewing` always shows the prefilled form with Connect, so a rejected
-    /// credential is corrected instead of retried as is.
+    /// saved, after one Face ID (or Touch ID, or passcode) check for all of
+    /// them; otherwise opens the prefilled connection form. `reviewing`
+    /// always shows the prefilled form with Connect, so a rejected credential
+    /// is corrected instead of retried as is. Cancelling the check ends the
+    /// attempt without an error and offers the form to type the password.
     func open(_ profile: SSHProfile, model: SSHWorkspaceModel, editing: Bool = false, reviewing: Bool = false) {
         let token = UUID()
         request = token
         Task {
-            let stored = await model.savedCredentials(for: profile)
-            guard visible, request == token, !model.connecting, model.session(for: profile.id) == nil,
-                  model.profiles.contains(where: { $0.id == profile.id }) else { return }
+            @MainActor func current() -> Bool {
+                visible && request == token && !model.connecting && model.session(for: profile.id) == nil
+                    && model.profiles.contains(where: { $0.id == profile.id })
+            }
+            let saved = await model.savedCredentialHosts(for: profile)
+            guard current() else { return }
             let hosts = (profile.jumpHosts + [profile.host]).map(\.id)
-            if !editing, !reviewing, hosts.allSatisfy({ stored[$0] != nil }) {
-                model.connect(profile, credentials: stored, remember: Set(hosts))
-            } else {
-                editorRequest = SSHEditorRequest(profile: profile, credentials: stored, purpose: editing ? .edit : .connect)
+            let purpose: SSHFormPurpose = editing ? .edit : .connect
+            guard !saved.isEmpty else {
+                editorRequest = SSHEditorRequest(profile: profile, credentials: [:], purpose: purpose)
+                return
+            }
+            let read = await model.savedCredentials(for: profile)
+            guard current() else { return }
+            switch read {
+            case .read(let stored):
+                if !editing, !reviewing, hosts.allSatisfy({ stored[$0] != nil }) {
+                    model.connect(profile, credentials: stored, remember: Set(hosts))
+                } else {
+                    editorRequest = SSHEditorRequest(profile: profile, credentials: stored, purpose: purpose)
+                }
+            case .cancelled where editing, .failed:
+                return
+            case .cancelled, .enterPassword:
+                editorRequest = SSHEditorRequest(profile: profile, credentials: [:], purpose: purpose, preserving: saved)
             }
         }
     }
@@ -114,17 +136,17 @@ struct SSHPresentations: ViewModifier {
                 guard ui.visible else { ui.pendingConnection = nil; return }
                 if let pending = ui.pendingConnection {
                     ui.pendingConnection = nil
-                    model.connect(pending.0, credentials: pending.1, remember: pending.2)
+                    model.connect(pending.0, credentials: pending.1, remember: pending.2, preserving: pending.3)
                 }
             }) { request in
                 SSHProfileForm(profile: request.profile, credentials: request.credentials, purpose: request.purpose,
                                address: request.address,
                                onSave: { profile, auth, remember in
                     guard ui.visible, ui.editorRequest?.id == request.id else { throw CancellationError() }
-                    try await model.saveProfile(profile, credentials: auth, remember: remember)
+                    try await model.saveProfile(profile, credentials: auth, remember: remember, preserving: request.preserving)
                 }) { profile, auth, remember in
                     guard ui.visible, ui.editorRequest?.id == request.id else { return }
-                    ui.pendingConnection = (profile, auth, remember)
+                    ui.pendingConnection = (profile, auth, remember, request.preserving)
                 }
             }
             .sheet(item: $model.trustPrompt, onDismiss: {
@@ -161,28 +183,29 @@ struct SSHUndoRemovalBar: View {
     var body: some View {
         Group {
             if let removed = model.recentlyRemoved {
-                HStack(spacing: 12) {
+                HStack(spacing: WitermMetrics.Space.m) {
                     Text(String(localized: "Deleted \(String(removed.profile.name)) and its saved credentials.", bundle: .main))
-                        .font(.subheadline)
+                        .font(WitermType.rowDetail)
                         .foregroundStyle(WitermTheme.ink)
                         .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 8)
+                    Spacer(minLength: WitermMetrics.Space.s)
                     Button(String(localized: "Undo", bundle: .main)) { Task { await model.undoRemove() } }
-                        .font(.subheadline.weight(.semibold))
+                        .font(WitermType.rowDetail.weight(.semibold))
                         .touchTarget()
                         .accessibilityIdentifier("sshUndoRemove")
                     Button(String(localized: "Dismiss", bundle: .main), systemImage: "xmark", action: model.dismissUndo)
                         .labelStyle(.iconOnly)
                         .buttonStyle(.borderless)
                         .touchTarget(square: true)
+                        .accessibilityIdentifier("sshUndoDismiss")
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                .padding(.horizontal, WitermMetrics.Space.l)
+                .padding(.vertical, WitermMetrics.Space.s)
                 .background(WitermTheme.surface, in: .capsule)
-                .overlay { Capsule().strokeBorder(WitermTheme.secondary.opacity(0.25), lineWidth: 1).allowsHitTesting(false) }
+                .overlay { Capsule().strokeBorder(WitermTheme.hairline, lineWidth: 1).allowsHitTesting(false) }
                 .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
-                .frame(maxWidth: 520)
-                .padding(16)
+                .frame(maxWidth: WitermMetrics.readableWidth)
+                .padding(WitermMetrics.Space.l)
                 .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                 .onAppear {
                     AccessibilityNotification.Announcement(String(localized: "Deleted \(String(removed.profile.name)). Undo is available.", bundle: .main)).post()
@@ -204,7 +227,7 @@ struct SSHIssueBanner: View {
     var body: some View {
         if let issue = model.issue {
             IssueBanner(issue) {
-                HStack(spacing: 12) {
+                HStack(spacing: WitermMetrics.Space.m) {
                     if let profile, model.issueProfileID == profile.id {
                         switch model.issueRecovery {
                         case .editConnection:
@@ -224,10 +247,10 @@ struct SSHIssueBanner: View {
                         case nil: EmptyView()
                         }
                     }
-                    Button(String(localized: "Dismiss Message", bundle: .main)) { model.clearIssue() }
+                    Button(String(localized: "Dismiss", bundle: .main)) { model.clearIssue() }
                         .touchTarget()
                 }
-                .font(.subheadline)
+                .font(WitermType.rowDetail)
             }
             .accessibilityIdentifier("sshIssue")
         }
@@ -241,12 +264,12 @@ struct SSHTrustView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: WitermMetrics.Space.l) {
+                    HStack(alignment: .top, spacing: WitermMetrics.Space.m) {
                         IconTile(systemImage: "checkmark.shield")
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: WitermMetrics.Space.xs) {
                             Text(String(localized: "First Connection to This Host", bundle: .main))
-                                .font(.headline)
+                                .font(WitermType.cardTitle)
                                 .fixedSize(horizontal: false, vertical: true)
                             Text(String(localized: "Check that this matches the fingerprint the host's owner gives you.", bundle: .main))
                                 .font(.subheadline)
@@ -267,7 +290,7 @@ struct SSHTrustView: View {
                             .accessibilityIdentifier("sshHostFingerprint")
                     }
                     .witermCard()
-                    VStack(spacing: 8) {
+                    VStack(spacing: WitermMetrics.Space.s) {
                         PrimaryButton(String(localized: "Trust and Connect", bundle: .main), systemImage: "checkmark.shield", fullWidth: true) {
                             Task { await model.approveHostKey(prompt) }
                         }
@@ -317,11 +340,12 @@ struct SSHHostRowContent: View {
 
     var body: some View {
         if expanded {
-            // Label wraps text around its icon at accessibility sizes; an
-            // explicit stack keeps the lines aligned, and the decorative icon
-            // gives way to the text at those sizes.
-            HStack(alignment: .top, spacing: 14) {
-                if !typeSize.isAccessibilitySize { icon.padding(.top, 2).accessibilityHidden(true) }
+            // The iOS row: a tile in the host's hue, then the text, which
+            // keeps its own lines at every text size.
+            HStack(alignment: .center, spacing: WitermMetrics.Space.m) {
+                if !typeSize.isAccessibilitySize {
+                    IconTile(systemImage: active ? "terminal.fill" : WitermSymbols.sshHost, tint: profile.identityHue)
+                }
                 details
             }
         } else {
@@ -329,28 +353,51 @@ struct SSHHostRowContent: View {
         }
     }
 
+    /// The address under the name. A host named after its address shows only
+    /// what the name leaves out (a port other than 22), not the address twice.
+    private var addressLine: String? {
+        if let doing = activity?.summary(home: nil) { return doing }
+        guard expanded, profile.name == "\(profile.host.username)@\(profile.host.hostname)" else { return profile.endpointSummary }
+        return profile.host.port == 22 ? nil : ":\(profile.host.port)"
+    }
+
     private var details: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: WitermMetrics.Space.xxs) {
+            HStack(spacing: WitermMetrics.Space.s) {
                 Text(profile.name).lineLimit(expanded ? nil : 1)
-                if favorite { Image(systemName: "star.fill").font(.caption).accessibilityHidden(true) }
+                if favorite { Image(systemName: "star.fill").font(WitermType.meta).accessibilityHidden(true) }
             }
-            Text(verbatim: activity?.summary(home: nil) ?? profile.endpointSummary)
-                .font(.caption.monospaced())
-                .foregroundStyle(.secondary)
-                .lineLimit(expanded && typeSize.isAccessibilitySize ? nil : 1)
-                .truncationMode(.middle)
+            if let addressLine {
+                #if os(iOS)
+                if expanded {
+                    // Wraps between characters at large sizes, never with a hyphen.
+                    AddressText(addressLine, lines: typeSize.isAccessibilitySize ? 0 : 1)
+                } else {
+                    plainAddress(addressLine)
+                }
+                #else
+                plainAddress(addressLine)
+                #endif
+            }
             if !profile.jumpHosts.isEmpty {
                 Text(String(localized: "Jump hosts: \(String(profile.jumpHosts.count))", bundle: .main))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(WitermType.meta)
+                    .foregroundStyle(expanded ? WitermTheme.secondary : .secondary)
             }
             if expanded, active {
-                IconText(String(localized: "Connected", bundle: .main), systemImage: "lock.shield")
-                    .font(.caption.weight(.medium))
+                IconText(String(localized: "Connected", bundle: .main), systemImage: WitermSymbols.connected)
+                    .font(WitermType.meta.weight(.semibold))
                     .foregroundStyle(profile.identityHue)
             }
         }
+    }
+
+    private func plainAddress(_ text: String) -> some View {
+        Text(verbatim: text)
+            .font(WitermType.codeInline)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.middle)
     }
 
     private var icon: some View {
@@ -367,7 +414,9 @@ struct SSHTerminalSurface: View {
     var keyboardRequest = 0
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.colorScheme) private var systemColorScheme
-    @ScaledMetric(relativeTo: .body) private var fontScale = 1.0
+    #if os(iOS)
+    @Environment(\.dynamicTypeSize) private var typeSize
+    #endif
     @AppStorage(TerminalFontSize.key) private var fontSize = TerminalFontSize.standard
     @AppStorage("witerm.terminalHighContrast") private var highContrast = false
     @AppStorage("witerm.terminalAnnounceOutput") private var announceOutput = false
@@ -380,7 +429,7 @@ struct SSHTerminalSurface: View {
             scheme: systemColorScheme, announceOutput: announceOutput)
             .id(session.token)
         #else
-        SSHNativeTerminalView(host: session.terminal, fontSize: TerminalFontSize.clamped(fontSize) * fontScale,
+        SSHNativeTerminalView(host: session.terminal, fontSize: TerminalFontSize.clamped(fontSize) * TerminalTextScale.factor(typeSize),
             highContrast: highContrast || contrast == .increased, palette: palette,
             scheme: systemColorScheme, announceOutput: announceOutput,
             keyboardRequest: keyboardRequest)
@@ -398,6 +447,9 @@ struct SSHWorkspaceView<Home: View>: View {
     @Bindable var model: SSHWorkspaceModel
     /// Owned by the app root so keyboard commands can reach it from any tab.
     let ui: SSHWorkspaceUI
+    /// A paired device's terminals, shown in the detail column on a regular
+    /// width (iPad) so the list stays beside them.
+    var remote: AnyView? = nil
     /// The list of terminals and machines shown when no terminal is.
     @ViewBuilder let home: Home
     @State private var keyboardRequest = 0
@@ -416,6 +468,8 @@ struct SSHWorkspaceView<Home: View>: View {
     var body: some View {
         Group {
             if sizeClass == .regular {
+                // The split view is the tab's root: the list in the sidebar,
+                // the SSH or paired terminal beside it in its own stack.
                 NavigationSplitView {
                     home
                         .navigationTitle(String(localized: "Terminals", bundle: .main))
@@ -426,7 +480,11 @@ struct SSHWorkspaceView<Home: View>: View {
                                     .disabled(model.connecting)
                             }
                         }
-                } detail: { detail }
+                } detail: {
+                    NavigationStack {
+                        if let remote { remote } else { detail }
+                    }
+                }
             } else { detail }
         }
         .onChange(of: model.sessions.map(\.token)) { old, _ in
@@ -438,6 +496,9 @@ struct SSHWorkspaceView<Home: View>: View {
         .sensoryFeedback(.success, trigger: model.connectSuccesses)
         .sensoryFeedback(.error, trigger: model.connectFailures)
         .onChange(of: shownID) { finding = false }
+        .onReceive(NotificationCenter.default.publisher(for: .witermFindInTerminal)) { _ in
+            if shown != nil, remote == nil { finding = true }
+        }
         .onChange(of: ui.requestedSession, initial: true) { _, id in
             guard let id else { return }
             ui.requestedSession = nil
@@ -453,11 +514,11 @@ struct SSHWorkspaceView<Home: View>: View {
 
     private var detail: some View {
         VStack(spacing: 0) {
-            OfflineBanner(insets: EdgeInsets(top: 8, leading: 16, bottom: 0, trailing: 16))
+            OfflineBanner(insets: EdgeInsets(top: WitermMetrics.Space.s, leading: WitermMetrics.Space.l, bottom: 0, trailing: WitermMetrics.Space.l))
             if model.issue != nil {
                 SSHIssueBanner(model: model, ui: ui, profile: shownProfile)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, WitermMetrics.Space.l)
+                    .padding(.vertical, WitermMetrics.Space.s)
             }
             if let session = shown {
                 // The host's hue edges the terminal and tints its controls, so
@@ -466,16 +527,15 @@ struct SSHWorkspaceView<Home: View>: View {
                 if sizeClass == .regular {
                     TerminalHeader(nil, destination: session.profile.endpointSummary,
                                    status: String(localized: "Connected", bundle: .main),
-                                   statusImage: "lock.shield", live: true, hue: session.profile.identityHue) {
+                                   statusImage: WitermSymbols.connected, live: true, hue: session.profile.identityHue) {
                         Button(String(localized: "Find in Terminal", bundle: .main), systemImage: "magnifyingglass") { finding = true }
                             .labelStyle(.iconOnly)
-                            .keyboardShortcut("f", modifiers: .command)
                             .touchTarget(square: true)
                             .accessibilityIdentifier("terminalFind")
                     }
                 } else {
                     Rectangle()
-                        .fill(session.profile.identityHue.opacity(0.55))
+                        .fill(WitermTheme.edge(session.profile.identityHue))
                         .frame(height: 2)
                         .accessibilityHidden(true)
                 }
@@ -491,18 +551,18 @@ struct SSHWorkspaceView<Home: View>: View {
                             .font(.subheadline).touchTarget()
                             .accessibilityIdentifier("sshBackgroundTipDismiss")
                     }
-                    .padding(.horizontal, 16).padding(.vertical, 8)
+                    .padding(.horizontal, WitermMetrics.Space.l).padding(.vertical, WitermMetrics.Space.s)
                 }
                 SSHTerminalSurface(session: session, keyboardRequest: keyboardRequest)
             } else if let connecting = model.connectingProfile {
-                VStack(spacing: 16) {
+                VStack(spacing: WitermMetrics.Space.l) {
                     ProgressView(String(localized: "Connecting to \(String(connecting.name))…", bundle: .main))
                     Button(String(localized: "Cancel", bundle: .main), action: model.cancelConnecting).touchTarget()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let profile = shownProfile, let reason = model.disconnected[profile.id] {
                 ContentUnavailableView {
-                    Label(String(localized: "SSH Disconnected", bundle: .main), systemImage: "bolt.horizontal.circle")
+                    Label(String(localized: "Disconnected", bundle: .main), systemImage: WitermSymbols.disconnected)
                 } description: {
                     Text(profile.endpointSummary + "\n" + reason)
                 } actions: {
@@ -524,7 +584,8 @@ struct SSHWorkspaceView<Home: View>: View {
         // Like the back button, an edge swipe returns to the list and keeps the session connected.
         .edgeSwipeBack(enabled: shownID != nil && sizeClass != .regular) { ui.show(nil) }
         .tint(shownProfile?.identityHue)
-        .navigationTitle(shownProfile?.name ?? String(localized: "Terminals", bundle: .main))
+        // On a regular width the sidebar already says Terminals.
+        .navigationTitle(shownProfile?.name ?? (sizeClass == .regular ? "" : String(localized: "Terminals", bundle: .main)))
         .navigationBarTitleDisplayMode(shownID == nil ? .large : .inline)
         .toolbar(shownID == nil || sizeClass == .regular ? .automatic : .hidden, for: .tabBar)
         .toolbar {
@@ -541,33 +602,34 @@ struct SSHWorkspaceView<Home: View>: View {
                     ToolbarItem(placement: .principal) { compactTitle(session) }
                 }
             }
+            // The keyboard comes first and the actions menu last, as on a
+            // paired terminal.
+            ToolbarItem(placement: .primaryAction) {
+                if let session = shown {
+                    TerminalKeyboardButton(terminal: { session.terminal.surface.terminal }) { keyboardRequest &+= 1 }
+                        .id(session.token)
+                        .accessibilityIdentifier("sshKeyboard")
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 if let session = shown {
                     Menu {
                         TerminalTextSizeControls()
                         if sizeClass != .regular {
                             Button(String(localized: "Find in Terminal", bundle: .main), systemImage: "magnifyingglass") { finding = true }
-                                .keyboardShortcut("f", modifiers: .command)
                                 .accessibilityIdentifier("terminalFind")
                         }
                         Button(String(localized: "SFTP Files", bundle: .main), systemImage: "folder") { ui.files = session }
                         Button(String(localized: "Port Forwarding", bundle: .main), systemImage: "arrow.left.arrow.right") { ui.forwarding = session }
                         Button(String(localized: "Terminal Display", bundle: .main), systemImage: "paintpalette") { ui.appearance = true }
                         Divider()
-                        Button(String(localized: "Disconnect", bundle: .main), systemImage: "xmark.circle", role: .destructive) { model.disconnect(session) }
-                    } label: { Label(String(localized: "Terminal Actions", bundle: .main), systemImage: "ellipsis.circle") }
+                        Button(String(localized: "Disconnect", bundle: .main), systemImage: WitermSymbols.disconnect, role: .destructive) { model.disconnect(session) }
+                    } label: { Label(String(localized: "Terminal Actions", bundle: .main), systemImage: WitermSymbols.more) }
                     .accessibilityIdentifier("sshSessionActions")
                 } else if sizeClass != .regular {
                     Button(String(localized: "Add SSH Host…", bundle: .main), systemImage: "plus", action: ui.presentNew)
                         .disabled(model.connecting)
                         .accessibilityIdentifier("newSSHProfile")
-                }
-            }
-            ToolbarItem(placement: .primaryAction) {
-                if let session = shown {
-                    TerminalKeyboardButton(terminal: { session.terminal.surface.terminal }) { keyboardRequest &+= 1 }
-                        .id(session.token)
-                        .accessibilityIdentifier("sshKeyboard")
                 }
             }
         }
@@ -582,11 +644,11 @@ struct SSHWorkspaceView<Home: View>: View {
     /// chevron beside it switches to one of them.
     private func compactTitle(_ session: SSHSession) -> some View {
         let others = otherOpen(than: session)
-        return HStack(spacing: 2) {
-            VStack(spacing: 1) {
-                Text(session.profile.name).font(.headline).foregroundStyle(WitermTheme.ink)
+        return HStack(spacing: WitermMetrics.Space.xxs) {
+            VStack(spacing: 0) {
+                Text(session.profile.name).font(WitermType.cardTitle).foregroundStyle(WitermTheme.ink)
                 Text(verbatim: session.profile.endpointSummary)
-                    .font(.caption.monospaced())
+                    .font(WitermType.codeInline)
                     .foregroundStyle(WitermTheme.secondary)
                     .truncationMode(.middle)
             }

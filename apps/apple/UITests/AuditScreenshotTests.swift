@@ -27,6 +27,7 @@ import XCTest
     ]
 
     private var root: URL!
+    private var prefix: String { ProcessInfo.processInfo.environment["WITERM_AUDIT_PREFIX"] ?? "" }
     private var folder: URL!
     private var app: XCUIApplication!
     private var originalAppearance: XCUIDevice.Appearance = .light
@@ -71,8 +72,12 @@ import XCTest
 
     private func tab(_ index: Int) {
         let button = app.tabBars.buttons.element(boundBy: index)
-        XCTAssertTrue(button.waitForExistence(timeout: 10))
-        button.tap()
+        if button.waitForExistence(timeout: 5) { button.tap(); return }
+        // iPad's tab bar sits at the top and isn't a tab bar to XCTest.
+        let names = [["Terminals", "终端"], ["Devices", "设备"], ["Settings", "设置"]][index]
+        let tab = app.buttons.matching(NSPredicate(format: "label IN %@", names)).firstMatch
+        XCTAssertTrue(tab.waitForExistence(timeout: 10))
+        tab.tap()
     }
 
     /// Scrolls until the element can be tapped, then taps it.
@@ -100,8 +105,11 @@ import XCTest
     func testAuditScreens() throws {
         continueAfterFailure = true
         executionTimeAllowance = 1800
-        for variant in variants {
-            folder = root.appendingPathComponent(variant.name)
+        // WITERM_AUDIT_VARIANTS limits the run (comma-separated names);
+        // WITERM_AUDIT_PREFIX names the device, such as "ipad-".
+        let wanted = ProcessInfo.processInfo.environment["WITERM_AUDIT_VARIANTS"].map { Set($0.split(separator: ",").map(String.init)) }
+        for variant in variants where wanted?.contains(variant.name) ?? true {
+            folder = root.appendingPathComponent(prefix + variant.name)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             XCTContext.runActivity(named: variant.name) { _ in capture(variant) }
         }
@@ -276,7 +284,7 @@ import XCTest
               let fingerprint = environment["WITERM_SSH_UI_FINGERPRINT"], fingerprint.hasPrefix("SHA256:") else {
             throw XCTSkip("Configure a disposable SSH UI fixture explicitly")
         }
-        folder = root.appendingPathComponent("ssh-live")
+        folder = root.appendingPathComponent(prefix + "ssh-live")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let light = variants[0]
         let name = "Audit SSH " + String(UUID().uuidString.prefix(4))
@@ -287,6 +295,7 @@ import XCTest
         reveal(app.buttons["snippetSettings"])
         reveal(app.buttons["addSnippet"])
         let snippetName = app.textFields["snippetName"]
+        if !snippetName.waitForExistence(timeout: 3) { app.buttons["addSnippet"].tap() }
         if snippetName.waitForExistence(timeout: 5) {
             snippetName.tap(); snippetName.typeText(Self.snippet)
             let text = app.textViews["snippetText"]

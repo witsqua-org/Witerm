@@ -18,6 +18,9 @@ struct ServerAddressSheet: View {
     @State private var rejection: String?
     @State private var submitted = false
     @FocusState private var addressFocused: Bool
+    #if os(iOS)
+    @Environment(\.dynamicTypeSize) private var typeSize
+    #endif
     let title: String
     let actionTitle: String
     /// Returns why the address could not be saved, or nil once it is.
@@ -37,7 +40,7 @@ struct ServerAddressSheet: View {
             Form {
                 Section {
                     TextField(String(localized: "Relay Server Address", bundle: .main), text: $draft, prompt: Text(verbatim: "witerm.example.com"))
-                        .font(.system(.body, design: .monospaced))
+                        .font(WitermType.code)
                         .focused($addressFocused)
                         .textContentType(.URL)
                         .accessibilityIdentifier("serverAddressField")
@@ -53,8 +56,12 @@ struct ServerAddressSheet: View {
                 } header: {
                     Text(String(localized: "Relay Server Address", bundle: .main))
                 } footer: {
+                    // iOS says it once in the title; an SSH login typed here
+                    // still offers Add as SSH Host… below.
+                    #if os(macOS)
                     Text(String(localized: "The server your devices use to reach each other. To sign in to a computer with SSH, add it under SSH Hosts instead.", bundle: .main))
                         .foregroundStyle(WitermTheme.secondary)
+                    #endif
                 }
                 if let problem = input.problem, problem != .empty, (submitted || problem != .invalid) {
                     Section { problemView }
@@ -87,7 +94,13 @@ struct ServerAddressSheet: View {
             }
         }
         .witermTint()
+        #if os(iOS)
+        // The largest text sizes need the whole height for the field and its title.
+        .presentationDetents(typeSize.isAccessibilitySize ? [.large] : [.medium, .large])
+        .onAppear { if draft.isEmpty { addressFocused = true } }
+        #else
         .presentationDetents([.medium, .large])
+        #endif
         .presentationDragIndicator(.visible)
         #if os(macOS)
         .frame(minWidth: 520, minHeight: 340)
@@ -112,7 +125,7 @@ struct ServerAddressSheet: View {
     }
 
     private var problemView: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: WitermMetrics.Space.s) {
             if let title = input.title {
                 Label(title, systemImage: "exclamationmark.circle")
                     .font(.subheadline.weight(.semibold))

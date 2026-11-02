@@ -88,6 +88,9 @@ struct ContinueFromDeviceFlow: View {
                 }
         }
         .witermTint()
+        // A device without a camera has only paste and typing: half a sheet.
+        .presentationDetents(InvitationScanner.isSupported ? [.large] : [.medium, .large])
+        .presentationDragIndicator(InvitationScanner.isSupported ? .hidden : .visible)
         .task {
             if let invitation { read(invitation, scanned: false) }
         }
@@ -101,25 +104,26 @@ struct ContinueFromDeviceFlow: View {
     /// explanations they would otherwise follow by several screens.
     private var scanStep: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: WitermMetrics.Space.l) {
                 if let problem {
-                    Label(problem, systemImage: "exclamationmark.circle")
-                        .font(.subheadline).foregroundStyle(WitermTheme.warning)
+                    Label(problem, systemImage: WitermSymbols.problem)
+                        .font(WitermType.rowDetail).foregroundStyle(WitermTheme.warning)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("invitationProblem")
                 }
+                // Where to get an invitation comes first, then how to bring it here.
                 if typeSize.isAccessibilitySize {
                     entryActions
-                    scanner
                     instructions
+                    scanner
                 } else {
-                    scanner
                     instructions
+                    scanner
                     entryActions
                 }
             }
             .readableContent()
-            .padding(.vertical, 16)
+            .padding(.vertical, WitermMetrics.Space.l)
         }
         .scrollDismissesKeyboard(.interactively)
         .background(WitermTheme.canvas)
@@ -134,7 +138,7 @@ struct ContinueFromDeviceFlow: View {
 
     private var instructions: some View {
         Text(String(localized: "On the other device, choose Open On ▸ New Device.", bundle: .main))
-            .font(.subheadline).foregroundStyle(WitermTheme.secondary)
+            .font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
             .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -146,43 +150,60 @@ struct ContinueFromDeviceFlow: View {
                 .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 .accessibilityIdentifier("preparePairing")
         }
+        // The system Paste button keeps a white label, so its fill must stay
+        // dark in both appearances (the light accent left it at 2.5:1).
         PasteButton(payloadType: String.self) { values in
             if let value = values.first { read(value, scanned: false) }
         }
         .buttonBorderShape(.capsule)
         .labelStyle(.titleAndIcon)
         .controlSize(.large)
+        .tint(Self.pasteTint)
         .frame(maxWidth: .infinity)
         .accessibilityIdentifier("pasteInvitation")
         if !typing {
-            Button(String(localized: "Type Invitation…", bundle: .main)) { typing = true; fieldFocused = true }
-                .frame(maxWidth: .infinity)
-                .touchTarget()
-                .accessibilityIdentifier("typeInvitation")
+            Button { typing = true; fieldFocused = true } label: {
+                ContentActionLabel(String(localized: "Type Invitation…", bundle: .main), systemImage: "keyboard")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.capsule)
+            .controlSize(.large)
+            .accessibilityIdentifier("typeInvitation")
         } else if InvitationScanner.isSupported {
-            Button(String(localized: "Scan a Code Instead", bundle: .main), systemImage: "qrcode.viewfinder") {
+            Button(action: {
                 fieldFocused = false
                 typing = false
+            }) {
+                ContentActionLabel(String(localized: "Scan a QR Code Instead", bundle: .main), systemImage: WitermSymbols.scan)
+                    .frame(maxWidth: .infinity)
             }
-            .frame(maxWidth: .infinity)
-            .touchTarget()
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.capsule)
+            .controlSize(.large)
             .accessibilityIdentifier("scanInvitationInstead")
         }
     }
+
+    /// Graphite in light, a lighter graphite in dark: white stays above 7:1.
+    static let pasteTint = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark ? UIColor(red: 0.27, green: 0.28, blue: 0.31, alpha: 1)
+            : UIColor(red: 0.09, green: 0.094, blue: 0.11, alpha: 1)
+    })
 
     /// An invitation is one line of text, so Return continues instead of
     /// starting a new line; a pasted trailing line break does the same.
     private var invitationField: some View {
         TextField(String(localized: "Invitation", bundle: .main), text: $text, axis: .vertical)
             .lineLimit(2...5)
-            .font(.system(.subheadline, design: .monospaced))
+            .font(WitermType.code)
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
             .privacySensitive()
             .submitLabel(.continue)
             .focused($fieldFocused)
-            .padding(12)
-            .background(WitermTheme.surface, in: .rect(cornerRadius: 12, style: .continuous))
+            .padding(WitermMetrics.Space.m)
+            .background(WitermTheme.surface, in: .rect(cornerRadius: WitermMetrics.Radius.m, style: .continuous))
             .accessibilityIdentifier("sessionInvitationField")
             .onChange(of: text) { _, value in
                 guard value.contains(where: \.isNewline) else { return }
@@ -247,7 +268,7 @@ private struct ContinueCheckStep: View {
         Form {
             Section {
                 Text(PairingFingerprint.display(publicKey: parsed.hostPublicKey))
-                    .font(.system(.title3, design: .monospaced))
+                    .font(WitermType.codeHero)
                     .textSelection(.enabled)
                     .accessibilityLabel(String(localized: "Device code \(PairingFingerprint.display(publicKey: parsed.hostPublicKey))", bundle: .main))
             } header: {
@@ -265,16 +286,15 @@ private struct ContinueCheckStep: View {
             }
             Section {
                 LabeledContent {
-                    if saved == nil { StatusBadge(String(localized: "New", bundle: .main), systemImage: "plus") }
+                    if saved == nil { StatusBadge(String(localized: "New Server", bundle: .main), systemImage: "plus") }
                 } label: {
-                    Label(URL(string: parsed.server)?.host ?? parsed.server, systemImage: "server.rack")
+                    Label(URL(string: parsed.server)?.host ?? parsed.server, systemImage: WitermSymbols.relayServer)
                 }
             } header: {
                 Text(String(localized: "Relay Server", bundle: .main))
             } footer: {
                 if saved == nil {
-                    Text(servers.isFull ? ServerList.Failure.full.message
-                         : String(localized: "Continuing adds this server. Continue only if you trust the device that showed the code.", bundle: .main))
+                    Text(servers.isFull ? ServerList.Failure.full.message : addsServerNote)
                 }
             }
             if let problem {
@@ -295,6 +315,14 @@ private struct ContinueCheckStep: View {
         .formStyle(.grouped)
         .navigationTitle(String(localized: "Check the Other Device", bundle: .main))
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    /// Says what the button does to the server list, in the button's own words.
+    private var addsServerNote: String {
+        if case .share(let invitation) = parsed, invitation.permission != .control {
+            return String(localized: "Watching adds this relay server. Only continue if you trust the device that showed the code.", bundle: .main)
+        }
+        return String(localized: "Requesting access adds this relay server. Only continue if you trust the device that showed the code.", bundle: .main)
     }
 
     private var primaryTitle: String {
@@ -341,25 +369,21 @@ private struct ContinueWaitStep: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 22) {
-                IconTile(systemImage: "laptopcomputer.and.iphone", tint: IdentityHue.sky)
-                    .scaleEffect(1.6)
-                    .padding(.top, 24)
-                    .padding(.bottom, 8)
-                    .accessibilityHidden(true)
+            VStack(spacing: WitermMetrics.Space.xl) {
                 status
+                    .padding(.top, WitermMetrics.Space.xxl)
                 if case .pairing = parsed, let device = pairing?.device, failureMessage == nil {
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: WitermMetrics.Space.s) {
                         Text(String(localized: "This Device’s Code", bundle: .main))
-                            .font(.footnote).foregroundStyle(WitermTheme.secondary).textCase(.uppercase)
+                            .font(WitermType.rowDetail.weight(.semibold)).foregroundStyle(WitermTheme.secondary)
                         Text(PairingFingerprint.display(publicKey: device.publicKey))
-                            .font(.system(.title3, design: .monospaced))
+                            .font(WitermType.codeHero)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(16)
-                            .background(WitermTheme.surface, in: .rect(cornerRadius: 20, style: .continuous))
+                            .padding(WitermMetrics.Space.l)
+                            .background(WitermTheme.surface, in: .rect(cornerRadius: WitermMetrics.Radius.m, style: .continuous))
                             .accessibilityLabel(String(localized: "This device’s code \(PairingFingerprint.display(publicKey: device.publicKey))", bundle: .main))
                         Text(String(localized: "On \(hostName ?? String(localized: "the other device", bundle: .main)), check that the same code appears, then choose Approve.", bundle: .main))
-                            .font(.footnote).foregroundStyle(WitermTheme.secondary)
+                            .font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -403,7 +427,7 @@ private struct ContinueWaitStep: View {
         if let status = pairing?.pairing?.status, status == .expired || status == .rejected {
             return (status == .expired ? String(localized: "The other device didn’t approve in time.", bundle: .main)
                     : String(localized: "The other device rejected the request.", bundle: .main),
-                    scanned ? String(localized: "Scan a new code to try again.", bundle: .main)
+                    scanned ? String(localized: "Scan a new QR code to try again.", bundle: .main)
                         : String(localized: "Get a new invitation from the other device to try again.", bundle: .main))
         }
         if case .failed(let message) = join.phase {
@@ -411,7 +435,7 @@ private struct ContinueWaitStep: View {
         }
         if let server, case .failed(let issue) = server.phase, approvedGrant != nil { return (issue.title, issue.recovery) }
         if let server, server.phase.isAvailable, !server.supportsRelay {
-            return (String(localized: "This server doesn’t offer remote terminals.", bundle: .main),
+            return (String(localized: "This relay server can’t open terminals.", bundle: .main),
                     String(localized: "Ask the other device to use another relay server.", bundle: .main))
         }
         return nil
@@ -421,9 +445,9 @@ private struct ContinueWaitStep: View {
         if let failureMessage {
             failure(failureMessage.title, failureMessage.detail)
         } else {
-            HStack(spacing: 10) {
+            HStack(spacing: WitermMetrics.Space.m) {
                 ProgressView()
-                Text(waitingText).font(.headline)
+                Text(waitingText).font(WitermType.cardTitle)
             }
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("pairingActivity")
@@ -443,9 +467,9 @@ private struct ContinueWaitStep: View {
     }
 
     private func failure(_ title: String, _ detail: String) -> some View {
-        VStack(spacing: 12) {
-            Label(title, systemImage: "exclamationmark.circle").font(.headline).foregroundStyle(WitermTheme.warning)
-            Text(detail).font(.subheadline).foregroundStyle(WitermTheme.secondary).multilineTextAlignment(.center)
+        VStack(spacing: WitermMetrics.Space.m) {
+            Label(title, systemImage: WitermSymbols.problem).font(WitermType.cardTitle).foregroundStyle(WitermTheme.warning)
+            Text(detail).font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary).multilineTextAlignment(.center)
             Button(ContinueFromDeviceFlow.startOverTitle(scanned: scanned), action: startOver)
                 .buttonStyle(.bordered).witermControl()
                 .accessibilityIdentifier("continueStartOver")

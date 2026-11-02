@@ -2,6 +2,8 @@ import SwiftUI
 
 /// Saved commands, embeddable in any grouped Form.
 struct SnippetSections: View {
+    /// The iOS page has its own title, so its one section needs no header.
+    var showsHeader = true
     @AppStorage(CommandSnippets.key) private var stored = Data()
     @State private var editing: CommandSnippet?
 
@@ -15,10 +17,10 @@ struct SnippetSections: View {
             }
             ForEach(snippets) { snippet in
                 Button { editing = snippet } label: {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: WitermMetrics.Space.xxs) {
                         Text(verbatim: snippet.name).foregroundStyle(WitermTheme.ink)
                         Text(verbatim: snippet.text)
-                            .font(.caption.monospaced())
+                            .font(WitermType.codeInline)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
@@ -43,13 +45,21 @@ struct SnippetSections: View {
                 reordered.move(fromOffsets: from, toOffset: to)
                 save(reordered)
             }
+            #if os(iOS)
+            Button { editing = CommandSnippet(name: "", text: "") } label: {
+                ContentActionLabel(String(localized: "Add Snippet", bundle: .main), systemImage: "plus")
+            }
+            .disabled(snippets.count >= CommandSnippets.limit)
+            .accessibilityIdentifier("addSnippet")
+            #else
             Button(String(localized: "Add Snippet", bundle: .main), systemImage: "plus") {
                 editing = CommandSnippet(name: "", text: "")
             }
             .disabled(snippets.count >= CommandSnippets.limit)
             .accessibilityIdentifier("addSnippet")
+            #endif
         } header: {
-            Text(String(localized: "Snippets", bundle: .main))
+            if showsHeader { Text(String(localized: "Snippets", bundle: .main)) }
         } footer: {
             Text(String(localized: "Snippets stay on this device and are never sent to a relay server. Avoid saving passwords or other secrets.", bundle: .main))
         }
@@ -90,7 +100,7 @@ private struct SnippetEditor: View {
                     TextField(String(localized: "Name", bundle: .main), text: $snippet.name)
                         .accessibilityIdentifier("snippetName")
                     TextEditor(text: $snippet.text)
-                        .font(.system(.body, design: .monospaced))
+                        .font(WitermType.code)
                         .frame(minHeight: 120)
                         .autocorrectionDisabled()
                         .sshLiteralInput()
@@ -137,6 +147,9 @@ private struct SnippetEditor: View {
         .witermTint()
         #if os(macOS)
         .frame(minWidth: 420, idealWidth: 480, minHeight: 360)
+        #else
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
         #endif
     }
 }
@@ -144,17 +157,23 @@ private struct SnippetEditor: View {
 #if os(iOS)
 /// The snippet list as its own page, with reordering.
 struct SnippetSettingsView: View {
+    @AppStorage(CommandSnippets.key) private var stored = Data()
+
     var body: some View {
-        Form { SnippetSections() }
+        Form { SnippetSections(showsHeader: false) }
             .formStyle(.grouped)
             .navigationTitle(String(localized: "Snippets", bundle: .main))
-            .toolbar { EditButton() }
+            .navigationBarTitleDisplayMode(.inline)
+            // Reordering needs something to reorder.
+            .toolbar { if !CommandSnippets.decode(stored).isEmpty { EditButton() } }
     }
 }
 
-/// Chooses and orders the keys above the iOS keyboard.
+/// Chooses and orders the keys above the iOS keyboard: a checkmark shows a
+/// key, Edit reorders the shown ones. Nothing here deletes anything.
 struct MobileKeyRowSettings: View {
     @AppStorage(MobileKey.key) private var raw = ""
+    @State private var editMode = EditMode.inactive
 
     private var shown: [MobileKey] { MobileKey.decode(raw) }
     private var hidden: [MobileKey] { MobileKey.allCases.filter { !shown.contains($0) } }
@@ -163,44 +182,65 @@ struct MobileKeyRowSettings: View {
         List {
             Section {
                 ForEach(shown) { key in
-                    LabeledContent(key.label) { Text(verbatim: key.face).font(.callout.monospaced()).foregroundStyle(.secondary) }
-                        .deleteDisabled(shown.count == 1)
+                    keyRow(key, shown: true)
                 }
                 .onMove { from, to in
                     var keys = shown
                     keys.move(fromOffsets: from, toOffset: to)
                     raw = MobileKey.encode(keys)
                 }
-                .onDelete { offsets in
-                    raw = MobileKey.encode(shown.enumerated().filter { !offsets.contains($0.offset) }.map(\.element))
-                }
+                .deleteDisabled(true)
             } header: {
                 Text(String(localized: "Shown", bundle: .main))
-            } footer: {
-                Text(String(localized: "Drag to reorder. The row scrolls sideways when it's wider than the screen.", bundle: .main))
             }
-            if !hidden.isEmpty {
+            if !hidden.isEmpty, editMode == .inactive {
                 Section(String(localized: "More Keys", bundle: .main)) {
-                    ForEach(hidden) { key in
-                        Button { raw = MobileKey.encode(shown + [key]) } label: {
-                            Label {
-                                LabeledContent(key.label) { Text(verbatim: key.face).font(.callout.monospaced()).foregroundStyle(.secondary) }
-                            } icon: {
-                                Image(systemName: "plus.circle.fill").foregroundStyle(WitermTheme.positive)
-                            }
-                        }
-                        .accessibilityLabel(String(localized: "Add \(key.label)", bundle: .main))
-                    }
+                    ForEach(hidden) { key in keyRow(key, shown: false) }
                 }
             }
-            Section {
-                Button(String(localized: "Restore Default Keys", bundle: .main)) { raw = "" }
+            if editMode == .inactive {
+                Section {
+                    Button { raw = "" } label: {
+                        ContentActionLabel(String(localized: "Restore Default Keys", bundle: .main), systemImage: "arrow.counterclockwise")
+                    }
                     .disabled(raw.isEmpty)
+                }
             }
         }
-        .environment(\.editMode, .constant(.active))
+        .environment(\.editMode, $editMode)
+        .toolbar { EditButton() }
         .navigationTitle(String(localized: "Keyboard Row", bundle: .main))
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    /// Tapping a key shows or hides it; the last shown key stays.
+    private func keyRow(_ key: MobileKey, shown isShown: Bool) -> some View {
+        Button {
+            if isShown {
+                guard shown.count > 1 else { return }
+                raw = MobileKey.encode(shown.filter { $0 != key })
+            } else {
+                raw = MobileKey.encode(shown + [key])
+            }
+        } label: {
+            HStack(spacing: WitermMetrics.Space.m) {
+                Image(systemName: "checkmark")
+                    .fontWeight(.semibold)
+                    .foregroundStyle(WitermTheme.ink)
+                    .opacity(isShown ? 1 : 0)
+                    .accessibilityHidden(true)
+                LabeledContent(key.label) {
+                    Text(verbatim: key.face).font(WitermType.code).foregroundStyle(WitermTheme.secondary)
+                }
+                .foregroundStyle(WitermTheme.ink)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(isShown && shown.count == 1)
+        .accessibilityAddTraits(isShown ? .isSelected : [])
+        .accessibilityHint(isShown ? String(localized: "Hides it from the key row.", bundle: .main)
+                           : String(localized: "Adds it to the key row.", bundle: .main))
     }
 }
 #endif

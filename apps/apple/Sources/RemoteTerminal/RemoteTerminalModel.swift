@@ -116,6 +116,10 @@ enum RemoteTerminalConnectionState: Equatable {
 final class RemoteTerminalModel {
     let serverAddress: String
     private(set) var grants: [DeviceGrant] = []
+    /// One grant per device, however many pairings it has on this server:
+    /// the one that can type if any can, then the newest. Lists show these;
+    /// Unpair ends every pairing with the device.
+    var devices: [DeviceGrant] { Self.devices(in: grants) }
     private(set) var selectedGrant: DeviceGrant?
     private(set) var sessions: [LocalSessionInfo] = []
     private(set) var selectedSession: LocalSessionInfo?
@@ -559,6 +563,22 @@ final class RemoteTerminalModel {
 
     /// The pairings Unpair ends: `grant` and any other this device holds with
     /// the same device, the one asked for first.
+    /// Groups pairings by device, in the order devices first appear.
+    static func devices(in grants: [DeviceGrant]) -> [DeviceGrant] {
+        var order: [String] = []
+        var best: [String: DeviceGrant] = [:]
+        func rank(_ grant: DeviceGrant) -> (Int, Date) { (grant.permission == .control ? 1 : 0, grant.createdAt) }
+        for grant in grants {
+            if let current = best[grant.host.id] {
+                if rank(grant) > rank(current) { best[grant.host.id] = grant }
+            } else {
+                order.append(grant.host.id)
+                best[grant.host.id] = grant
+            }
+        }
+        return order.compactMap { best[$0] }
+    }
+
     static func pairings(endedBy grant: DeviceGrant, in grants: [DeviceGrant]) -> [DeviceGrant] {
         [grant] + grants.filter { $0.id != grant.id && $0.host.id == grant.host.id }
     }

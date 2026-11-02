@@ -25,7 +25,7 @@ struct SSHHostKeysView: View {
                 }
                 ForEach(rows) { row in
                     Section(row.role) {
-                        Text(row.authority).font(.system(.body, design: .monospaced))
+                        Text(row.authority).font(WitermType.code)
                             .textSelection(.enabled)
                         if let key = row.key {
                             LabeledContent(String(localized: "Key Type", bundle: .main), value: key.algorithm)
@@ -42,6 +42,9 @@ struct SSHHostKeysView: View {
             }
             .disabled(loading)
             .navigationTitle(String(localized: "Host Keys", bundle: .main))
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button(String(localized: "Done", bundle: .main)) { dismiss() } }
             }
@@ -60,6 +63,9 @@ struct SSHHostKeysView: View {
         }
         #if os(macOS)
         .frame(minWidth: 440, idealWidth: 560, minHeight: 420)
+        #else
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
         #endif
     }
 

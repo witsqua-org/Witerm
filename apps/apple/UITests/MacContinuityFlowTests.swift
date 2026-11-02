@@ -179,7 +179,7 @@ final class MacContinuityFlowTests: XCTestCase {
         guard environment["WITERM_E2E_PHONE_UNPAIRS"] == "1" else { return }
         XCTAssertNotNil(awaitSignal("mac-ready-for-unpair", timeout: 120), "The Mac never got ready")
         app.tabBars.buttons["Devices"].tap()
-        let details = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Details for")).firstMatch
+        let details = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "deviceDetails-")).firstMatch
         XCTAssertTrue(details.waitForExistence(timeout: 20), "Devices didn't list the Mac")
         details.tap()
         let unpair = app.buttons["unpairDevice"]

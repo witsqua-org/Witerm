@@ -15,16 +15,10 @@ struct DevicesView: View {
     /// Opens Add Device.
     let continueFromDevice: () -> Void
     @Environment(ServerList.self) private var servers
-    @State private var inspected: Inspected?
-    /// A short confirmation after unpairing, since the row just disappears.
+    /// A confirmation after unpairing, since the row just disappears. It
+    /// stays until the next visit to this tab.
     @State private var unpairedNote: String?
     @State private var search = ""
-
-    private struct Inspected: Identifiable {
-        let server: ConnectionModel
-        let grant: DeviceGrant
-        var id: String { grant.id }
-    }
 
     private var showsSearch: Bool { ssh.profiles.count >= TerminalsHome.filterThreshold }
 
@@ -42,17 +36,17 @@ struct DevicesView: View {
             List {
                 Section {
                     Button(action: continueFromDevice) {
-                        HStack(spacing: 14) {
-                            IconTile(systemImage: "laptopcomputer.and.iphone", tint: IdentityHue.sky)
+                        HStack(spacing: WitermMetrics.Space.m) {
+                            IconTile(systemImage: WitermSymbols.openOn)
                             Text(String(localized: "Add Device", bundle: .main))
-                                .font(.headline).foregroundStyle(WitermTheme.ink)
-                            Spacer(minLength: 8)
+                                .font(WitermType.rowTitle.weight(.semibold)).foregroundStyle(WitermTheme.ink)
+                            Spacer(minLength: WitermMetrics.Space.s)
                             Image(systemName: "chevron.right")
                                 .font(.footnote.weight(.semibold))
                                 .foregroundStyle(WitermTheme.secondary)
                                 .accessibilityHidden(true)
                         }
-                        .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -61,19 +55,15 @@ struct DevicesView: View {
                 if let unpairedNote {
                     Section {
                         Label(unpairedNote, systemImage: "checkmark.circle")
-                            .font(.subheadline)
+                            .font(WitermType.rowDetail)
                             .foregroundStyle(WitermTheme.secondary)
                             .accessibilityIdentifier("unpairedNote")
-                    }
-                    .task(id: unpairedNote) {
-                        try? await Task.sleep(for: .seconds(4))
-                        if !Task.isCancelled { self.unpairedNote = nil }
                     }
                 }
                 if deviceServers.isEmpty {
                     Section(String(localized: "Paired Devices", bundle: .main)) {
                         Text(String(localized: "Devices you add appear here.", bundle: .main))
-                            .font(.subheadline)
+                            .font(WitermType.rowDetail)
                             .foregroundStyle(WitermTheme.secondary)
                             .accessibilityIdentifier("remoteDevicesEmpty")
                     }
@@ -83,10 +73,10 @@ struct DevicesView: View {
                             deviceRows(server)
                         } header: {
                             if servers.servers.count > 1 {
-                                HStack(spacing: 8) {
+                                HStack(spacing: WitermMetrics.Space.s) {
                                     Text(String(localized: "Paired Devices · \(server.displayName)", bundle: .main))
                                         .lineLimit(1).truncationMode(.middle)
-                                    Spacer(minLength: 8)
+                                    Spacer(minLength: WitermMetrics.Space.s)
                                     StatusBadge(server.statusTitle, systemImage: server.statusSymbol, tone: server.statusTone)
                                         .textCase(nil)
                                 }
@@ -99,17 +89,20 @@ struct DevicesView: View {
                 }
                 Section(String(localized: "SSH Hosts", bundle: .main)) {
                     ForEach(ssh.orderedProfiles(search: search)) { profile in hostRow(profile) }
-                    Button(String(localized: "Add Host", bundle: .main), systemImage: "plus", action: ui.presentNew)
-                        .disabled(ssh.connecting)
-                        .accessibilityIdentifier("machinesAddHost")
-                    Button(String(localized: "Import SSH Hosts…", bundle: .main), systemImage: "square.and.arrow.down", action: ui.presentImport)
-                        .accessibilityIdentifier("machinesImportHosts")
+                    Button(action: ui.presentNew) {
+                        ContentActionLabel(String(localized: "Add SSH Host…", bundle: .main), systemImage: "plus")
+                    }
+                    .disabled(ssh.connecting)
+                    .accessibilityIdentifier("machinesAddHost")
+                    Button(action: ui.presentImport) {
+                        ContentActionLabel(String(localized: "Import SSH Hosts…", bundle: .main), systemImage: "square.and.arrow.down")
+                    }
+                    .accessibilityIdentifier("machinesImportHosts")
                 }
             }
             .listStyle(.insetGrouped)
-            .scrollContentBackground(.hidden)
-            .background(WitermTheme.canvas)
             .modifier(HostSearch(enabled: showsSearch, text: $search))
+            .onDisappear { unpairedNote = nil }
             // Pull down to check servers and list paired devices again.
             .refreshable {
                 refreshAll()
@@ -119,14 +112,6 @@ struct DevicesView: View {
             }
             .navigationTitle(String(localized: "Devices", bundle: .main))
             .overlay(alignment: .bottom) { SSHUndoRemovalBar(model: ssh) }
-        }
-        .sheet(item: $inspected) { item in
-            MacDeviceDetails(server: item.server, grant: item.grant, model: macs.model(for: item.server)) {
-                inspected = nil
-            } unpaired: {
-                inspected = nil
-                unpairedNote = String(localized: "Unpaired from \(item.grant.host.name)", bundle: .main)
-            }
         }
     }
 
@@ -146,42 +131,37 @@ struct DevicesView: View {
                     .accessibilityIdentifier("remoteTerminalActivity")
             }
             if let issue = model.issue {
-                IssueBanner(issue.title, message: issue.recovery, systemImage: "exclamationmark.shield.fill")
+                IssueBanner(issue.title, message: issue.recovery, systemImage: WitermSymbols.unpaired)
                     .accessibilityIdentifier("remoteTerminalError")
             }
-            ForEach(model.grants) { grant in
-                HStack(spacing: 4) {
-                    Button { openMac(server, grant) } label: {
-                        HStack(spacing: 14) {
-                            IconTile(systemImage: grant.host.platform == .macos ? "laptopcomputer" : "iphone", tint: grant.host.identityHue)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(grant.host.name).foregroundStyle(WitermTheme.ink)
-                                // What this device may do there. The section
-                                // names the server when there are several.
-                                Text(grant.permission == .view ? String(localized: "Can only watch", bundle: .main) : String(localized: "Can watch and type", bundle: .main))
-                                    .font(.caption).foregroundStyle(WitermTheme.secondary)
-                            }
-                            Spacer(minLength: 8)
+            // One row per device, however many pairings it has. The row opens
+            // the device's page in this tab; its terminals open in Terminals.
+            ForEach(model.devices) { grant in
+                NavigationLink {
+                    MacDeviceDetails(server: server, grant: grant, model: model, openTerminals: { openMac(server, grant) }) {
+                        unpairedNote = String(localized: "Unpaired from \(grant.host.name)", bundle: .main)
+                    }
+                } label: {
+                    HStack(spacing: WitermMetrics.Space.m) {
+                        IconTile(systemImage: grant.host.platform == .macos ? "laptopcomputer" : "iphone", tint: grant.host.identityHue)
+                        VStack(alignment: .leading, spacing: WitermMetrics.Space.xxs) {
+                            Text(grant.host.name).font(WitermType.rowTitle).foregroundStyle(WitermTheme.ink)
+                            // What this device may do there. The section
+                            // names the server when there are several.
+                            Text(grant.permission == .view ? String(localized: "Can only watch", bundle: .main) : String(localized: "Can watch and type", bundle: .main))
+                                .font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
                         }
-                        .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
-                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
-                    .disabled(model.busy != nil)
-                    .accessibilityHint(String(localized: "Shows this device’s terminals in Terminals.", bundle: .main))
-                    Button(String(localized: "Device Details", bundle: .main), systemImage: "info.circle") {
-                        inspected = Inspected(server: server, grant: grant)
-                    }
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.borderless)
-                    .touchTarget(square: true)
-                    .accessibilityLabel(String(localized: "Details for \(grant.host.name)", bundle: .main))
                 }
+                .disabled(model.busy != nil)
+                .accessibilityIdentifier("deviceDetails-\(grant.host.id)")
             }
         } else {
             ConnectionFeedback(server: server)
             if !server.phase.isChecking {
-                Button(String(localized: "Check Again", bundle: .main), action: server.check)
+                Button(action: server.check) {
+                    ContentActionLabel(String(localized: "Check Again", bundle: .main), systemImage: "arrow.clockwise")
+                }
             }
         }
     }
@@ -190,11 +170,11 @@ struct DevicesView: View {
 
     private func hostRow(_ profile: SSHProfile) -> some View {
         let session = ssh.session(for: profile.id)
-        return HStack(spacing: 4) {
+        return HStack(spacing: WitermMetrics.Space.xs) {
             Button { openHost(profile) } label: {
                 SSHHostRowContent(profile: profile, active: session != nil, expanded: true, favorite: ssh.isFavorite(profile),
                                   activity: session?.activity)
-                    .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -207,6 +187,7 @@ struct DevicesView: View {
             SSHHostActions(profile: profile, ssh: ssh, ui: ui)
                 .accessibilityIdentifier("machineHostActions-\(profile.id.uuidString)")
         }
+        .modifier(SSHHostSwipeActions(profile: profile, ssh: ssh, ui: ui))
     }
 }
 #endif

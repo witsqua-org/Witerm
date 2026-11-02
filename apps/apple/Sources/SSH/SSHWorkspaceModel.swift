@@ -47,11 +47,11 @@ enum SSHUIError {
 
 enum SSHRecovery { case editConnection, tryAgain }
 
-/// A deleted host kept briefly so the deletion can be undone. Credentials
-/// stay in memory only for the undo window, then are dropped.
+/// A deleted host kept briefly so the deletion can be undone. Its saved
+/// credentials stay protected in the Keychain for the undo window, never
+/// read, and are removed when the window closes.
 struct RemovedSSHProfile {
     let profile: SSHProfile
-    fileprivate let credentials: [UUID: SSHCredential]
     fileprivate let favorite: Bool
     fileprivate let lastUsed: Double?
     fileprivate let hue: Int?
@@ -118,7 +118,7 @@ final class SSHWorkspaceModel {
     private(set) var connectFailures = 0
     var trustPrompt: SSHTrustPrompt?
     private var untrustedKey: SSHHostKey?
-    private var pendingAttempt: (profile: SSHProfile, credentials: [UUID: SSHCredential], remember: Set<UUID>)?
+    private var pendingAttempt: (profile: SSHProfile, credentials: [UUID: SSHCredential], remember: Set<UUID>, preserving: Set<UUID>)?
     private var approvedAttempt = false
     private var connectTask: Task<Void, Never>?
     private var generation = UUID()
@@ -148,47 +148,89 @@ final class SSHWorkspaceModel {
         }
     }
 
-    func saveProfile(_ profile: SSHProfile, credentials: [UUID: SSHCredential], remember: Set<UUID>) async throws {
+    /// Saves a host. `preserving` lists hosts whose saved credential stays as
+    /// it is unless the person chose to save a new one (the form was opened
+    /// without reading it, after Face ID was cancelled).
+    func saveProfile(_ profile: SSHProfile, credentials: [UUID: SSHCredential], remember: Set<UUID>,
+                     preserving: Set<UUID> = []) async throws {
         let store = try SSHProfileStore()
         try await store.save(profile)
-        for host in profile.jumpHosts + [profile.host] {
+        let remember = Self.protection == .unavailable ? [] : remember
+        for host in profile.jumpHosts + [profile.host] where remember.contains(host.id) || !preserving.contains(host.id) {
             try await store.setCredential(remember.contains(host.id) ? credentials[host.id] : nil, hostID: host.id)
         }
         profiles = try await store.profiles()
     }
 
-    func load() async {
-        do { profiles = try await SSHProfileStore().profiles() }
-        catch { report(SSHUIError.message(error), profileID: nil) }
-    }
+    /// How saved credentials are protected here; `.unavailable` (no passcode) means they can't be saved.
+    static var protection: SSHUnlock.Method { SSHUnlock.method }
 
-    func savedCredentials(for profile: SSHProfile) async -> [UUID: SSHCredential] {
+    func load() async {
         do {
             let store = try SSHProfileStore()
-            var result: [UUID: SSHCredential] = [:]
-            for host in profile.jumpHosts + [profile.host] {
-                if let value = try await store.credential(hostID: host.id) { result[host.id] = value }
+            profiles = try await store.profiles()
+            // Credentials kept for an Undo that the app didn't live to offer.
+            if recentlyRemoved == nil { try await store.purgeUnusedCredentials() }
+        } catch { report(SSHUIError.message(error), profileID: nil) }
+    }
+
+    /// The hosts of this profile with a saved credential. Never asks.
+    func savedCredentialHosts(for profile: SSHProfile) async -> Set<UUID> {
+        do { return try await SSHProfileStore().savedCredentialHosts((profile.jumpHosts + [profile.host]).map(\.id)) }
+        catch { report(SSHUIError.message(error), profileID: profile.id); return [] }
+    }
+
+    enum SavedCredentials {
+        case read([UUID: SSHCredential])
+        /// The person cancelled Face ID (or Touch ID, or the passcode).
+        case cancelled
+        /// The person chose to type the password for this attempt.
+        case enterPassword
+        case failed
+    }
+
+    /// Reads this profile's saved credentials, asking once (Face ID, Touch
+    /// ID, or the passcode) for all of its hops when they're protected.
+    func savedCredentials(for profile: SSHProfile) async -> SavedCredentials {
+        let ids = (profile.jumpHosts + [profile.host]).map(\.id)
+        do {
+            let store = try SSHProfileStore()
+            var unlock: SSHUnlock?
+            if try await store.credentialsNeedUnlock(ids) {
+                let attempt = SSHUnlock()
+                switch try await attempt.unlock(reason: String(localized: "Sign in to “\(profile.name)”", bundle: .main),
+                                                fallbackTitle: String(localized: "Enter Password", bundle: .main)) {
+                case .unlocked: unlock = attempt
+                case .cancelled: return .cancelled
+                case .enterPassword: return .enterPassword
+                }
             }
-            return result
-        } catch { report(SSHUIError.message(error), profileID: profile.id); return [:] }
+            return .read(try await store.credentials(ids, unlock: unlock))
+        } catch SSHFailure.cancelled {
+            return .cancelled
+        } catch {
+            report(SSHUIError.message(error), profileID: profile.id)
+            return .failed
+        }
     }
 
     func removeProfile(_ profile: SSHProfile) async {
         if let session = session(for: profile.id) { disconnect(session) }
         if connectingProfile?.id == profile.id { cancelConnecting() }
-        let credentials = await savedCredentials(for: profile)
         let removed = RemovedSSHProfile(
-            profile: profile, credentials: credentials, favorite: isFavorite(profile),
+            profile: profile, favorite: isFavorite(profile),
             lastUsed: lastUsed[profile.id.uuidString], hue: IdentityHue.assignment(for: profile.id.uuidString))
         do {
             let store = try SSHProfileStore()
-            try await store.delete(id: profile.id)
+            // Its credentials stay protected, unread, until Undo or the window ends.
+            try await store.delete(id: profile.id, keepingCredentials: true)
             recentlyRemoved = removed
             removalExpiry?.cancel()
             removalExpiry = Task { [weak self] in
                 try? await Task.sleep(for: Self.undoWindow)
                 guard !Task.isCancelled, self?.recentlyRemoved?.token == removed.token else { return }
                 self?.recentlyRemoved = nil
+                await self?.purgeRemovedCredentials()
             }
             IdentityHue.forget(profile.id.uuidString)
             disconnected[profile.id] = nil
@@ -212,19 +254,29 @@ final class SSHWorkspaceModel {
         UserDefaults.standard.set(Array(favorites), forKey: "witerm.sshFavorites")
         UserDefaults.standard.set(lastUsed, forKey: "witerm.sshLastUsed")
         do {
-            try await saveProfile(removed.profile, credentials: removed.credentials,
-                                  remember: Set(removed.credentials.keys))
+            // The credentials were never removed, so they come back as they were, protected.
+            let store = try SSHProfileStore()
+            try await store.save(removed.profile)
+            profiles = try await store.profiles()
         } catch { report(SSHUIError.message(error), profileID: nil) }
     }
 
     func dismissUndo() {
         recentlyRemoved = nil
         removalExpiry?.cancel()
+        Task { await purgeRemovedCredentials() }
+    }
+
+    private func purgeRemovedCredentials() async {
+        do { try await SSHProfileStore().purgeUnusedCredentials() }
+        catch { report(SSHUIError.message(error), profileID: nil) }
     }
 
     /// Starts a new attempt. Live sessions for other hosts are unaffected;
     /// an earlier attempt that has not finished is cancelled.
-    func connect(_ profile: SSHProfile, credentials: [UUID: SSHCredential], remember: Set<UUID>) {
+    func connect(_ profile: SSHProfile, credentials: [UUID: SSHCredential], remember: Set<UUID>,
+                 preserving: Set<UUID> = []) {
+        let remember = Self.protection == .unavailable ? [] : remember
         cancelConnecting()
         guard session(for: profile.id) == nil else { return }
         guard sessions.count < Self.sessionLimit else {
@@ -235,7 +287,7 @@ final class SSHWorkspaceModel {
         generation = current
         connectingProfile = profile
         clearIssue()
-        pendingAttempt = (profile, credentials, remember)
+        pendingAttempt = (profile, credentials, remember, preserving)
         connectTask = Task { [weak self] in
             var connected: SSHConnection?
             do {
@@ -256,7 +308,8 @@ final class SSHWorkspaceModel {
                 guard let self, self.generation == current, !Task.isCancelled else {
                     await terminal.close(); await client.disconnect(); return
                 }
-                for host in profile.jumpHosts + [profile.host] {
+                // Saving again protects credentials saved before protection existed.
+                for host in profile.jumpHosts + [profile.host] where remember.contains(host.id) || !preserving.contains(host.id) {
                     try await store.setCredential(
                         remember.contains(host.id) ? credentials[host.id] : nil, hostID: host.id)
                 }
@@ -334,7 +387,7 @@ final class SSHWorkspaceModel {
     func resumeTrustedAttempt() {
         guard approvedAttempt, let attempt = pendingAttempt else { return }
         approvedAttempt = false; pendingAttempt = nil
-        connect(attempt.profile, credentials: attempt.credentials, remember: attempt.remember)
+        connect(attempt.profile, credentials: attempt.credentials, remember: attempt.remember, preserving: attempt.preserving)
     }
 
     /// Cancels only the attempt in flight; live sessions keep running.

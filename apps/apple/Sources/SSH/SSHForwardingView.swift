@@ -36,9 +36,9 @@ struct SSHForwardingView: View {
                     if forwards.isEmpty { Text(String(localized: "No Forwards Yet", bundle: .main)).foregroundStyle(.secondary) }
                     ForEach(forwards) { item in
                         VStack(alignment: .leading, spacing: 6) {
-                            Text(item.kind == .local ? String(localized: "Local Forward", bundle: .main) : String(localized: "Remote Forward", bundle: .main)).font(.headline)
+                            Text(item.kind == .local ? String(localized: "Local Forward", bundle: .main) : String(localized: "Remote Forward", bundle: .main)).font(WitermType.cardTitle)
                             Text(verbatim: "127.0.0.1:\(item.listenPort) → \(item.targetHost):\(item.targetPort)")
-                                .font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                                .font(WitermType.codeInline).textSelection(.enabled)
                             Button(String(localized: "Stop Forwarding", bundle: .main), role: .destructive) {
                                 Task { await connection.stopForward(id: item.id); await refresh() }
                             }.disabled(busy)
@@ -48,6 +48,9 @@ struct SSHForwardingView: View {
             }
             .formStyle(.grouped)
             .navigationTitle(String(localized: "Port Forwarding", bundle: .main))
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button(String(localized: "Done", bundle: .main)) { dismiss() } } }
             .task { await refresh() }
             .overlay { if busy { ProgressView().padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)) } }
