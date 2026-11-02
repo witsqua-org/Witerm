@@ -787,8 +787,12 @@ struct ContinueOnDeviceSheet: View {
     private func showCode() {
         copied = false
         problem = nil
+        // Clear an earlier code or problem, but never while the model is at
+        // work: resetting suspends it, which cancelled the connection
+        // ensurePairing had just started when the sheet opened straight to
+        // the code, so it waited forever on "Making a code…".
+        if let pairing, !pairing.isWorking, !pairing.hasLivePairing { pairing.resetPairing() }
         ensurePairing()
-        if let pairing, !pairing.hasLivePairing { pairing.resetPairing() }
         step = .code
         createWhenReady()
     }
@@ -799,6 +803,8 @@ struct ContinueOnDeviceSheet: View {
         if pairing.device != nil, !pairing.isWorking, pairing.pairing == nil, pairing.issue == nil {
             pairing.create()
         } else if pairing.device == nil || pairing.isWorking {
+            // Nothing is making this Mac's identity ready: start it again.
+            if pairing.device == nil, !pairing.isWorking, pairing.issue == nil { pairing.connect() }
             Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(200))
                 createWhenReady()

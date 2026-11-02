@@ -140,6 +140,10 @@ final class PhoneContinuityFlowTests: XCTestCase {
             app.buttons["continuePrimary"].click()
         }
         XCTAssertTrue(copy.waitForExistence(timeout: 30), "The sheet didn't show a code")
+        // The code step keeps its layout while the code is made; Copy turns
+        // on once there's an invitation to copy.
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: copy)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 30), .completed, "The code was never made")
         // The server line combines its name and Change… into one element.
         XCTAssertTrue(app.sheets.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", host)).firstMatch.exists,
                       "The code step didn't name its server")
@@ -189,6 +193,24 @@ final class PhoneContinuityFlowTests: XCTestCase {
         signal("mac-typed")
         XCTAssertNotNil(awaitSignal("phone-done", timeout: 300), "The phone didn't finish")
         shot("06-after")
+
+        // Opt-in: the phone unpairs itself, and Settings → Devices drops it
+        // without anything done here (the Mac rechecks every 10 seconds).
+        if environment["WITERM_E2E_PHONE_UNPAIRS"] == "1" {
+            app.typeKey(",", modifierFlags: .command)
+            let devicesTab = app.toolbars.buttons["Devices"].firstMatch
+            XCTAssertTrue(devicesTab.waitForExistence(timeout: 10))
+            devicesTab.click()
+            let edit = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "editDevice-", phone)).firstMatch
+            XCTAssertTrue(edit.waitForExistence(timeout: 20))
+            shot("07-paired")
+            signal("mac-ready-for-unpair")
+            XCTAssertNotNil(awaitSignal("phone-unpaired", timeout: 240), "The phone never unpaired")
+            let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: edit)
+            XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 30), .completed, "The Mac kept listing a phone that unpaired itself")
+            shot("08-phone-unpaired")
+            return
+        }
 
         // Revoke only this test's pairing, in Settings → Devices, unless the
         // next run should start paired to check re-pairing.

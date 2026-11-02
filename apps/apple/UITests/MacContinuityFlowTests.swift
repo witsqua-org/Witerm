@@ -87,7 +87,9 @@ final class MacContinuityFlowTests: XCTestCase {
         XCTAssertTrue(status.waitForExistence(timeout: 30))
         // The title bar says Typing (not "Switching to Typing…") before the device name.
         func state(_ word: String) -> XCTNSPredicateExpectation {
-            XCTNSPredicateExpectation(predicate: NSPredicate(format: "label BEGINSWITH %@", word + ","), object: status)
+            // The header's label may start with the terminal's name.
+            XCTNSPredicateExpectation(predicate: NSPredicate(format: "label BEGINSWITH %@ OR label CONTAINS %@", word + ",", ", " + word + ","),
+                                      object: status)
         }
         wait(for: [state("Typing")], timeout: 30)
         shot("07-terminal")
@@ -168,6 +170,27 @@ final class MacContinuityFlowTests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 15), "The edge swipe didn't go back")
         shot("11-back")
         signal("phone-done")
+
+        // Opt-in: this phone ends the pairing itself, in Device Details, and
+        // the Mac's runner checks that the Mac drops it on its own.
+        guard environment["WITERM_E2E_PHONE_UNPAIRS"] == "1" else { return }
+        XCTAssertNotNil(awaitSignal("mac-ready-for-unpair", timeout: 120), "The Mac never got ready")
+        app.tabBars.buttons["Devices"].tap()
+        let details = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Details for")).firstMatch
+        XCTAssertTrue(details.waitForExistence(timeout: 20), "Devices didn't list the Mac")
+        details.tap()
+        let unpair = app.buttons["unpairDevice"]
+        XCTAssertTrue(unpair.waitForExistence(timeout: 10))
+        shot("12-details")
+        unpair.tap()
+        let confirm = app.alerts.buttons["Unpair"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5), "Unpair must be confirmed")
+        shot("13-confirm")
+        confirm.tap()
+        XCTAssertTrue(any("unpairedNote").waitForExistence(timeout: 30), "No feedback after unpairing")
+        XCTAssertFalse(details.exists, "The Mac is still listed after unpairing")
+        shot("14-unpaired")
+        signal("phone-unpaired")
     }
 }
 
