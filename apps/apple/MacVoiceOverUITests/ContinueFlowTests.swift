@@ -33,6 +33,7 @@ final class ContinueFlowTests: XCTestCase {
         XCTAssertTrue(row.label.hasPrefix("HCI acceptance"))
         addTeardownBlock {
             await MainActor.run {
+                for _ in 0..<3 { app.typeKey(.escape, modifierFlags: []) }
                 if app.buttons["continueCancel"].exists { app.buttons["continueCancel"].click() }
                 guard row.exists else { return }
                 row.rightClick()
@@ -45,8 +46,21 @@ final class ContinueFlowTests: XCTestCase {
             }
         }
 
+        // Open On ▸ Choose a Device… opens the sheet at its device step.
+        // Items inside a submenu may carry only their title, not the identifier.
+        func item(_ id: String, _ title: String) -> XCUIElement {
+            app.menuItems.matching(NSPredicate(format: "identifier == %@ OR title == %@", id, title)).firstMatch
+        }
+        func submenu(_ id: String, _ title: String) {
+            let menu = item(id, title)
+            XCTAssertTrue(menu.waitForExistence(timeout: 5), "No \(title) submenu")
+            menu.hover()
+        }
         row.rightClick()
-        app.menuItems["Continue on Another Device…"].click()
+        submenu("openOnMenu", "Open On")
+        let choose = item("continueOnDeviceMenu", "Choose a Device…")
+        XCTAssertTrue(choose.waitForExistence(timeout: 5))
+        choose.click()
         let title = app.staticTexts["continueStepTitle"]
         XCTAssertTrue(title.waitForExistence(timeout: 10))
         // The sheet stops at the server step unless this Mac already allows
@@ -70,16 +84,36 @@ final class ContinueFlowTests: XCTestCase {
         app.buttons["continueCancel"].click()
         let closed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: title)
         wait(for: [closed], timeout: 5)
+        // Open On ▸ Someone Else… skips the device step (when the server step
+        // has nothing to ask) and creates nothing until asked to.
+        row.rightClick()
+        submenu("openOnMenu", "Open On")
+        item("openOnSomeoneElse", "Someone Else…").click()
+        XCTAssertTrue(title.waitForExistence(timeout: 10))
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
+        XCTAssertTrue(["Connect This Mac", "Invite Someone"].contains(title.label), title.label)
+        app.buttons["continueCancel"].click()
+        wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: title)], timeout: 5)
         // Cancelling shares nothing.
         XCTAssertFalse(app.descendants(matching: .any)["localSession-" + id].firstMatch.value as? String ?? "" == "Shared")
 
-        // Keeping the session private shows on its row, and undoing it clears that.
+        // Keeping the session private (Sharing ▸ Keep Private) shows on its
+        // row, and the submenu then shows it checked; undoing it clears that.
         row.rightClick()
-        app.menuItems["Keep Private"].click()
+        submenu("sharingMenu", "Sharing")
+        item("keepSessionPrivate", "Keep Private").click()
         let kept = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS 'Kept private'"), object: row)
         XCTAssertEqual(XCTWaiter.wait(for: [kept], timeout: 10), .completed, row.value as? String ?? "")
         row.rightClick()
-        app.menuItems["Keep Private"].click()
+        submenu("sharingMenu", "Sharing")
+        let keep = item("keepSessionPrivate", "Keep Private")
+        XCTAssertTrue(keep.waitForExistence(timeout: 5))
+        // A checked menu item reports its mark as its value ("✓" or 1).
+        let mark = String(describing: keep.value ?? "")
+        let markNote = XCTAttachment(string: "Keep Private value: \(mark)")
+        markNote.lifetime = .keepAlways
+        add(markNote)
+        keep.click()
         let cleared = XCTNSPredicateExpectation(predicate: NSPredicate(format: "NOT (value CONTAINS 'Kept private')"), object: row)
         XCTAssertEqual(XCTWaiter.wait(for: [cleared], timeout: 10), .completed, row.value as? String ?? "")
     }

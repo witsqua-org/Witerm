@@ -1,0 +1,24 @@
+{
+  "add": {
+    "%@ unpaired": "%@ 已取消配对",
+    "Choose Open On ▸ and a device, or press ⌥⌘P.": "选取“打开于 ▸”和一台设备，或按下 ⌥⌘P。",
+    "Choose a Device…": "选择设备…",
+    "Making a code…": "正在生成验证码…",
+    "New Device…": "新设备…",
+    "On the other device, choose Add Device.": "在另一台设备上，选择“添加设备”。",
+    "On their device, choose Add Device.": "在对方的设备上，选择“添加设备”。",
+    "Open On": "打开于",
+    "Open on another device": "在其他设备上打开",
+    "Open “%@” on Another Device": "在其他设备上打开“%@”",
+    "Sharing": "共享",
+    "Someone Else…": "其他人…"
+  },
+  "remove": [
+    "Continue on Another Device…",
+    "Continue on another device",
+    "Continue “%@” on Another Device",
+    "On the other device, choose Continue from Another Device.",
+    "On their device, choose Continue from Another Device.",
+    "Press ⌥⌘P to open a terminal on another device."
+  ]
+}

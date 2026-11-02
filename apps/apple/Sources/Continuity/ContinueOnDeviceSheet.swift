@@ -3,18 +3,29 @@ import AppKit
 import SwiftUI
 import WitermCore
 
-/// Continues one terminal on another device, or pairs a device without one.
-/// One question per step, one primary action each; steps already done are
-/// skipped. Server, remote access, pairing and per-device access all belong
-/// to `ServerList.selected`, the server every pairing screen shows.
+/// Opens one terminal on another device (Open On ▸), or pairs a device
+/// without one. One question per step, one primary action each; steps
+/// already done are skipped. Server, remote access, pairing and per-device
+/// access all belong to `ServerList.selected`, the server every pairing
+/// screen shows.
+///
+/// The first step is decided before anything is shown, and only the step's
+/// own content cross-fades when it changes. (The whole sheet used to animate
+/// on `step`, and the first automatic step change landed while the sheet
+/// was being laid out for the first time, so its parts grew out of the
+/// top-left corner.)
 struct ContinueOnDeviceSheet: View {
     let service: LocalAgentService
     /// The session to continue; nil pairs a device without one.
     let sessionID: String?
+    /// Where Open On ▸ asked to go: the device step, a paired device, a new
+    /// device, or someone else's.
+    var target = OpenOnTarget.choose
     /// What a session was last seen doing, for the session checklist.
     var activity: (String) -> String? = { _ in nil }
 
     @Environment(ServerList.self) private var servers
+    @Environment(MacPairedDevices.self) private var known
     @Environment(\.localAgent) private var agent
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -40,6 +51,10 @@ struct ContinueOnDeviceSheet: View {
     @State private var continuing: PairedDevice?
     /// Until the person acts, the sheet moves past steps that become done.
     @State private var autoAdvance = true
+    /// Whether the first step is decided; until then only the frame shows.
+    @State private var ready = false
+    /// Whether Open On's device was applied (it is, once).
+    @State private var targetApplied = false
 
     enum Step: Hashable { case server, device, code, approve, open, invite, inviteCode, inviteReview }
     enum Choice: Hashable { case paired(String), new, guest }
@@ -54,28 +69,41 @@ struct ContinueOnDeviceSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+                .opacity(ready ? 1 : 0)
             ScrollView {
+                // A new identity per step: the old content fades out and the
+                // new one fades in at its final size, never growing.
                 content
                     .padding(.horizontal, 24)
                     .padding(.top, 4)
                     .padding(.bottom, 16)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .id(step)
+                    .transition(.opacity)
             }
+            .opacity(ready ? 1 : 0)
+            .animation(ready ? WitermMotion.transition(reduceMotion: reduceMotion) : nil, value: step)
             Divider()
             footer
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
+                .opacity(ready ? 1 : 0)
         }
         .frame(width: Self.size.width, height: Self.size.height)
         .background(WitermTheme.surface)
         .witermTint()
         .serverEditor($editing)
-        .animation(WitermMotion.transition(reduceMotion: reduceMotion), value: step)
         .task {
             remoteAccess.load()
             await service.refresh()
             await reload()
-            if blocker == nil { advanceFromServer() }
+            // The first step appears as it is, without animating into place.
+            var instant = Transaction()
+            instant.disablesAnimations = true
+            withTransaction(instant) {
+                if blocker == nil { advanceFromServer() }
+                ready = true
+            }
         }
         .task(id: step == .open ? continuing?.id : nil) {
             // Watches for the other device to attach; real attachments only.
@@ -90,6 +118,11 @@ struct ContinueOnDeviceSheet: View {
         }
         .onChange(of: server?.address) { _, _ in serverChanged() }
         .onChange(of: pairing?.device?.id) { _, _ in choosePairedDefault() }
+        // A device that unpaired itself leaves the list here too.
+        .onChange(of: known.devices.map(\.id)) { _, _ in
+            guard let pairing, !pairing.isWorking, !pairing.hasLivePairing, step == .device || step == .open else { return }
+            pairing.refresh()
+        }
         .onChange(of: pairing?.grants.map(\.id)) { _, _ in
             choosePairedDefault()
             Task { await reload() }
@@ -107,7 +140,7 @@ struct ContinueOnDeviceSheet: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(sessionID == nil ? String(localized: "Pair a Device", bundle: .main)
-                 : String(localized: "Continue “\(sessionName)” on Another Device", bundle: .main))
+                 : String(localized: "Open “\(sessionName)” on Another Device", bundle: .main))
                 .font(.caption.weight(.medium))
                 .foregroundStyle(WitermTheme.secondary)
             StepStrip(titles: path.map(\.title), current: currentIndex)
@@ -273,11 +306,11 @@ struct ContinueOnDeviceSheet: View {
     private var subtitle: String? {
         switch step {
         case .server, .device: nil
-        case .code: String(localized: "On the other device, choose Continue from Another Device.", bundle: .main)
+        case .code: String(localized: "On the other device, choose Add Device.", bundle: .main)
         case .approve:
             String(localized: "Check that \(pairing?.pairing?.client?.name ?? String(localized: "the other device", bundle: .main)) shows this code.", bundle: .main)
         case .invite: String(localized: "They can open “\(sessionName)” once, on one device, without pairing.", bundle: .main)
-        case .inviteCode: String(localized: "On their device, choose Continue from Another Device.", bundle: .main)
+        case .inviteCode: String(localized: "On their device, choose Add Device.", bundle: .main)
         case .inviteReview: String(localized: "Approve only if this is the device you invited.", bundle: .main)
         case .open:
             if let continuing, sessionID != nil {
@@ -370,8 +403,12 @@ struct ContinueOnDeviceSheet: View {
 
     // MARK: Device
 
+    /// The app's list until this sheet's own pairing has loaded, so the
+    /// device step is complete from its first frame.
     private var pairedDevices: [PairedDevice] {
-        guard let pairing, let me = pairing.device else { return [] }
+        guard let pairing, let me = pairing.device else {
+            return known.pairing?.serverAddress == server?.address ? known.devices : []
+        }
         return pairing.grants.filter { $0.host.id == me.id && !guestPairings.contains($0.pairingID) }.map(\.client)
     }
 
@@ -391,7 +428,6 @@ struct ContinueOnDeviceSheet: View {
 
     @ViewBuilder private var deviceStep: some View {
         VStack(spacing: 8) {
-            if pairing?.device == nil, pairing?.issue == nil { ActivityRow(String(localized: "Loading paired devices…", bundle: .main)) }
             ForEach(pairedDevices, id: \.id) { device in
                 ChoiceRow(selected: choice == .paired(device.id), title: device.name,
                           detail: deviceDetail(device), symbol: device.platform == .macos ? "laptopcomputer" : "iphone",
@@ -418,6 +454,14 @@ struct ContinueOnDeviceSheet: View {
     }
 
     private func choosePairedDefault() {
+        // Open On ▸ named a device: choose it, and go on to Open when it can
+        // already open this terminal; otherwise its Allow is the next step.
+        if case .device(let id) = target, !targetApplied, let device = pairedDevices.first(where: { $0.id == id }) {
+            targetApplied = true
+            choice = .paired(id)
+            if reaches(device), step == .device { continuing = device; step = .open }
+            return
+        }
         guard sessionID != nil, choice == nil || !(choiceStillValid), pairing?.device != nil else { return }
         let devices = pairedDevices
         if devices.count == 1 { choice = .paired(devices[0].id) }
@@ -436,39 +480,47 @@ struct ContinueOnDeviceSheet: View {
 
     // MARK: Code
 
+    /// One layout from the first frame: while the code is being made, the
+    /// QR tile is blank, Copy is disabled, and the status line says so. Nothing
+    /// grows or moves when the code arrives.
     @ViewBuilder private var codeStep: some View {
-        if let pairing, let invitation = pairing.invitation, pairing.pairing?.status == .waiting {
-            HStack(alignment: .top, spacing: 18) {
-                PairingQRCode(value: invitation.urlString)
-                VStack(alignment: .leading, spacing: 10) {
-                    if let me = pairing.device {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(String(localized: "This Mac’s code", bundle: .main)).font(.caption).foregroundStyle(WitermTheme.secondary)
-                            Text(PairingFingerprint.display(publicKey: me.publicKey)).font(.system(.callout, design: .monospaced))
-                                .textSelection(.enabled)
-                        }
-                    }
-                    serverLine
-                    Button(copied ? String(localized: "Invitation Copied", bundle: .main) : String(localized: "Copy Invitation", bundle: .main),
-                           systemImage: copied ? "checkmark" : "doc.on.doc") { copy(invitation.urlString) }
-                        .accessibilityIdentifier("copyPairingInvitation")
-                    if let expires = pairing.pairing?.expiresAt {
-                        IconText(String(localized: "Expires at \(String(expires.formatted(date: .omitted, time: .shortened)))", bundle: .main), systemImage: "clock")
-                            .font(.caption).foregroundStyle(WitermTheme.secondary)
-                    }
-                    HStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
-                        Text(String(localized: "Waiting for the other device…", bundle: .main)).font(.caption).foregroundStyle(WitermTheme.secondary)
-                    }
-                    .accessibilityElement(children: .combine)
-                }
-            }
-        } else if let status = pairing?.pairing?.status, status == .expired || status == .rejected {
+        if let status = pairing?.pairing?.status, status == .expired || status == .rejected {
             note(status == .expired ? String(localized: "The code expired before a device used it.", bundle: .main)
                  : String(localized: "The request was rejected. Nothing was paired.", bundle: .main))
             Button(String(localized: "Show New Code", bundle: .main), action: showCode)
         } else if pairing?.issue == nil {
-            ActivityRow(pairing?.busy ?? String(localized: "Creating invitation…", bundle: .main))
+            let invitation = pairing?.pairing?.status == .waiting ? pairing?.invitation : nil
+            HStack(alignment: .top, spacing: 18) {
+                if let invitation {
+                    PairingQRCode(value: invitation.urlString)
+                } else {
+                    // The tile's own size (168 + 2 × 12), blank.
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(WitermTheme.statusFill)
+                        .frame(width: 192, height: 192)
+                        .accessibilityHidden(true)
+                }
+                VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(String(localized: "This Mac’s code", bundle: .main)).font(.caption).foregroundStyle(WitermTheme.secondary)
+                        Text(pairing?.device.map { PairingFingerprint.display(publicKey: $0.publicKey) } ?? " ")
+                            .font(.system(.callout, design: .monospaced))
+                            .textSelection(.enabled)
+                    }
+                    serverLine
+                    Button(copied ? String(localized: "Invitation Copied", bundle: .main) : String(localized: "Copy Invitation", bundle: .main),
+                           systemImage: copied ? "checkmark" : "doc.on.doc") { if let invitation { copy(invitation.urlString) } }
+                        .disabled(invitation == nil)
+                        .accessibilityIdentifier("copyPairingInvitation")
+                    IconText((pairing?.pairing?.expiresAt).map { String(localized: "Expires at \(String($0.formatted(date: .omitted, time: .shortened)))", bundle: .main) } ?? " ",
+                             systemImage: "clock")
+                        .font(.caption).foregroundStyle(WitermTheme.secondary)
+                        .opacity(invitation == nil ? 0 : 1)
+                    Text(invitation == nil ? String(localized: "Making a code…", bundle: .main)
+                         : String(localized: "Waiting for the other device…", bundle: .main))
+                        .font(.caption).foregroundStyle(WitermTheme.secondary)
+                }
+            }
         }
     }
 
@@ -696,7 +748,15 @@ struct ContinueOnDeviceSheet: View {
     private func advanceFromServer() {
         guard step == .server, blocker == nil else { return }
         ensurePairing()
-        if sessionID == nil { showCode() } else { step = .device; choosePairedDefault() }
+        guard sessionID != nil else { showCode(); return }
+        switch target {
+        case .newDevice: choice = .new; showCode()
+        case .someoneElse: choice = .guest; step = .invite
+        case .choose where known.pairing?.serverAddress == server?.address && known.pairing?.device != nil && known.devices.isEmpty:
+            // Nothing paired yet: straight to the code, as the device step would.
+            choice = .new; showCode()
+        case .device, .choose: step = .device; choosePairedDefault()
+        }
     }
 
     private func back() {

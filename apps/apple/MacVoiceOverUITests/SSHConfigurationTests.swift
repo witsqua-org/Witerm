@@ -33,6 +33,8 @@ import XCTest
                 guard row.exists else { return }
                 row.rightClick()
                 app.menuItems["sshDeleteHostMenu"].click()
+                // Deleting runs in the background; don't quit before it's done.
+                XCTAssertTrue(row.waitForNonExistence(timeout: 10), "The test host is still listed")
             }
         }
         XCTAssertFalse(app.buttons["sshTrustHost"].exists)
@@ -52,5 +54,37 @@ import XCTest
         attachment.name = "mac-host-search"
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    /// Cleanup after interrupted runs: deletes hosts this test made, by their
+    /// "UI config Mac " prefix only. Opt-in: WITERM_HCI_DELETE_CONFIG_HOSTS=1.
+    func testDeleteLeftoverConfigHosts() throws {
+        guard ProcessInfo.processInfo.environment["WITERM_HCI_DELETE_CONFIG_HOSTS"] == "1" else {
+            throw XCTSkip("Set WITERM_HCI_DELETE_CONFIG_HOSTS=1")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-witerm.onboarding.completedVersion", "1"]
+        app.launch()
+        addTeardownBlock { await MainActor.run { app.terminate() } }
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 15))
+        let leftovers = app.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "sshProfileRow-", "UI config Mac "))
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
+        for _ in 0..<10 {
+            let row = leftovers.firstMatch
+            guard row.exists else { break }
+            // Through the host page's More menu, as a person would.
+            row.click()
+            let suffix = String(row.identifier.dropFirst("sshProfileRow-".count))
+            let more = app.descendants(matching: .any)["sshProfileActions-\(suffix)"].firstMatch
+            XCTAssertTrue(more.waitForExistence(timeout: 5))
+            more.click()
+            app.menuItems["sshDeleteHostMenu"].click()
+            let shot = XCTAttachment(screenshot: app.screenshot())
+            shot.lifetime = .keepAlways
+            add(shot)
+            XCTAssertTrue(row.waitForNonExistence(timeout: 10))
+        }
+        XCTAssertFalse(leftovers.firstMatch.exists)
     }
 }

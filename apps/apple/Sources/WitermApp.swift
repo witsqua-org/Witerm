@@ -9,6 +9,7 @@ struct WitermApp: App {
     @State private var servers = ServerList()
     #if os(macOS)
     @State private var service = LocalAgentService()
+    @State private var pairedDevices = MacPairedDevices()
     #endif
 
     var body: some Scene {
@@ -17,6 +18,7 @@ struct WitermApp: App {
         Settings {
             MacSettingsView(service: service)
                 .environment(servers)
+                .environment(pairedDevices)
                 .environment(\.localAgent, service.client)
         }
         #endif
@@ -45,6 +47,7 @@ struct WitermApp: App {
         Group {
             #if os(macOS)
                 MacWorkspaceView(service: service)
+                    .environment(pairedDevices)
                     .environment(\.localAgent, service.client)
             #else
                 MobileWorkspaceView()
@@ -93,15 +96,93 @@ extension TerminalView {
 }
 #endif
 
+/// Where Open On ▸ sends the selected terminal (Mac): the sheet's device
+/// step, a paired device, a new device, or someone else's.
+enum OpenOnTarget: Equatable {
+    case choose, device(String), newDevice, someoneElse
+}
+
+/// A paired device as Open On ▸ lists it.
+struct OpenOnDevice: Identifiable, Equatable {
+    let id: String
+    let name: String
+}
+
+#if os(macOS)
+/// Open On ▸'s items, the same in File, Terminal, and a terminal's context
+/// menu. Native menu items, so hover and the pointer are the system's.
+struct OpenOnItems: View {
+    let devices: [OpenOnDevice]
+    /// ⌥⌘P belongs to one place, File.
+    var shortcut = false
+    let open: (OpenOnTarget) -> Void
+
+    var body: some View {
+        Button(String(localized: "Choose a Device…", bundle: .main)) { open(.choose) }
+            .keyboardShortcut(shortcut ? KeyboardShortcut("p", modifiers: [.command, .option]) : nil)
+            .accessibilityIdentifier("continueOnDeviceMenu")
+        if !devices.isEmpty { Divider() }
+        ForEach(devices) { device in
+            Button(device.name) { open(.device(device.id)) }
+                .accessibilityIdentifier("openOnDevice-\(device.id)")
+        }
+        Divider()
+        Button(String(localized: "New Device…", bundle: .main)) { open(.newDevice) }
+            .accessibilityIdentifier("openOnNewDevice")
+        Button(String(localized: "Someone Else…", bundle: .main)) { open(.someoneElse) }
+            .accessibilityIdentifier("openOnSomeoneElse")
+    }
+}
+
+/// Sharing ▸: who besides this Mac may reach a terminal, each switch with a
+/// checkmark while on.
+struct SharingMenu: View {
+    let keepPrivate: Bool
+    let remoteTypingPaused: Bool
+    let shared: Bool
+    let toggleKeepPrivate: () -> Void
+    let toggleRemoteTyping: () -> Void
+    let stopSharing: (() -> Void)?
+    var remoteTypingShortcut = false
+
+    var body: some View {
+        Menu(String(localized: "Sharing", bundle: .main)) {
+            Toggle(String(localized: "Keep Private", bundle: .main), isOn: Binding(get: { keepPrivate }, set: { _ in toggleKeepPrivate() }))
+                .help(String(localized: "No paired device can open it", bundle: .main))
+                .accessibilityIdentifier("keepSessionPrivate")
+            Toggle(String(localized: "Pause Remote Typing", bundle: .main), isOn: Binding(get: { remoteTypingPaused }, set: { _ in toggleRemoteTyping() }))
+                .keyboardShortcut(remoteTypingShortcut ? KeyboardShortcut("p", modifiers: [.command, .shift]) : nil)
+                .disabled(keepPrivate)
+                .help(String(localized: "Paired devices can watch but not type", bundle: .main))
+                .accessibilityIdentifier("pauseRemoteTyping")
+            if let stopSharing, shared {
+                Divider()
+                Button(String(localized: "Stop Sharing", bundle: .main), action: stopSharing)
+                    .accessibilityIdentifier("stopSharingLocalSession")
+            }
+        }
+        .accessibilityIdentifier("sharingMenu")
+    }
+}
+#endif
+
 /// Actions the focused workspace window offers to the menu bar, and to the
 /// iPad's hardware-keyboard shortcut list.
 struct WorkspaceActions {
     var newSession: (() -> Void)?
     var newSSHConnection: () -> Void
     var importSSHHosts: (() -> Void)?
-    /// Continues the selected session on another device, or pairs one (Mac).
+    /// Pairs a device when no terminal is selected (Mac).
     var continueOnDevice: (() -> Void)? = nil
     var continueTitle = ""
+    /// Open On ▸ for the selected terminal (Mac); nil without one.
+    var openOn: ((OpenOnTarget) -> Void)? = nil
+    var openOnDevices: [OpenOnDevice] = []
+    /// Sharing ▸ for the selected terminal (Mac).
+    var keepPrivate = false
+    var shared = false
+    var toggleKeepPrivate: (() -> Void)? = nil
+    var stopSharing: (() -> Void)? = nil
     var refresh: () -> Void
     /// Open terminals in sidebar order; the first nine get ⌘1–⌘9.
     var terminalNames: [String] = []
@@ -145,9 +226,15 @@ struct WitermCommands: Commands {
                 .disabled(actions?.importSSHHosts == nil)
             #if os(macOS)
             Divider()
-            Button(actions?.continueTitle ?? String(localized: "Continue on Another Device…", bundle: .main)) { actions?.continueOnDevice?() }
-                .keyboardShortcut("p", modifiers: [.command, .option])
-                .disabled(actions?.continueOnDevice == nil)
+            if let openOn = actions?.openOn {
+                Menu(String(localized: "Open On", bundle: .main)) {
+                    OpenOnItems(devices: actions?.openOnDevices ?? [], shortcut: true, open: openOn)
+                }
+            } else {
+                Button(actions?.continueTitle ?? String(localized: "Pair a Device…", bundle: .main)) { actions?.continueOnDevice?() }
+                    .keyboardShortcut("p", modifiers: [.command, .option])
+                    .disabled(actions?.continueOnDevice == nil)
+            }
             #endif
         }
         CommandGroup(before: .toolbar) {
@@ -205,14 +292,21 @@ struct WitermCommands: Commands {
             Button(String(localized: "Leave", bundle: .main)) { actions?.leave?() }
                 .disabled(actions?.leave == nil)
             Divider()
+            if let openOn = actions?.openOn {
+                Menu(String(localized: "Open On", bundle: .main)) {
+                    OpenOnItems(devices: actions?.openOnDevices ?? [], open: openOn)
+                }
+            }
             Button(String(localized: "Rename Terminal…", bundle: .main)) { actions?.renameSession?() }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
                 .disabled(actions?.renameSession == nil)
-            // A checkmark shows that typing from other devices is paused.
-            Toggle(String(localized: "Pause Remote Typing", bundle: .main), isOn: Binding(
-                get: { actions?.remoteTypingPaused == true }, set: { _ in actions?.toggleRemoteTyping?() }))
-                .keyboardShortcut("p", modifiers: [.command, .shift])
-                .disabled(actions?.toggleRemoteTyping == nil)
+            // Checkmarks show which is on; ⇧⌘P works from inside the submenu.
+            if let toggleRemoteTyping = actions?.toggleRemoteTyping, let toggleKeepPrivate = actions?.toggleKeepPrivate {
+                SharingMenu(keepPrivate: actions?.keepPrivate == true, remoteTypingPaused: actions?.remoteTypingPaused == true,
+                            shared: actions?.shared == true, toggleKeepPrivate: toggleKeepPrivate,
+                            toggleRemoteTyping: toggleRemoteTyping, stopSharing: actions?.stopSharing,
+                            remoteTypingShortcut: true)
+            }
             Button(String(localized: "End Terminal…", bundle: .main)) { actions?.endSession?() }
                 .disabled(actions?.endSession == nil)
             Divider()

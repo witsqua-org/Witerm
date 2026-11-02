@@ -36,8 +36,8 @@ struct MacWelcomeTour: View {
                  line: AttributedString(String(localized: "Quit Witerm anytime. Your shells and programs keep going.", bundle: .main))),
             Page(symbol: "gearshape.2", title: String(localized: "Run in the background", bundle: .main),
                  line: AttributedString(String(localized: "Witerm keeps your terminals running in the background.", bundle: .main))),
-            Page(symbol: "laptopcomputer.and.iphone", title: String(localized: "Continue on another device", bundle: .main),
-                 line: AttributedString(String(localized: "Press ⌥⌘P to open a terminal on another device.", bundle: .main))),
+            Page(symbol: "laptopcomputer.and.iphone", title: String(localized: "Open on another device", bundle: .main),
+                 line: AttributedString(String(localized: "Choose Open On ▸ and a device, or press ⌥⌘P.", bundle: .main))),
             Page(symbol: "apple.terminal", title: String(localized: "Start from any folder", bundle: .main),
                  line: (try? AttributedString(markdown: String(localized: "Type `witerm new` in any shell to start a terminal in that folder.", bundle: .main)))
                     ?? AttributedString(String(localized: "Type `witerm new` in any shell to start a terminal in that folder.", bundle: .main))),
@@ -77,7 +77,7 @@ struct MacWelcomeTour: View {
                     .keyboardShortcut(.cancelAction)
                     .accessibilityIdentifier("welcomeTourSkip")
                 Spacer()
-                PageDots(count: pages.count, current: page) { page = $0 }
+                PageDots(count: pages.count, current: page) { show($0) }
                 Spacer()
                 Button(last ? String(localized: "Get Started", bundle: .main) : String(localized: "Next", bundle: .main)) {
                     if last { close(finished: true) } else { move(1) }
@@ -93,7 +93,6 @@ struct MacWelcomeTour: View {
         .frame(width: 440, height: 320)
         .background(WitermTheme.surface)
         .witermTint()
-        .animation(WitermMotion.transition(reduceMotion: reduceMotion), value: page)
         .focusable()
         .focusEffectDisabled()
         .onKeyPress(.rightArrow) { move(1) ? .handled : .ignored }
@@ -129,8 +128,13 @@ struct MacWelcomeTour: View {
     @discardableResult private func move(_ step: Int) -> Bool {
         let next = page + step
         guard pages.indices.contains(next) else { return false }
-        page = next
+        show(next)
         return true
+    }
+
+    /// Only the page cross-fades; the buttons and dots change in place.
+    private func show(_ next: Int) {
+        withAnimation(WitermMotion.transition(reduceMotion: reduceMotion)) { page = next }
     }
 
     private func close(finished: Bool) {

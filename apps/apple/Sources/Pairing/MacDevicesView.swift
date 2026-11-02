@@ -8,6 +8,7 @@ import WitermCore
 struct MacDevicesView: View {
     let service: LocalAgentService
     @Environment(ServerList.self) private var servers
+    @Environment(MacPairedDevices.self) private var known
     @Environment(\.localAgent) private var agent
     @Environment(\.scenePhase) private var scenePhase
     @State private var remoteAccess = MacRemoteAccessModel()
@@ -71,6 +72,14 @@ struct MacDevicesView: View {
             }
         }
         .onChange(of: scenePhase) { _, phase in if phase == .active { refresh() } }
+        // A device that unpaired itself (rechecked every 10 seconds while the
+        // app is active) leaves this list, and its Edit sheet closes.
+        .onChange(of: known.devices.map(\.id)) { _, ids in
+            if let editing = editingDevice, !ids.contains(editing.id), known.pairing?.serverAddress == server?.address {
+                editingDevice = nil
+            }
+            refresh()
+        }
         .onChange(of: pairing?.grants.map(\.id)) { _, _ in Task { await reload() } }
     }
 

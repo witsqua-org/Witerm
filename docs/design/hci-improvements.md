@@ -233,3 +233,32 @@ A wording and system-status review of every iPhone screen (iPad where its code d
 | Words changed to the shared vocabulary | — | 53 strings added or reworded, 50 retired (`docs/design/round8-strings-ios.json`) |
 
 **Still to check with a Mac (joint run):** the new title line and Stop Typing / Start Typing against a real paired terminal (now in `MacContinuityFlowTests`), Leave landing on the list, the No Longer Paired banner after unpairing from the Mac, and an automatic reconnect that finds another device typing. The phone can't yet say *which* device is typing elsewhere: the relay doesn't report it.
+
+## Round 9: Mac
+
+Opening a terminal on another device, the Continue sheet's opening, who is typing, a phone unpairing itself, hover on sidebar rows, and submenus, from a review on 2026-11-03. Frames, hover shots, and menus are in `.build/screenshots/round9-mac/` (`before-sheet-open-*` and `after-sheet-open-*` with their videos, `hover-*`, `menu-*`).
+
+**The animation from the top-left corner.** The whole Continue sheet animated on its `step`, and the sheet changed `step` on its own right after it appeared (once its checks came back), while its parts were being laid out for the first time; so the server step's form, the buttons, and the device rows slid and grew from the top-left corner to their places for about half a second (frames 5–16 of `before-sheet-open-2`). Now the first step is decided before anything is drawn and applied without animation, only the step's content cross-fades on later changes (`.id(step)` and an opacity transition), and the code step has one layout from the start: a blank tile and "Making a code…" until the code arrives, instead of a spinner row the QR code replaced (`after-sheet-open-2`: a still, empty sheet for 200 ms, then the step at its final size). The Welcome Tour animated its whole sheet on `page` the same way; only the page cross-fades now. No other Mac sheet or popover animates a container; the SSH Undo bar's animation is scoped to the bar.
+
+**Menus, top-level items before → after.**
+
+| Menu | Before | After |
+|---|---|---|
+| A shown terminal's context menu | 8 (Stop Typing, Leave, Continue on Another Device…, Stop Sharing, Keep Private, Pause Remote Typing, Rename…, End Terminal…) | 6 (Stop Typing, Leave, Open On ▸, Sharing ▸, Rename…, End Terminal…) |
+| Toolbar More | 7 | 5 (Stop Typing, Leave, Rename…, Sharing ▸, End Terminal…) |
+| Terminal menu, the selected terminal's part | 6 | 7 (adds Open On ▸; Keep Private and Stop Sharing join Pause Remote Typing in Sharing ▸, ⇧⌘P still works) |
+| File | 4 (Continue on Another Device…) | 4 (Open On ▸, or Pair a Device… without a terminal) |
+| SSH host context menu | 5 | 5, reordered: Connect or Disconnect first, Delete Host… last; no submenu needed at five |
+
+| # | Principle | Change | Main code |
+|---|---|---|---|
+| 1 | Recognition, efficiency | **Open On ▸** replaces Continue on Another Device… in File, Terminal, and the row's context menu: Choose a Device… (⌥⌘P, the sheet's device step), each paired device by name, New Device…, Someone Else…. A paired device skips the device step: straight to Open when it can already open the terminal, or to its Allow when access must widen. The toolbar button stays icon-only ("Open on another device"); the sheet's caption is "Open “*name*” on Another Device"; its code screens say "On the other device, choose Add Device." | [WitermApp](../../apps/apple/Sources/WitermApp.swift), [MacWorkspaceView](../../apps/apple/Sources/LocalTerminal/MacWorkspaceView.swift), [ContinueOnDeviceSheet](../../apps/apple/Sources/Continuity/ContinueOnDeviceSheet.swift) |
+| 2 | Aesthetic and minimal design | **Sharing ▸** holds Keep Private, Pause Remote Typing (checked while on), and Stop Sharing, in the context menu, More, and Terminal. | [WitermApp](../../apps/apple/Sources/WitermApp.swift), [LocalTerminalWorkspace](../../apps/apple/Sources/LocalTerminal/LocalTerminalWorkspace.swift) |
+| 3 | Visibility of status | The service now tells a paired device who else can type in each terminal (`writers`: other devices by name, this Mac as `{}`, never the device itself; nothing for an invitation's guest), so the iPhone can say "Typing on *device*". | [AgentBroker](../../apps/mac-agent/Sources/WitermAgent/AgentBroker.swift), [remote-access-v1.json](../../protocol/fixtures/remote-access-v1.json) |
+| 4 | Visibility of status | A device that unpairs itself leaves the Mac within 10 seconds while the app is active (the paired list is rechecked then, and at once when the app becomes active): Open On ▸, the Continue sheet, and Settings → Devices drop it, an open Edit sheet for it closes, and VoiceOver says "*device* unpaired". Its terminal leaves "Typing on …" within 2 seconds of its attachment closing. | [MacPairedDevices](../../apps/apple/Sources/Pairing/MacPairedDevices.swift), [MacDevicesView](../../apps/apple/Sources/Pairing/MacDevicesView.swift) |
+| 5 | Feedback, consistency | Sidebar rows (terminals, SSH hosts, New Terminal, Add SSH Host…) get a hover fill in the selection's shape, lighter than selection (6%, 12% with Increase Contrast), never on the selected row; the SSH host page's More menu gets the shared hover. | [Components](../../apps/apple/Sources/Design/Components.swift), [MacWorkspaceView](../../apps/apple/Sources/LocalTerminal/MacWorkspaceView.swift), [SSHHostDetail](../../apps/apple/Sources/SSH/SSHHostDetail.swift) |
+| 6 | Help | The Welcome Tour's third page is "Open on another device: Choose Open On ▸ and a device, or press ⌥⌘P." | [MacWelcomeTour](../../apps/apple/Sources/Onboarding/MacWelcomeTour.swift) |
+
+**Hover and pointer, round 9.** Native and left as is (they highlight on press, not on hover): bordered and prominent buttons (New Terminal and Add SSH Host… in the empty state, Connect, Edit…, Settings' Check Now, Edit…, Manage Servers…, Copy, Install, the Continue sheet's footer and Copy Invitation, the tour's Skip and Next), toolbar items, segmented controls, switches, pop-up buttons, and menus. Custom and now hovering: sidebar rows and the two sidebar add rows, the sidebar footer, the SSH host page's More, the Continue sheet's choice cards, the tour's page dots, the SSH form's More Options and key cards, snippet rows, and file rows. Open On ▸ and Sharing ▸ are native menus.
+
+**Still to evaluate:** the iPhone showing "Typing on *device*" from `writers` (the iOS side), a real phone unpairing itself while the Mac shows the Continue sheet, and the hover fill on a light appearance.

@@ -209,9 +209,12 @@ final class AgentBroker: @unchecked Sendable {
             try forgetEndedSessions(live: Set(sessions.map(\.id)))
             if let remote = try peer() {
                 // A paired device sees only the sessions it may reach and what
-                // it may do there, never who else is attached.
+                // it may do there. A device paired with this Mac also learns
+                // who else can type, by name only; an invitation's guest doesn't.
+                let guest = invite(remote) != nil
                 reply(sessions: sessions.filter { reachable($0.id, by: remote) }
-                    .map { $0.forPeer(access: remoteAccess($0.id, for: remote)) })
+                    .map { $0.forPeer(access: remoteAccess($0.id, for: remote),
+                                      writers: guest ? nil : otherWriters($0.id, excluding: remote)) })
             } else {
                 reply(sessions: sessions.map { withSharing($0) })
             }
@@ -409,6 +412,21 @@ final class AgentBroker: @unchecked Sendable {
             connection.finish(afterFlush: true)
             child.stop()
         }
+    }
+
+    /// Who else can type in a session now, as a paired device may see it: each
+    /// other device once by name, and this Mac (its app, another window, or
+    /// `witerm`) once as a nil name. Never the requesting device itself.
+    private func otherWriters(_ id: String, excluding peer: LocalRemotePeer) -> [LocalWriterInfo] {
+        var seen = Set<String>()
+        return connections.values
+            .filter { $0.sessionID == id && $0.child != nil && $0.mode == .control && $0.peer?.deviceID != peer.deviceID }
+            .sorted { $0.token.uuidString < $1.token.uuidString }
+            .compactMap { connection in
+                let name = connection.peer?.name
+                return seen.insert(connection.peer?.deviceID ?? "").inserted ? LocalWriterInfo(name: name) : nil
+            }
+            .sorted { ($0.name ?? "") < ($1.name ?? "") }
     }
 
     /// The session with who may reach it and who is attached to it.

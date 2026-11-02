@@ -14,9 +14,15 @@ final class HoverScreenshotTests: XCTestCase {
     private var app: XCUIApplication!
 
     /// Pauses for a shot of the frontmost window (in screen points, top left).
-    private func pause(_ name: String) {
+    /// The screenshot folder under `.build/screenshots`, from WITERM_HCI_HOVER_DIR.
+    private var folder = "round8-mac"
+
+    private func pause(_ shot: String) {
+        let name = folder + "/" + shot
         RunLoop.current.run(until: Date().addingTimeInterval(0.8))
-        let frame = app.windows.firstMatch.frame.insetBy(dx: -8, dy: -8)
+        var area = app.windows.firstMatch.frame
+        for menu in app.menus.allElementsBoundByIndex where menu.exists && !menu.frame.isEmpty { area = area.union(menu.frame) }
+        let frame = area.insetBy(dx: -8, dy: -8)
         let region = [frame.minX, frame.minY, frame.width, frame.height].map { String(Int($0)) }.joined(separator: ",")
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString("witerm-shot:" + name + "|" + region, forType: .string)
@@ -29,6 +35,7 @@ final class HoverScreenshotTests: XCTestCase {
     func testHoverFeedback() throws {
         continueAfterFailure = true
         let environment = ProcessInfo.processInfo.environment
+        folder = environment["WITERM_HCI_HOVER_DIR"] ?? folder
         guard let path = environment["WITERM_HCI_FIXED_APP"], environment["WITERM_HCI_HOVER_SHOTS"] == "1" else {
             throw XCTSkip("Set WITERM_HCI_FIXED_APP and WITERM_HCI_HOVER_SHOTS=1")
         }
@@ -79,6 +86,14 @@ final class HoverScreenshotTests: XCTestCase {
         RunLoop.current.run(until: Date().addingTimeInterval(2))
         terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.1)).hover()
         pause("hover-terminal-watching-ibeam")
+        // Sidebar rows: a light fill under the pointer, none on the selected row.
+        let other = rows.allElementsBoundByIndex.first { $0.identifier != createdID }
+        if let other {
+            other.hover()
+            pause("hover-sidebar-terminal-row")
+        }
+        row.hover()
+        pause("hover-sidebar-selected-row-none")
         let start = app.buttons["startTypingLocal"]
         if start.exists { start.hover(); pause("hover-toolbar-start-typing-tooltip") }
 
@@ -121,6 +136,58 @@ final class HoverScreenshotTests: XCTestCase {
             if copy.waitForExistence(timeout: 5) { copy.click(); pause("click-settings-copy-feedback") }
             app.typeKey("w", modifierFlags: .command)
         }
+
+        // An SSH host row and the host page's More menu, on a host made here
+        // and deleted at the end (never connected).
+        let hostName = "UI config Mac hover " + String(UUID().uuidString.prefix(4))
+        app.typeKey("n", modifierFlags: [.command, .shift])
+        let address = app.textFields["sshHostAddress"]
+        if address.waitForExistence(timeout: 5) {
+            address.click(); address.typeText("fixture@example.invalid")
+            app.buttons["sshMoreOptions"].click()
+            let nameField = app.textFields["sshProfileName"]
+            if nameField.waitForExistence(timeout: 5) { nameField.click(); nameField.typeText(hostName) }
+            app.scrollViews.firstMatch.scroll(byDeltaX: 0, deltaY: -500)
+            app.buttons["sshSaveOnly"].click()
+            let hostRow = app.descendants(matching: .any).matching(NSPredicate(
+                format: "identifier BEGINSWITH %@ AND label == %@", "sshProfileRow-", hostName)).firstMatch
+            if hostRow.waitForExistence(timeout: 10) {
+                hostRow.hover()
+                pause("hover-sidebar-ssh-row")
+                hostRow.click()
+                let suffix = String(hostRow.identifier.dropFirst("sshProfileRow-".count))
+                let more = app.descendants(matching: .any)["sshProfileActions-\(suffix)"].firstMatch
+                if more.waitForExistence(timeout: 5) { more.hover(); pause("hover-ssh-host-more") }
+                hostRow.rightClick()
+                pause("menu-ssh-host-context")
+                app.menuItems["sshDeleteHostMenu"].click()
+                XCTAssertTrue(hostRow.waitForNonExistence(timeout: 10), "The hover test's host is still listed")
+            }
+        }
+
+        // The terminal's context menu with Open On ▸ open, and its toolbar More menu.
+        app.descendants(matching: .any)[createdID].firstMatch.rightClick()
+        let openOn = app.menuItems["openOnMenu"].exists ? app.menuItems["openOnMenu"] : app.menuItems["Open On"]
+        if openOn.waitForExistence(timeout: 5) {
+            pause("menu-terminal-context")
+            openOn.hover()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.6))
+            pause("menu-terminal-open-on")
+        }
+        app.typeKey(.escape, modifierFlags: [])
+        app.typeKey(.escape, modifierFlags: [])
+        let moreMenu = app.descendants(matching: .any)["localTerminalMore"].firstMatch
+        if moreMenu.waitForExistence(timeout: 5) {
+            moreMenu.click()
+            pause("menu-toolbar-more")
+            app.typeKey(.escape, modifierFlags: [])
+        }
+        app.menuBars.menuBarItems["Terminal"].click()
+        pause("menu-bar-terminal")
+        app.typeKey(.escape, modifierFlags: [])
+        app.menuBars.menuBarItems["File"].click()
+        pause("menu-bar-file")
+        app.typeKey(.escape, modifierFlags: [])
 
         // The SSH host form's More Options row; nothing is saved.
         app.typeKey("n", modifierFlags: [.command, .shift])

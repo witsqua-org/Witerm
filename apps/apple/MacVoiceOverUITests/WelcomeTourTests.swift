@@ -54,7 +54,7 @@ final class WelcomeTourTests: XCTestCase {
         item.click()
         XCTAssertTrue(tour.waitForExistence(timeout: 5), "Help → Welcome Tour didn't open it")
         let primary = app.buttons["welcomeTourPrimary"]
-        for title in ["Run in the background", "Continue on another device", "Start from any folder"] {
+        for title in ["Run in the background", "Open on another device", "Start from any folder"] {
             primary.click()
             waitForTitle(title, in: app)
         }

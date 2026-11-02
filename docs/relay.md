@@ -6,7 +6,7 @@ Contracts: [relay-v1](../protocol/relay-v1.md) for the relay, [local-agent-v1](.
 
 ## Using it
 
-On the Mac, **Continue on Another Device…** in a session's header, context menu, or File menu (⌥⌘P) walks through these steps one at a time and skips the ones already done:
+On the Mac, **Open On ▸** in a terminal's context menu, File, or Terminal (Choose a Device…, ⌥⌘P; a paired device by name; New Device…; Someone Else…), or the toolbar's Open on another device button, walks through these steps one at a time and skips the ones already done:
 
 1. **Server.** Start the local service and turn on **Allow Remote Access** through the continuation server. It is off by default.
 2. **Device.** Choose a paired device (allowing it this session if it can't open it yet), pair a new one ([Device pairing](pairing.md)), or invite someone else's device to this session only.
@@ -34,7 +34,7 @@ The policy can only narrow the signed grant: a view-only grant never gains contr
 
 ## Session invitations
 
-A Mac can share one session with someone whose device isn't paired: **Continue on Another Device…** → **Someone Else's Device**.
+A Mac can share one session with someone whose device isn't paired: **Open On ▸ Someone Else…**.
 
 1. Choose **View only** or **Can type**, and how long access lasts (1, 8, or 24 hours). Access also ends when the session ends.
 2. The Mac shows a QR code and a `witerm://share?…` link. Keep the sheet open until they join (within 5 minutes).

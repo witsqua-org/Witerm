@@ -104,27 +104,26 @@ struct LocalTerminalDetail: View {
                 .help(sharing.remoteTyping ? String(localized: "Pause typing from other devices", bundle: .main)
                       : String(localized: "Remote typing is paused. Click to allow it.", bundle: .main))
             }
-            Button(String(localized: "Continue on Another Device…", bundle: .main), systemImage: "laptopcomputer.and.iphone") {
+            // Icon only: the sheet starts at its device step.
+            Button(String(localized: "Open on another device", bundle: .main), systemImage: "laptopcomputer.and.iphone") {
                 continueSession(session)
             }
             .accessibilityIdentifier("shareLocalSession")
-            .help(String(localized: "Continue on Another Device…", bundle: .main))
+            .help(String(localized: "Open on another device", bundle: .main))
             Menu(String(localized: "More", bundle: .main), systemImage: "ellipsis.circle") {
                 TypingMenuItems(mode: model.mode) { model.setTyping($0, using: client) }
-                Divider()
-                Button(String(localized: "Rename…", bundle: .main)) { renameSession(session) }
-                    .accessibilityIdentifier("renameLocalSessionMenu")
-                RemoteAccessMenuItems(session: session) { keepPrivate, typing in
-                    model.configure(session, keepPrivate: keepPrivate, remoteTyping: typing, using: client)
-                }
-                if sharing?.shared == true {
-                    Button(String(localized: "Stop Sharing", bundle: .main)) { model.setShared(session, false, using: client) }
-                        .accessibilityIdentifier("stopSharingLocalSession")
-                }
-                Divider()
                 Button(String(localized: "Leave", bundle: .main), systemImage: "rectangle.portrait.and.arrow.right", action: model.detach)
                     .accessibilityIdentifier("detachLocalTerminal")
                     .help(String(localized: "Stop showing it here; it keeps running", bundle: .main))
+                Divider()
+                Button(String(localized: "Rename…", bundle: .main)) { renameSession(session) }
+                    .accessibilityIdentifier("renameLocalSessionMenu")
+                SharingMenu(keepPrivate: sharing?.keepPrivate == true, remoteTypingPaused: sharing?.remoteTyping == false,
+                            shared: sharing?.shared == true,
+                            toggleKeepPrivate: { model.configure(session, keepPrivate: sharing?.keepPrivate != true, using: client) },
+                            toggleRemoteTyping: { model.configure(session, remoteTyping: sharing?.remoteTyping == false, using: client) },
+                            stopSharing: { model.setShared(session, false, using: client) })
+                Divider()
                 Button(String(localized: "End Terminal…", bundle: .main), role: .destructive) { endSession(session) }
             }
             .accessibilityIdentifier("localTerminalMore")
@@ -433,27 +432,6 @@ enum LocalTerminalHelp {
     }
     static var addSSHHost: String {
         String(localized: "Sign in to another computer with SSH", bundle: .main)
-    }
-}
-
-/// Per-terminal remote access in a menu: keeping a terminal from every paired
-/// device, and pausing their typing.
-struct RemoteAccessMenuItems: View {
-    let session: LocalSessionInfo
-    /// (keepPrivate, remoteTyping): the one that changed is non-nil.
-    let configure: (Bool?, Bool?) -> Void
-
-    var body: some View {
-        let sharing = session.sharing
-        Toggle(String(localized: "Keep Private", bundle: .main), isOn: Binding(
-            get: { sharing?.keepPrivate == true }, set: { configure($0, nil) }))
-            .help(String(localized: "No paired device can open it", bundle: .main))
-            .accessibilityIdentifier("keepSessionPrivate")
-        Toggle(String(localized: "Pause Remote Typing", bundle: .main), isOn: Binding(
-            get: { sharing?.remoteTyping == false }, set: { configure(nil, !$0) }))
-            .disabled(sharing?.keepPrivate == true)
-            .help(String(localized: "Paired devices can watch but not type", bundle: .main))
-            .accessibilityIdentifier("pauseRemoteTyping")
     }
 }
 #endif
