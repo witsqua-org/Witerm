@@ -191,7 +191,7 @@ private struct MobileSettingsView: View {
                     .accessibilityIdentifier("settingsFeedback")
                 }
 
-                Section(String(localized: "Typing", bundle: .main)) {
+                Section(String(localized: "Keyboard", bundle: .main)) {
                     NavigationLink { MobileKeyRowSettings() } label: {
                         LabeledContent(String(localized: "Keyboard Row", bundle: .main),
                                        value: String(localized: "\(MobileKey.decode(keys).count) keys", bundle: .main))
@@ -212,7 +212,7 @@ private struct MobileSettingsView: View {
                             }
                         } label: {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(String(localized: "Continuation Servers", bundle: .main))
+                                Text(String(localized: "Relay Servers", bundle: .main))
                                 Text(servers.servers.count == 1 ? servers.servers[0].displayName : servers.summaryTitle).font(.caption).foregroundStyle(WitermTheme.secondary)
                             }
                         }
@@ -264,7 +264,7 @@ private struct ServersPage: View {
             }
         }
         .formStyle(.grouped)
-        .navigationTitle(String(localized: "Continuation Servers", bundle: .main))
+        .navigationTitle(String(localized: "Relay Servers", bundle: .main))
         .navigationBarTitleDisplayMode(.inline)
         .serverEditor($editing)
     }
@@ -286,7 +286,7 @@ private struct ServerSettingsPage: View {
                 Button(String(localized: "Cancel", bundle: .main), role: .cancel) {}
                 Button(String(localized: "Remove", bundle: .main), role: .destructive) { servers.remove(server) }
             } message: {
-                Text(String(localized: "Devices paired through this server stop appearing here. Pairings on the server are not revoked.", bundle: .main))
+                Text(String(localized: "Devices paired through this server stop appearing here. They stay paired.", bundle: .main))
             }
             .navigationTitle(server.displayName)
             .navigationBarTitleDisplayMode(.inline)

@@ -135,7 +135,7 @@ struct SSHProfileForm: View {
             }
             .formStyle(.grouped)
             .navigationTitle(purpose == .new ? String(localized: "New SSH Connection", bundle: .main)
-                             : purpose == .edit ? String(localized: "Edit SSH Connection", bundle: .main)
+                             : purpose == .edit ? String(localized: "Edit SSH Host", bundle: .main)
                              : String(localized: "Connect With SSH", bundle: .main))
             .disabled(saving)
             .interactiveDismissDisabled(saving)

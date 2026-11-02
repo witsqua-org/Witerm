@@ -45,7 +45,7 @@ struct SnippetSections: View {
         } header: {
             Text(String(localized: "Snippets", bundle: .main))
         } footer: {
-            Text(String(localized: "Snippets stay on this device and are never sent to a continuation server. Avoid saving passwords or other secrets.", bundle: .main))
+            Text(String(localized: "Snippets stay on this device and are never sent to a relay server. Avoid saving passwords or other secrets.", bundle: .main))
         }
         .sheet(item: $editing) { snippet in
             SnippetEditor(snippet: snippet, isNew: !snippets.contains { $0.id == snippet.id },

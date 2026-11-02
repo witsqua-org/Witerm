@@ -664,7 +664,8 @@ import XCTest
             guard app.buttons["newSSHProfile"].waitForExistence(timeout: 5) else { return "host list did not return" }
 
             guard tapIfVisible(menu, in: app) else { return "actions menu not visible for delete" }
-            let deletion = app.buttons["删除连接"]
+            // Chinese once the catalog has the new key, English until then.
+            let deletion = app.buttons.matching(NSPredicate(format: "label IN %@", ["删除主机", "Delete Host"])).firstMatch
             guard deletion.waitForExistence(timeout: 3) else { return "delete action missing" }
             // Deletion is immediate and offers Undo instead of a confirmation.
             deletion.tap()

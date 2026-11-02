@@ -54,12 +54,12 @@ import XCTest
                 }
                 guard menu.exists else { return }
                 menu.tap()
-                app.buttons["Delete Connection"].tap()
+                app.buttons["Delete Host"].tap()
                 XCTAssertTrue(app.buttons["sshUndoRemove"].waitForExistence(timeout: 5))
             }
         }
         menu.tap()
-        app.buttons["Edit Connection"].tap()
+        app.buttons["Edit Host"].tap()
         XCTAssertTrue(app.buttons["sshSaveProfile"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["sshConnect"].exists)
         let screenshot = XCTAttachment(screenshot: app.screenshot())

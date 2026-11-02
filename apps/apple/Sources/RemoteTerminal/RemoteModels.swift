@@ -63,9 +63,10 @@ struct MacDeviceDetails: View {
         NavigationStack {
             Form {
                 LabeledContent(String(localized: "Device", bundle: .main), value: grant.host.name)
-                LabeledContent(String(localized: "Server", bundle: .main), value: server.address)
-                LabeledContent(String(localized: "Access Level", bundle: .main), value: grant.permission == .view
-                               ? String(localized: "View Only", bundle: .main) : String(localized: "Can Type", bundle: .main))
+                LabeledContent(String(localized: "Relay Server", bundle: .main), value: server.address)
+                // What this device may do on that one.
+                LabeledContent(String(localized: "Access", bundle: .main), value: grant.permission == .view
+                               ? String(localized: "Can only watch", bundle: .main) : String(localized: "Can watch and type", bundle: .main))
                 LabeledContent(String(localized: "Device Code", bundle: .main)) {
                     Text(PairingFingerprint.display(publicKey: grant.host.publicKey))
                         .font(.body.monospaced()).textSelection(.enabled)

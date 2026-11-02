@@ -88,7 +88,7 @@ struct DevicesView: View {
                     Button(String(localized: "Add Host", bundle: .main), systemImage: "plus", action: ui.presentNew)
                         .disabled(ssh.connecting)
                         .accessibilityIdentifier("machinesAddHost")
-                    Button(String(localized: "Import from SSH Config…", bundle: .main), systemImage: "square.and.arrow.down", action: ui.presentImport)
+                    Button(String(localized: "Import SSH Hosts…", bundle: .main), systemImage: "square.and.arrow.down", action: ui.presentImport)
                         .accessibilityIdentifier("machinesImportHosts")
                 }
             }
@@ -137,8 +137,9 @@ struct DevicesView: View {
                             IconTile(systemImage: grant.host.platform == .macos ? "laptopcomputer" : "iphone", tint: grant.host.identityHue)
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(grant.host.name).foregroundStyle(WitermTheme.ink)
-                                // The section names the server when there are several.
-                                Text(grant.permission == .view ? String(localized: "View Only", bundle: .main) : String(localized: "Can Type", bundle: .main))
+                                // What this device may do there. The section
+                                // names the server when there are several.
+                                Text(grant.permission == .view ? String(localized: "Can only watch", bundle: .main) : String(localized: "Can watch and type", bundle: .main))
                                     .font(.caption).foregroundStyle(WitermTheme.secondary)
                             }
                             Spacer(minLength: 8)
@@ -148,7 +149,7 @@ struct DevicesView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(model.busy != nil)
-                    .accessibilityHint(String(localized: "Shows this device’s terminal sessions.", bundle: .main))
+                    .accessibilityHint(String(localized: "Shows this device’s terminals in Terminals.", bundle: .main))
                     Button(String(localized: "Device Details", bundle: .main), systemImage: "info.circle") {
                         inspected = Inspected(server: server, grant: grant)
                     }

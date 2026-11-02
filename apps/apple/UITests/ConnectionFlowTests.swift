@@ -28,7 +28,7 @@ final class ConnectionFlowTests: XCTestCase {
         tab.tap()
     }
 
-    /// Settings → Continuation Servers, which lists one row per server.
+    /// Settings → Relay Servers, which lists one row per server.
     private func openServers(_ app: XCUIApplication) {
         openSettings(app)
         let servers = app.buttons["settingsServers"]

@@ -99,7 +99,7 @@ struct TerminalFeedbackSections: View {
 /// Keyboard row and snippets, reachable from a terminal's Display sheet.
 struct TerminalInputLinks: View {
     var body: some View {
-        Section(String(localized: "Typing", bundle: .main)) {
+        Section(String(localized: "Keyboard", bundle: .main)) {
             NavigationLink(String(localized: "Keyboard Row", bundle: .main)) { MobileKeyRowSettings() }
                 .accessibilityIdentifier("mobileKeyRowSettings")
             NavigationLink(String(localized: "Snippets", bundle: .main)) { SnippetSettingsView() }

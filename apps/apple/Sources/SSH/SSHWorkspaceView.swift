@@ -465,8 +465,8 @@ struct SSHWorkspaceView<Home: View>: View {
                 // iPhone the navigation bar names it instead of a second header.
                 if sizeClass == .regular {
                     TerminalHeader(nil, destination: session.profile.endpointSummary,
-                                   status: String(localized: "Input Enabled", bundle: .main),
-                                   statusImage: "keyboard", live: true, hue: session.profile.identityHue) {
+                                   status: String(localized: "Connected", bundle: .main),
+                                   statusImage: "lock.shield", live: true, hue: session.profile.identityHue) {
                         Button(String(localized: "Find in Terminal", bundle: .main), systemImage: "magnifyingglass") { finding = true }
                             .labelStyle(.iconOnly)
                             .keyboardShortcut("f", modifiers: .command)
@@ -533,7 +533,7 @@ struct SSHWorkspaceView<Home: View>: View {
                     // The symbol alone; the spoken label still names where it goes.
                     Button(String(localized: "Terminals", bundle: .main), systemImage: "chevron.backward") { ui.show(nil) }
                         .labelStyle(.iconOnly)
-                        .accessibilityHint(shown != nil ? String(localized: "The session stays connected.", bundle: .main)
+                        .accessibilityHint(shown != nil ? String(localized: "The terminal stays connected.", bundle: .main)
                                             : String(localized: "Returns to your terminals.", bundle: .main))
                         .accessibilityIdentifier("sshShowHosts")
                 }
@@ -555,7 +555,7 @@ struct SSHWorkspaceView<Home: View>: View {
                         Button(String(localized: "Terminal Display", bundle: .main), systemImage: "paintpalette") { ui.appearance = true }
                         Divider()
                         Button(String(localized: "Disconnect", bundle: .main), systemImage: "xmark.circle", role: .destructive) { model.disconnect(session) }
-                    } label: { Label(String(localized: "SSH Actions", bundle: .main), systemImage: "ellipsis.circle") }
+                    } label: { Label(String(localized: "Terminal Actions", bundle: .main), systemImage: "ellipsis.circle") }
                     .accessibilityIdentifier("sshSessionActions")
                 } else if sizeClass != .regular {
                     Button(String(localized: "New SSH Connection", bundle: .main), systemImage: "plus", action: ui.presentNew)
@@ -593,7 +593,7 @@ struct SSHWorkspaceView<Home: View>: View {
             .lineLimit(1)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel([session.profile.name, session.profile.endpointSummary,
-                                 String(localized: "Input Enabled", bundle: .main)].joined(separator: ", "))
+                                 String(localized: "Connected", bundle: .main)].joined(separator: ", "))
             .accessibilityAddTraits(.isHeader)
             .accessibilityIdentifier("terminalInputStatus")
             if !others.isEmpty {

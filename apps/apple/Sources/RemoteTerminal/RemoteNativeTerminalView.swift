@@ -98,7 +98,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             terminal.contentInsetAdjustmentBehavior = .never
             terminal.isAccessibilityElement = false
             terminal.accessibilityElementsHidden = true
-            readingView.accessibilityLabel = mode == .view ? String(localized: "Read-Only Terminal Text", bundle: .main) : String(localized: "Terminal Text", bundle: .main)
+            readingView.accessibilityLabel = mode == .view ? String(localized: "Terminal Text, Watching", bundle: .main) : String(localized: "Terminal Text", bundle: .main)
             scroll.addSubview(terminal)
             scroll.alwaysBounceHorizontal = false
             scroll.alwaysBounceVertical = false

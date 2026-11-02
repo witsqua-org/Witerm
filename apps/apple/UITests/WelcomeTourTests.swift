@@ -33,7 +33,7 @@ import XCTest
         XCTAssertTrue(app.staticTexts["Connect over SSH"].exists)
         shot("tour-en-1", app)
         app.buttons["welcomeTourNext"].tap()
-        XCTAssertTrue(app.staticTexts["Continue from Your Mac"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Continue from Another Device"].waitForExistence(timeout: 5))
         XCTAssertTrue(skip.exists, "Skip stays on every page")
         shot("tour-en-2", app)
 

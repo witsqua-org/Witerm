@@ -10,7 +10,7 @@ Wire format: [pairing-v1](../protocol/pairing-v1.md).
 2. **iOS** (Continue from Another Device, on first use or in Devices) scans or pastes it. The invitation names its server; a server the phone doesn't have is added only when the person taps Request Access. iOS pins the Mac's key and shows the Mac's code. Scanning only fills in the invitation; it never opens a link or joins on its own.
 3. **iOS** sends the request. This creates a *pending* pairing and grants nothing. The phone shows its own code while it waits. It asks even when it's already paired with that Mac: a code means the Mac expects a request, and approving replaces the current access.
 4. **Mac** shows the device's name and code. You choose whether it can type, and what it can open: only the session you started from (the default), sessions you choose, or all sessions on this Mac, and approve. The Mac signs the approval, binding the pairing, both keys, and the permission; the session choice is this Mac's own policy and can be changed later under Settings → Devices ([Encrypted relay](relay.md#using-it)).
-5. **iOS** opens the session at once when the device can open exactly one; otherwise it lists them.
+5. **iOS** opens the terminal at once when the device can open exactly one; otherwise it lists them.
 6. Both devices verify the signature before storing the grant in the Keychain.
 
 Either device can revoke a grant at any time.

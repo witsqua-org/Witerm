@@ -61,7 +61,7 @@ final class JoinSessionModel {
                     (client, grant) = (joining, signed)
                     self.joined = (client, grant)
                 }
-                self.phase = .working(String(localized: "Opening the session…", bundle: .main))
+                self.phase = .working(String(localized: "Opening the terminal…", bundle: .main))
                 try await RemoteTerminalClient(pairing: client, grantID: grant.id).redeem(invitation)
                 self.joined = nil
                 self.phase = .idle

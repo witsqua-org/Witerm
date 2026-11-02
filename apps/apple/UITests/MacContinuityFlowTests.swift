@@ -85,8 +85,11 @@ final class MacContinuityFlowTests: XCTestCase {
         // Allowed one session, the phone opens it directly.
         let status = any("terminalInputStatus")
         XCTAssertTrue(status.waitForExistence(timeout: 30))
-        let typing = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "Input Enabled"), object: status)
-        wait(for: [typing], timeout: 30)
+        // The title bar says Typing (not "Switching to Typing…") before the device name.
+        func state(_ word: String) -> XCTNSPredicateExpectation {
+            XCTNSPredicateExpectation(predicate: NSPredicate(format: "label BEGINSWITH %@", word + ","), object: status)
+        }
+        wait(for: [state("Typing")], timeout: 30)
         shot("07-terminal")
         signal("phone-attached", UIDevice.current.name)
 
@@ -122,6 +125,28 @@ final class MacContinuityFlowTests: XCTestCase {
         XCTAssertNotNil(awaitSignal("mac-typed", timeout: 240), "The Mac never typed")
         RunLoop.current.run(until: Date().addingTimeInterval(1.5))
         shot("09-together")
+
+        // Stop Typing, then Start Typing: the menu item names the switch from
+        // the current state, and the title bar changes as soon as it's done.
+        app.buttons["terminalActionsMenu"].tap()
+        let stop = app.buttons["Stop Typing"]
+        XCTAssertTrue(stop.waitForExistence(timeout: 5), "Typing must offer Stop Typing")
+        XCTAssertFalse(app.buttons["Start Typing"].exists)
+        shot("09a-menu-typing")
+        stop.tap()
+        wait(for: [state("Watching")], timeout: 30)
+        XCTAssertFalse(app.buttons["remoteKeyboard"].exists, "Watching has no keyboard")
+        shot("09b-watching")
+        app.buttons["terminalActionsMenu"].tap()
+        let startTyping = app.buttons["Start Typing"]
+        XCTAssertTrue(startTyping.waitForExistence(timeout: 5), "Watching must offer Start Typing")
+        XCTAssertFalse(app.buttons["Stop Typing"].exists)
+        shot("09c-menu-watching")
+        startTyping.tap()
+        wait(for: [state("Typing")], timeout: 30)
+        // Start Typing brings the keyboard up, as a new connection does.
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        shot("09d-typing-again")
         app.buttons["remoteKeyboard"].tap()
         // Hiding the keyboard resizes the grid; let that settle first.
         RunLoop.current.run(until: Date().addingTimeInterval(3))

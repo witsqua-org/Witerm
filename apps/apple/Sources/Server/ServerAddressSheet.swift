@@ -36,7 +36,7 @@ struct ServerAddressSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField(String(localized: "Continuation Server Address", bundle: .main), text: $draft, prompt: Text(verbatim: "witerm.example.com"))
+                    TextField(String(localized: "Relay Server Address", bundle: .main), text: $draft, prompt: Text(verbatim: "witerm.example.com"))
                         .font(.system(.body, design: .monospaced))
                         .focused($addressFocused)
                         .textContentType(.URL)
@@ -51,7 +51,7 @@ struct ServerAddressSheet: View {
                         .onChange(of: draft) { rejection = nil; submitted = false }
                     interpretation
                 } header: {
-                    Text(String(localized: "Continuation Server Address", bundle: .main))
+                    Text(String(localized: "Relay Server Address", bundle: .main))
                 } footer: {
                     Text(String(localized: "The server your devices use to reach each other. To sign in to a computer with SSH, add it under SSH Hosts instead.", bundle: .main))
                         .foregroundStyle(WitermTheme.secondary)

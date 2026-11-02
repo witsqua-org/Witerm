@@ -18,16 +18,16 @@ struct RemoteTerminalIssue {
             switch error {
             case .offline:
                 title = String(localized: "Device Is Offline", bundle: .main)
-                recovery = String(localized: "Check that the device is online and allows Witerm remote access.", bundle: .main)
+                recovery = String(localized: "Check that the other device is online and allows remote access.", bundle: .main)
             case .untrusted, .revoked:
-                title = String(localized: "Device Access Unavailable", bundle: .main)
-                recovery = String(localized: "This device’s access was revoked or can’t be verified. On the other device, choose Continue on Another Device to pair again.", bundle: .main)
+                title = String(localized: "No Longer Paired", bundle: .main)
+                recovery = String(localized: "This device was unpaired, or can’t be verified. To pair again, choose Continue on Another Device on the other device.", bundle: .main)
             case .unauthorized:
                 title = String(localized: "Unable to Verify Device Identity", bundle: .main)
                 recovery = String(localized: "Unlock your device and check the network, then try again.", bundle: .main)
             case .invalidMessage:
                 title = String(localized: "Unable to Verify Terminal Connection", bundle: .main)
-                recovery = String(localized: "Disconnected. Check device authorization, then reconnect.", bundle: .main)
+                recovery = String(localized: "Disconnected. Check that this device is still paired, then reconnect.", bundle: .main)
             case .transport, .unavailable:
                 title = String(localized: "Terminal Connection Interrupted", bundle: .main)
                 recovery = String(localized: "Check your network and the device, then reconnect.", bundle: .main)
@@ -35,26 +35,26 @@ struct RemoteTerminalIssue {
                 title = String(localized: "Terminal Cannot Receive Input", bundle: .main)
                 recovery = String(localized: "Reconnect to continue.", bundle: .main)
             case .readOnly:
-                title = String(localized: "View-Only Connection", bundle: .main)
-                recovery = String(localized: "The other device allows only watching this session right now. Use View Only.", bundle: .main)
+                title = String(localized: "Can Only Watch", bundle: .main)
+                recovery = String(localized: "This device can only watch this terminal. Choose Watch.", bundle: .main)
             case .sessionBusy:
-                title = String(localized: "Session Is Being Controlled", bundle: .main)
-                recovery = String(localized: "View only, or reconnect after the other device disconnects.", bundle: .main)
+                title = String(localized: "Typing on Another Device", bundle: .main)
+                recovery = String(localized: "Watch, or try again when it stops typing.", bundle: .main)
             case .sessionUnavailable:
-                title = String(localized: "Session Unavailable", bundle: .main)
-                recovery = String(localized: "It ended, or the other device no longer allows it. Refresh the list.", bundle: .main)
+                title = String(localized: "Terminal Unavailable", bundle: .main)
+                recovery = String(localized: "It ended, or this device can no longer open it. Pull down to refresh the list.", bundle: .main)
             }
         } else if let error = error as? LocalAgentClientError {
             switch error {
             case .rejected(.sessionBusy):
-                title = String(localized: "Session Is Being Controlled", bundle: .main)
-                recovery = String(localized: "Use View Only, or reconnect after the other device disconnects.", bundle: .main)
+                title = String(localized: "Typing on Another Device", bundle: .main)
+                recovery = String(localized: "Watch, or try again when it stops typing.", bundle: .main)
             case .rejected(.notFound):
-                title = String(localized: "Session Unavailable", bundle: .main)
-                recovery = String(localized: "Refresh the list and check that the session still exists on the device.", bundle: .main)
+                title = String(localized: "Terminal Unavailable", bundle: .main)
+                recovery = String(localized: "It ended, or this device can no longer open it. Pull down to refresh the list.", bundle: .main)
             case .rejected(.readOnly):
-                title = String(localized: "View-Only Connection", bundle: .main)
-                recovery = String(localized: "Use View Only.", bundle: .main)
+                title = String(localized: "Can Only Watch", bundle: .main)
+                recovery = String(localized: "This device can only watch this terminal. Choose Watch.", bundle: .main)
             default:
                 title = String(localized: "Terminal Connection Interrupted", bundle: .main)
                 recovery = String(localized: "Check the terminal service on the device, then try again.", bundle: .main)
@@ -92,6 +92,9 @@ final class RemoteTerminalModel {
     /// A short explanation of what an automatic reconnect did, such as
     /// joining read-only because another device has control.
     private(set) var notice: String?
+    /// The device whose pairing just ended while it was open here. Its
+    /// terminal and list close at once, so Terminals says why until dismissed.
+    private(set) var unpairedName: String?
     /// Whether the app is in the foreground. Reconnects wait for it.
     @ObservationIgnored private var appActive = true
     /// The terminal was interrupted by something the person didn't choose
@@ -168,6 +171,7 @@ final class RemoteTerminalModel {
         guard busy == nil else { return }
         suspend()
         clearDisplay()
+        unpairedName = nil
         selectedGrant = grant
         selectedSession = nil
         sessions = []
@@ -185,7 +189,7 @@ final class RemoteTerminalModel {
         do {
             let pairing = try pairingClient()
             let token = generation
-            busy = String(localized: "Loading terminal sessions…", bundle: .main)
+            busy = String(localized: "Loading terminals…", bundle: .main)
             issue = nil
             work = Task { [weak self] in
                 do {
@@ -237,7 +241,7 @@ final class RemoteTerminalModel {
         reconnectMode = targetMode
         let switching = previous != nil
         connectionState = switching ? .switching : .connecting
-        busy = changingMode ? (targetMode == .view ? String(localized: "Releasing control…", bundle: .main) : String(localized: "Requesting control…", bundle: .main)) : String(localized: "Connecting to terminal…", bundle: .main)
+        busy = changingMode ? (targetMode == .view ? String(localized: "Switching to Watching…", bundle: .main) : String(localized: "Switching to Typing…", bundle: .main)) : String(localized: "Opening terminal…", bundle: .main)
         issue = nil
         do {
             let pairing = try pairingClient()
@@ -271,6 +275,11 @@ final class RemoteTerminalModel {
                     self.busy = nil
                     self.work = nil
                     self.automaticAttempts = 0
+                    // The title bar shows the new state; VoiceOver hears it.
+                    if changingMode {
+                        UIAccessibility.post(notification: .announcement, argument: targetMode == .view
+                            ? String(localized: "Watching", bundle: .main) : String(localized: "Typing", bundle: .main))
+                    }
                 } catch {
                     guard let self, self.generation == token, !Task.isCancelled else { return }
                     // Coming back never takes control by force: when another
@@ -278,7 +287,7 @@ final class RemoteTerminalModel {
                     if automatic, targetMode == .control, Self.isBusy(error) {
                         self.busy = nil
                         self.work = nil
-                        self.notice = String(localized: "Another device has control, so this terminal is view only.", bundle: .main)
+                        self.notice = String(localized: "Another device is typing, so you’re watching.", bundle: .main)
                         self.attach(session, mode: .view, automatic: true)
                         return
                     }
@@ -441,25 +450,8 @@ final class RemoteTerminalModel {
 
     func dismissNotice() { notice = nil }
 
-    func disconnect() {
-        guard busy == nil, let previous = deactivate() else { return }
-        resumeWhenActive = false
-        notice = nil
-        cancelWork()
-        connectionState = .disconnected
-        busy = String(localized: "Leaving…", bundle: .main)
-        issue = nil
-        let token = generation
-        work = Task { [weak self] in
-            do {
-                try await previous.detach()
-                guard let self, self.generation == token, !Task.isCancelled else { return }
-                self.busy = nil
-                self.work = nil
-            } catch { self?.failed(error, token: token) }
-        }
-    }
-
+    /// Back to the device's terminals. An open terminal is left first (it
+    /// keeps running there), and the list shows after the detach ACK.
     func showSessions() {
         guard busy == nil else { return }
         resumeWhenActive = false
@@ -559,9 +551,16 @@ final class RemoteTerminalModel {
         return (error as? PairingClientError) == .invalidProof
     }
 
+    func dismissUnpaired() { unpairedName = nil }
+
     private func authorizationUnavailable() {
         resumeWhenActive = false
         notice = nil
+        if let name = selectedGrant?.host.name {
+            unpairedName = name
+            UIAccessibility.post(notification: .announcement,
+                                 argument: String(localized: "No Longer Paired with \(name)", bundle: .main))
+        }
         let previous = deactivate()
         if let previous { Task { await previous.abort() } }
         if let id = selectedGrant?.id { grants.removeAll { $0.id == id } }

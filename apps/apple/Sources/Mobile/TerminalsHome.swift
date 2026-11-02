@@ -40,8 +40,24 @@ struct TerminalsHome: View {
         .filter { search.isEmpty || $0.grant.host.name.localizedCaseInsensitiveContains(search) }
     }
 
+    /// Devices whose pairing ended while open here: their terminal closed at
+    /// once, so the reason stays until dismissed.
+    private var unpaired: [RemoteTerminalModel] {
+        servers.relayServers.compactMap { macs.existing(for: $0) }.filter { $0.unpairedName != nil }
+    }
+
     var body: some View {
         List {
+            ForEach(unpaired, id: \.serverAddress) { model in
+                IssueBanner(String(localized: "No Longer Paired with \(model.unpairedName ?? "")", bundle: .main),
+                            message: RemoteTerminalIssue(RelayError.revoked).recovery, systemImage: "exclamationmark.shield.fill") {
+                    Button(String(localized: "OK", bundle: .main), action: model.dismissUnpaired)
+                        .font(.subheadline).touchTarget()
+                }
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+                .accessibilityIdentifier("remoteUnpaired")
+            }
             if !open.isEmpty {
                 Section(String(localized: "Open", bundle: .main)) {
                     ForEach(open) { profile in hostRow(profile) }
@@ -66,9 +82,9 @@ struct TerminalsHome: View {
         .scrollContentBackground(.hidden)
         .background(WitermTheme.canvas)
         .overlay {
-            if ssh.profiles.isEmpty, pairedMacs.isEmpty, search.isEmpty {
+            if ssh.profiles.isEmpty, pairedMacs.isEmpty, search.isEmpty, unpaired.isEmpty {
                 firstUse
-            } else if open.isEmpty, hosts.isEmpty, pairedMacs.isEmpty {
+            } else if open.isEmpty, hosts.isEmpty, pairedMacs.isEmpty, unpaired.isEmpty {
                 ContentUnavailableView {
                     Label(String(localized: "No Matching Terminals", bundle: .main), systemImage: "magnifyingglass")
                 } actions: {
@@ -131,12 +147,17 @@ struct TerminalsHome: View {
                 IconTile(systemImage: grant.host.platform == .macos ? "laptopcomputer" : "iphone", tint: grant.host.identityHue)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(grant.host.name).foregroundStyle(WitermTheme.ink)
-                    Text([grant.permission == .view ? String(localized: "View Only", bundle: .main) : String(localized: "Can Type", bundle: .main),
-                          servers.servers.count > 1 ? server.displayName : nil].compactMap { $0 }.joined(separator: " · "))
-                        .font(.caption)
-                        .foregroundStyle(WitermTheme.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                    // Typing is the norm, so only its absence is stated here;
+                    // Devices → Device Details states either.
+                    let detail = [grant.permission == .view ? String(localized: "Can only watch", bundle: .main) : nil,
+                                  servers.servers.count > 1 ? server.displayName : nil].compactMap { $0 }
+                    if !detail.isEmpty {
+                        Text(detail.joined(separator: " · "))
+                            .font(.caption)
+                            .foregroundStyle(WitermTheme.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
                 }
                 Spacer(minLength: 8)
                 Image(systemName: "chevron.right")
@@ -150,7 +171,7 @@ struct TerminalsHome: View {
         .buttonStyle(.plain)
         .disabled(model?.busy != nil)
         .accessibilityIdentifier("remoteMac-\(grant.id)")
-        .accessibilityHint(String(localized: "Shows this device’s terminal sessions.", bundle: .main))
+        .accessibilityHint(String(localized: "Shows this device’s terminals.", bundle: .main))
     }
 
     // MARK: First use
@@ -232,10 +253,10 @@ struct SSHHostActions: View {
             if let session {
                 Button(String(localized: "Disconnect", bundle: .main), systemImage: "xmark.circle", role: .destructive) { ssh.disconnect(session) }
             } else {
-                Button(String(localized: "Edit Connection", bundle: .main), systemImage: "pencil") { ui.open(profile, model: ssh, editing: true) }
+                Button(String(localized: "Edit Host", bundle: .main), systemImage: "pencil") { ui.open(profile, model: ssh, editing: true) }
             }
             Button(String(localized: "Host Keys", bundle: .main), systemImage: "key") { ui.inspectKeys(profile) }
-            Button(String(localized: "Delete Connection", bundle: .main), systemImage: "trash", role: .destructive) { ui.remove(profile) }
+            Button(String(localized: "Delete Host", bundle: .main), systemImage: "trash", role: .destructive) { ui.remove(profile) }
         } label: {
             Image(systemName: "ellipsis").frame(width: 44, height: 44)
         }

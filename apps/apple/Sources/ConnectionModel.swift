@@ -44,8 +44,8 @@ struct ConnectionIssue: Equatable {
                 title = String(localized: "Incompatible Server Version", bundle: .main)
                 recovery = String(localized: "\(server) runs a Witerm version this app can’t use. Update the server or the app.", bundle: .main)
             case .notWiterm:
-                title = String(localized: "Not a Continuation Server", bundle: .main)
-                recovery = String(localized: "\(server) answered, but it isn’t a Witerm continuation server. If Witerm runs behind a reverse proxy such as nginx, check that the proxy forwards /v1/ and /readyz.", bundle: .main)
+                title = String(localized: "Not a Relay Server", bundle: .main)
+                recovery = String(localized: "\(server) answered, but it isn’t a Witerm relay server. If Witerm runs behind a reverse proxy such as nginx, check that the proxy forwards /v1/ and /readyz.", bundle: .main)
             case .notReady:
                 title = String(localized: "Server Not Ready", bundle: .main)
                 recovery = String(localized: "\(server) is running but not ready. Its database may be unavailable. Try again shortly.", bundle: .main)
@@ -80,7 +80,7 @@ struct ConnectionIssue: Equatable {
             }
         } else {
             title = String(localized: "Unrecognized Server Response", bundle: .main)
-            recovery = String(localized: "Check that you entered a continuation server address.", bundle: .main)
+            recovery = String(localized: "Check that you entered a relay server address.", bundle: .main)
         }
     }
 }

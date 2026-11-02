@@ -259,7 +259,7 @@ private struct ContinueCheckStep: View {
             if case .share(let invitation) = parsed {
                 Section {
                     LabeledContent(String(localized: "Access", bundle: .main), value: invitation.permission == .control
-                                   ? String(localized: "Can Type", bundle: .main) : String(localized: "View Only", bundle: .main))
+                                   ? String(localized: "Can watch and type", bundle: .main) : String(localized: "Can only watch", bundle: .main))
                     LabeledContent(String(localized: "Until", bundle: .main), value: invitation.expiresAt.formatted(date: .abbreviated, time: .shortened))
                 }
             }
@@ -270,7 +270,7 @@ private struct ContinueCheckStep: View {
                     Label(URL(string: parsed.server)?.host ?? parsed.server, systemImage: "server.rack")
                 }
             } header: {
-                Text(String(localized: "Continuation Server", bundle: .main))
+                Text(String(localized: "Relay Server", bundle: .main))
             } footer: {
                 if saved == nil {
                     Text(servers.isFull ? ServerList.Failure.full.message
@@ -299,9 +299,10 @@ private struct ContinueCheckStep: View {
 
     private var primaryTitle: String {
         switch parsed {
+        // Typing waits for the other device to approve; watching opens at once.
         case .pairing: String(localized: "Request Access", bundle: .main)
         case .share(let invitation): invitation.permission == .control
-            ? String(localized: "Request to Type", bundle: .main) : String(localized: "Open Session", bundle: .main)
+            ? String(localized: "Request Access", bundle: .main) : String(localized: "Watch", bundle: .main)
         }
     }
 
@@ -411,7 +412,7 @@ private struct ContinueWaitStep: View {
         if let server, case .failed(let issue) = server.phase, approvedGrant != nil { return (issue.title, issue.recovery) }
         if let server, server.phase.isAvailable, !server.supportsRelay {
             return (String(localized: "This server doesn’t offer remote terminals.", bundle: .main),
-                    String(localized: "Ask the other device to use another continuation server.", bundle: .main))
+                    String(localized: "Ask the other device to use another relay server.", bundle: .main))
         }
         return nil
     }
@@ -430,13 +431,13 @@ private struct ContinueWaitStep: View {
     }
 
     private var waitingText: String {
-        if approvedGrant != nil { return String(localized: "Opening the session…", bundle: .main) }
+        if approvedGrant != nil { return String(localized: "Opening the terminal…", bundle: .main) }
         switch join.phase {
         case .working(let message): return message
         case .waitingForApproval: return String(localized: "Waiting for approval…", bundle: .main)
         default: break
         }
-        if case .share = parsed { return String(localized: "Opening the session…", bundle: .main) }
+        if case .share = parsed { return String(localized: "Opening the terminal…", bundle: .main) }
         return pairing?.pairing == nil ? String(localized: "Sending the request…", bundle: .main)
             : String(localized: "Waiting for approval…", bundle: .main)
     }
