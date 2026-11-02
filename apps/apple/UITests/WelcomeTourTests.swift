@@ -66,7 +66,7 @@ import XCTest
         let skip = app.buttons["welcomeTourSkip"]
         XCTAssertTrue(skip.waitForExistence(timeout: 10))
         XCTAssertEqual(skip.label, "跳过")
-        for (index, title) in ["通过 SSH 连接", "从 Mac 继续", "按键与手势"].enumerated() {
+        for (index, title) in ["通过 SSH 连接", "从其他设备继续", "按键与手势"].enumerated() {
             XCTAssertTrue(app.staticTexts[title].waitForExistence(timeout: 5), title)
             XCTAssertTrue(skip.isHittable)
             shot("tour-zh-large-\(index + 1)", app)
@@ -85,7 +85,7 @@ import XCTest
         XCTAssertTrue(app.staticTexts["通过 SSH 连接"].exists)
         shot("tour-zh-1", app)
         app.buttons["welcomeTourNext"].tap()
-        XCTAssertTrue(app.staticTexts["从 Mac 继续"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["从其他设备继续"].waitForExistence(timeout: 5))
         shot("tour-zh-2", app)
         app.buttons["welcomeTourNext"].tap()
         XCTAssertTrue(app.staticTexts["按键与手势"].waitForExistence(timeout: 5))
