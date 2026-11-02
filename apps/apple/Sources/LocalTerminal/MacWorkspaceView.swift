@@ -3,10 +3,12 @@ import AppKit
 import SwiftUI
 import WitermCore
 
-/// A request to continue a session on another device; nil pairs one.
+/// A request to open a terminal on another device (Open On ▸), or to pair
+/// one when `sessionID` is nil.
 struct ContinueRequest: Identifiable {
     let id = UUID()
     let sessionID: String?
+    var target = OpenOnTarget.choose
 }
 
 enum MacDestination: Hashable {
@@ -20,6 +22,7 @@ enum MacDestination: Hashable {
 struct MacWorkspaceView: View {
     let service: LocalAgentService
     @Environment(ServerList.self) private var servers
+    @Environment(MacPairedDevices.self) private var pairedDevices
     @State private var selection: MacDestination?
     @State private var terminal = LocalTerminalModel()
     @State private var ssh = SSHWorkspaceModel()
@@ -73,7 +76,7 @@ struct MacWorkspaceView: View {
             }
         }
         .sheet(item: $continuing, onDismiss: refocus) { request in
-            ContinueOnDeviceSheet(service: service, sessionID: request.sessionID) { id in
+            ContinueOnDeviceSheet(service: service, sessionID: request.sessionID, target: request.target) { id in
                 terminal.activity(for: id).summary(home: NSHomeDirectory())
             }
         }
@@ -150,8 +153,7 @@ struct MacWorkspaceView: View {
             newSSHConnection: sshUI.presentNew,
             importSSHHosts: sshUI.presentImport,
             continueOnDevice: { continuing = ContinueRequest(sessionID: selectedLocalSessionID) },
-            continueTitle: selectedLocalSessionID == nil ? String(localized: "Pair a Device…", bundle: .main)
-                : String(localized: "Continue on Another Device…", bundle: .main),
+            continueTitle: String(localized: "Pair a Device…", bundle: .main),
             refresh: { Task { await refresh() } },
             terminalNames: openTerminals.map(\.name),
             showTerminal: { index in
@@ -167,6 +169,8 @@ struct MacWorkspaceView: View {
             }
         )
         if let session = selectedLocalSession {
+            actions.openOn = { continuing = ContinueRequest(sessionID: session.id, target: $0) }
+            actions.openOnDevices = openOnDevices
             actions.renameSession = { renamingSession = session }
             actions.endSession = { endingSession = session }
             if let mode = terminal.openMode(session), let client = service.client {
@@ -175,12 +179,28 @@ struct MacWorkspaceView: View {
                 actions.leave = { terminal.detach() }
             }
             actions.remoteTypingPaused = session.sharing?.remoteTyping == false
-            if session.sharing?.keepPrivate != true, let client = service.client {
-                let paused = actions.remoteTypingPaused
-                actions.toggleRemoteTyping = { terminal.configure(session, remoteTyping: paused, using: client) }
+            actions.keepPrivate = session.sharing?.keepPrivate == true
+            actions.shared = session.sharing?.shared == true
+            if let client = service.client {
+                let paused = actions.remoteTypingPaused, kept = actions.keepPrivate
+                // Sharing ▸ disables Pause Remote Typing while kept private.
+                actions.toggleRemoteTyping = { if !kept { terminal.configure(session, remoteTyping: paused, using: client) } }
+                actions.toggleKeepPrivate = { terminal.configure(session, keepPrivate: !kept, using: client) }
+                actions.stopSharing = { terminal.setShared(session, false, using: client) }
             }
         }
         return actions
+    }
+
+    /// Paired devices for Open On ▸.
+    private var openOnDevices: [OpenOnDevice] {
+        pairedDevices.devices.map { OpenOnDevice(id: $0.id, name: $0.name) }
+    }
+
+    /// Follows the relay server in use while remote access is on through it.
+    private var pairedDevicesKey: String? {
+        guard let server = servers.selected, remoteAccess.isEnabled(for: server.address) else { return nil }
+        return server.address
     }
 
     /// Terminals in sidebar order: sessions on this Mac, then connected SSH hosts.
@@ -281,6 +301,8 @@ struct MacWorkspaceView: View {
                     let session = ssh.session(for: profile.id)
                     SSHHostRowContent(profile: profile, active: session != nil, favorite: ssh.isFavorite(profile),
                                       activity: session?.activity)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .witermRowHover(selected: selection == .ssh(profile.id))
                         .tag(MacDestination.ssh(profile.id))
                         .accessibilityIdentifier("sshProfileRow-\(profile.id.uuidString)")
                         .accessibilityLabel(profile.name)
@@ -288,12 +310,16 @@ struct MacWorkspaceView: View {
                             + (session == nil ? "" : String(localized: ", connected", bundle: .main))
                             + (ssh.isFavorite(profile) ? String(localized: ", favorite", bundle: .main) : ""))
                         .contextMenu {
-                            Button(ssh.isFavorite(profile) ? String(localized: "Remove from Favorites", bundle: .main) : String(localized: "Add to Favorites", bundle: .main)) { ssh.toggleFavorite(profile) }
+                            // The primary action first, the destructive one last.
                             if let session {
                                 Button(String(localized: "Disconnect", bundle: .main)) { ssh.disconnect(session) }
                             } else {
                                 Button(String(localized: "Connect", bundle: .main)) { selection = .ssh(profile.id); sshUI.open(profile, model: ssh) }
                                     .disabled(ssh.connecting)
+                            }
+                            Button(ssh.isFavorite(profile) ? String(localized: "Remove from Favorites", bundle: .main) : String(localized: "Add to Favorites", bundle: .main)) { ssh.toggleFavorite(profile) }
+                            Divider()
+                            if session == nil {
                                 Button(String(localized: "Edit Host…", bundle: .main)) { sshUI.open(profile, model: ssh, editing: true) }
                                     .disabled(ssh.connecting)
                                     .accessibilityIdentifier("sshEditHostMenu")
@@ -309,6 +335,8 @@ struct MacWorkspaceView: View {
                     Button(String(localized: "Add SSH Host…", bundle: .main), systemImage: "plus", action: sshUI.presentNew)
                         .buttonStyle(.borderless)
                         .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .witermRowHover(selected: false)
                         .help(LocalTerminalHelp.addSSHHost)
                         .accessibilityIdentifier("addSSHHostSidebar")
                 }
@@ -328,6 +356,18 @@ struct MacWorkspaceView: View {
         }
         .task { remoteAccess.load() }
         .onChange(of: terminal.relays) { remoteAccess.load() }
+        // The paired devices for Open On ▸, rechecked so a device that
+        // unpairs itself leaves at once, and is announced.
+        .task(id: pairedDevicesKey) { pairedDevices.track(serverAddress: pairedDevicesKey, agent: service.client) }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { await pairedDevices.recheck() }
+        }
+        .onChange(of: PairedSnapshot(address: pairedDevices.pairing?.serverAddress, devices: pairedDevices.devices)) { old, new in
+            guard old.address == new.address else { return }
+            for name in MacPairedDevices.removed(from: old.devices, to: new.devices) {
+                AccessibilityNotification.Announcement(String(localized: "\(name) unpaired", bundle: .main)).post()
+            }
+        }
     }
 
     @ViewBuilder
@@ -392,6 +432,8 @@ struct MacWorkspaceView: View {
                     Image(systemName: attached ? "terminal.fill" : "terminal")
                         .foregroundStyle(attached ? WitermTheme.positive : .secondary)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .witermRowHover(selected: selection == .local(session.id))
                 .tag(MacDestination.local(session.id))
                 .accessibilityLabel(session.name)
                 .accessibilityValue([here == .control ? String(localized: "Typing", bundle: .main)
@@ -417,14 +459,15 @@ struct MacWorkspaceView: View {
                                 .accessibilityIdentifier("watchLocalSession")
                         }
                         Divider()
-                        Button(String(localized: "Continue on Another Device…", bundle: .main)) { continuing = ContinueRequest(sessionID: session.id) }
-                            .accessibilityIdentifier("continueOnDeviceMenu")
-                        if shared {
-                            Button(String(localized: "Stop Sharing", bundle: .main)) { terminal.setShared(session, false, using: client) }
+                        Menu(String(localized: "Open On", bundle: .main)) {
+                            OpenOnItems(devices: openOnDevices) { continuing = ContinueRequest(sessionID: session.id, target: $0) }
                         }
-                        RemoteAccessMenuItems(session: session) { keepPrivate, typing in
-                            terminal.configure(session, keepPrivate: keepPrivate, remoteTyping: typing, using: client)
-                        }
+                        .accessibilityIdentifier("openOnMenu")
+                        SharingMenu(keepPrivate: keptPrivate, remoteTypingPaused: session.sharing?.remoteTyping == false,
+                                    shared: shared,
+                                    toggleKeepPrivate: { terminal.configure(session, keepPrivate: !keptPrivate, using: client) },
+                                    toggleRemoteTyping: { terminal.configure(session, remoteTyping: session.sharing?.remoteTyping == false, using: client) },
+                                    stopSharing: { terminal.setShared(session, false, using: client) })
                         Divider()
                         Button(String(localized: "Rename…", bundle: .main)) { renamingSession = session }
                         Button(String(localized: "End Terminal…", bundle: .main), role: .destructive) { endingSession = session }
@@ -437,6 +480,8 @@ struct MacWorkspaceView: View {
                 Button(String(localized: "New Terminal", bundle: .main), systemImage: "plus", action: newSession)
                     .buttonStyle(.borderless)
                     .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .witermRowHover(selected: false)
                     .disabled(!canCreateSession)
                     .help(LocalTerminalHelp.newTerminal)
                     .accessibilityIdentifier("newLocalSessionSidebar")

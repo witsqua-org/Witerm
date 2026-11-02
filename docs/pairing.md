@@ -6,14 +6,14 @@ Wire format: [pairing-v1](../protocol/pairing-v1.md).
 
 ## How it works
 
-1. **Mac** (Continue on Another Device… from a terminal's toolbar, context menu or File menu, ⌥⌘P; or Settings → Devices → Pair a Device…) makes a 5-minute invitation with a one-time secret and the Mac's public key, shown as a QR code and as copyable text, through the relay server chosen in Settings → Devices. The screen names that server.
+1. **Mac** (Open On ▸ New Device… from a terminal's context menu, File, or Terminal; Choose a Device…, ⌥⌘P; or Settings → Devices → Pair a Device…) makes a 5-minute invitation with a one-time secret and the Mac's public key, shown as a QR code and as copyable text, through the relay server chosen in Settings → Devices. The screen names that server.
 2. **iOS** (Add Device, on first use or in Devices) scans or pastes it. The invitation names its server; a server the phone doesn't have is added only when the person taps Request Access. iOS pins the Mac's key and shows the Mac's code. Scanning only fills in the invitation; it never opens a link or joins on its own.
 3. **iOS** sends the request. This creates a *pending* pairing and grants nothing. The phone shows its own code while it waits. It asks even when it's already paired with that Mac: a code means the Mac expects a request, and approving replaces the current access.
 4. **Mac** shows the device's name and code. You choose what it can do (**Can watch and type** or **Can only watch**) and which terminals it can open (**Only "*name*"**, the default, **Terminals you choose**, or **All terminals**), and approve. The Mac signs the approval, binding the pairing, both keys, and the permission; the session choice is this Mac's own policy and can be changed later under Settings → Devices ([Encrypted relay](relay.md#using-it)).
 5. **iOS** opens the terminal at once when the device can open exactly one; otherwise it lists them.
 6. Both devices verify the signature before storing the grant in the Keychain.
 
-Either device can end a pairing at any time with **Unpair…**: on the Mac in the device's Edit sheet, on iOS in Devices → Device Details. iOS records the denial locally first, so a server it can't reach never keeps the pairing usable here.
+Either device can end a pairing at any time with **Unpair…**: on the Mac in the device's Edit sheet, on iOS in Devices → Device Details. iOS records the denial locally first, so a server it can't reach never keeps the pairing usable here. When the other device unpairs itself, the Mac notices within 10 seconds while the app is active (at once when it becomes active), drops it from Open On ▸ and Settings → Devices, and VoiceOver says "*device* unpaired".
 
 To let someone open one session without pairing, the Mac sends a session invitation instead. It uses the same endpoints, and the Mac limits that grant to the session and a time ([Session invitations](relay.md#session-invitations)).
 

@@ -6,7 +6,7 @@ Contracts: [relay-v1](../protocol/relay-v1.md) for the relay, [local-agent-v1](.
 
 ## Using it
 
-On the Mac, **Continue on Another Device…** in a session's header, context menu, or File menu (⌥⌘P) walks through these steps one at a time and skips the ones already done:
+On the Mac, **Open On ▸** in a terminal's context menu, File, or Terminal (Choose a Device…, ⌥⌘P; a paired device by name; New Device…; Someone Else…), or the toolbar's Open on another device button, walks through these steps one at a time and skips the ones already done:
 
 1. **Server.** Start the local service and turn on **Allow Remote Access** through the continuation server. It is off by default.
 2. **Device.** Choose a paired device (allowing it this session if it can't open it yet), pair a new one ([Device pairing](pairing.md)), or invite someone else's device to this session only.
@@ -17,10 +17,10 @@ On the Mac, **Continue on Another Device…** in a session's header, context men
 
 | Setting | Effect |
 |---|---|
-| Can open: All sessions on this Mac | Every session except those kept private |
-| Can open: Sessions I choose | The listed sessions, plus any shared with every paired device (`witerm share`) |
-| Can type | Off makes the device view-only here, even with a control grant |
-| Type while this Mac is attached | Off makes it wait until no one else is typing |
+| Terminals: All terminals | Every terminal except those kept private |
+| Terminals: Terminals you choose | The listed terminals, plus any shared with every paired device (`witerm share`) |
+| Can watch and type / Can only watch | Can only watch keeps the device watching here, even with a control grant |
+| Type at the Same Time as This Mac | Off makes it wait until no one else is typing |
 
 The policy can only narrow the signed grant: a view-only grant never gains control. Devices paired before this policy existed reach shared sessions only. When a session ends it leaves every device's list, so a later session never inherits that access. Narrowing a policy disconnects the attachments it no longer allows.
 
@@ -34,12 +34,12 @@ The policy can only narrow the signed grant: a view-only grant never gains contr
 
 ## Session invitations
 
-A Mac can share one session with someone whose device isn't paired: **Continue on Another Device…** → **Someone Else's Device**.
+A Mac can share one session with someone whose device isn't paired: **Open On ▸ Someone Else…**.
 
-1. Choose **View only** or **Can type**, and how long access lasts (1, 8, or 24 hours). Access also ends when the session ends.
+1. Choose **Can only watch** or **Can watch and type**, and how long access lasts (1, 8, or 24 hours). Access also ends when the terminal ends.
 2. The Mac shows a QR code and a `witerm://share?…` link. Keep the sheet open until they join (within 5 minutes).
-3. On iOS: **Continue from Another Device**, scan or paste. If the link names a server the phone doesn't have, it asks before adding it. The session opens once joined.
-4. A view-only invitation is approved as soon as someone joins. A typing invitation waits for you to approve that device's name and fingerprint.
+3. On iOS: **Add Device**, scan or paste. If the link names a server the phone doesn't have, it asks before adding it. The session opens once joined.
+4. A watch-only invitation is approved as soon as someone joins. One that can type waits for you to approve that device's name and fingerprint.
 
 **How it stays limited.** An invitation uses the normal pairing endpoints, so the Mac still signs the grant, but:
 

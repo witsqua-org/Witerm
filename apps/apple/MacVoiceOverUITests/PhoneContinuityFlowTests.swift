@@ -116,7 +116,7 @@ final class PhoneContinuityFlowTests: XCTestCase {
         row.click()
         shot("01-session")
 
-        // Continue on Another Device: Server, Device, Approve, Open.
+        // File ▸ Open On ▸ Choose a Device… (⌥⌘P): Server, Device, Approve, Open.
         app.typeKey("p", modifierFlags: [.command, .option])
         let title = app.staticTexts["continueStepTitle"]
         XCTAssertTrue(title.waitForExistence(timeout: 15))

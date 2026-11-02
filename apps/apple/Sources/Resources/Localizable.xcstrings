@@ -52,6 +52,23 @@
         }
       }
     },
+    "%@ can no longer open its terminals. To use them again, pair again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ can no longer open its terminals. To use them again, pair again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@将无法再打开它的终端。要再次使用，请重新配对。"
+          }
+        }
+      }
+    },
     "%@ can’t pair devices" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -184,6 +201,57 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ 运行的 Witerm 版本无法与此应用配合使用。请更新服务器或应用。"
+          }
+        }
+      }
+    },
+    "%@ unpaired" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ unpaired"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 已取消配对"
+          }
+        }
+      }
+    },
+    "%@, so you’re watching." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, so you’re watching."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@，所以你现在仅观看。"
+          }
+        }
+      }
+    },
+    "%@. %@ no longer opens its terminals, but the relay server wasn’t told. Try again, or unpair on the other device." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@. %@ no longer opens its terminals, but the relay server wasn’t told. Try again, or unpair on the other device."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@。%2$@已不再打开它的终端，但中继服务器尚未收到通知。请重试，或在另一台设备上取消配对。"
           }
         }
       }
@@ -706,6 +774,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "如果端口不是 22，请在主机后加上“:端口”。"
+          }
+        }
+      }
+    },
+    "Add Device" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add Device"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加设备"
           }
         }
       }
@@ -2427,6 +2512,23 @@
         }
       }
     },
+    "Choose Open On ▸ and a device, or press ⌥⌘P." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose Open On ▸ and a device, or press ⌥⌘P."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选取“打开于 ▸”和一台设备，或按下 ⌥⌘P。"
+          }
+        }
+      }
+    },
     "Choose a Device" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2440,6 +2542,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "选择设备"
+          }
+        }
+      }
+    },
+    "Choose a Device…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose a Device…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择设备…"
           }
         }
       }
@@ -2967,74 +3086,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "继续"
-          }
-        }
-      }
-    },
-    "Continue from Another Device" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Continue from Another Device"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "从其他设备继续"
-          }
-        }
-      }
-    },
-    "Continue on Another Device…" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Continue on Another Device…"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在其他设备上继续…"
-          }
-        }
-      }
-    },
-    "Continue on another device" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Continue on another device"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在其他设备上继续"
-          }
-        }
-      }
-    },
-    "Continue “%@” on Another Device" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Continue “%@” on Another Device"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在其他设备上继续“%@”"
           }
         }
       }
@@ -3583,19 +3634,19 @@
         }
       }
     },
-    "Devices you continue from appear here." : {
+    "Devices you add appear here." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Devices you continue from appear here."
+            "value" : "Devices you add appear here."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "你从中继续使用的设备会显示在这里。"
+            "value" : "你添加的设备会显示在这里。"
           }
         }
       }
@@ -4361,6 +4412,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ 过期"
+          }
+        }
+      }
+    },
+    "Favorite" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Favorite"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "收藏"
           }
         }
       }
@@ -5856,6 +5924,23 @@
         }
       }
     },
+    "Making a code…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Making a code…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在生成验证码…"
+          }
+        }
+      }
+    },
     "Manage Servers…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6090,6 +6175,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "新建"
+          }
+        }
+      }
+    },
+    "New Device…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Device…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新设备…"
           }
         }
       }
@@ -6859,70 +6961,87 @@
         }
       }
     },
-    "On the other device, choose Continue from Another Device." : {
+    "On the other device, choose Add Device." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "On the other device, choose Continue from Another Device."
+            "value" : "On the other device, choose Add Device."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在另一台设备上,选择“从其他设备继续”。"
+            "value" : "在另一台设备上，选择“添加设备”。"
           }
         }
       }
     },
-    "On the other device, choose Continue on Another Device, then scan its code." : {
+    "On the other device, choose Open On ▸ %@." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "On the other device, choose Continue on Another Device, then scan its code."
+            "value" : "On the other device, choose Open On ▸ %@."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在另一台设备上选择“在其他设备上继续”，然后扫描它显示的二维码。"
+            "value" : "在另一台设备上选择“打开于 ▸ %@”。"
           }
         }
       }
     },
-    "On the other device, choose Continue on Another Device." : {
+    "On the other device, choose Open On ▸ New Device, then scan its code." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "On the other device, choose Continue on Another Device."
+            "value" : "On the other device, choose Open On ▸ New Device, then scan its code."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请在另一台设备上选择“在其他设备上继续”。"
+            "value" : "在另一台设备上选择“打开于 ▸ 新设备”，然后扫描它显示的二维码。"
           }
         }
       }
     },
-    "On their device, choose Continue from Another Device." : {
+    "On the other device, choose Open On ▸ New Device." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "On their device, choose Continue from Another Device."
+            "value" : "On the other device, choose Open On ▸ New Device."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在对方的设备上,选择“从其他设备继续”。"
+            "value" : "在另一台设备上选择“打开于 ▸ 新设备”。"
+          }
+        }
+      }
+    },
+    "On their device, choose Add Device." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On their device, choose Add Device."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在对方的设备上，选择“添加设备”。"
           }
         }
       }
@@ -7008,6 +7127,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "打开后台项目设置"
+          }
+        }
+      }
+    },
+    "Open On" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open On"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开于"
           }
         }
       }
@@ -7110,6 +7246,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在这里打开但不输入"
+          }
+        }
+      }
+    },
+    "Open on another device" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open on another device"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在其他设备上打开"
+          }
+        }
+      }
+    },
+    "Open “%@” on Another Device" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open “%@” on Another Device"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在其他设备上打开“%@”"
           }
         }
       }
@@ -7824,23 +7994,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "插入后按回车"
-          }
-        }
-      }
-    },
-    "Press ⌥⌘P to open a terminal on another device." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Press ⌥⌘P to open a terminal on another device."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "按下 ⌥⌘P 即可在其他设备上打开终端。"
           }
         }
       }
@@ -9188,19 +9341,19 @@
         }
       }
     },
-    "Scan or paste an invitation from it" : {
+    "Scan or paste an invitation" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Scan or paste an invitation from it"
+            "value" : "Scan or paste an invitation"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "扫描或粘贴来自该设备的邀请"
+            "value" : "扫描或粘贴邀请"
           }
         }
       }
@@ -9630,6 +9783,23 @@
         }
       }
     },
+    "Sharing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sharing"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "共享"
+          }
+        }
+      }
+    },
     "Sharing Stopped" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9966,6 +10136,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "他人的设备"
+          }
+        }
+      }
+    },
+    "Someone Else…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Someone Else…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "其他人…"
           }
         }
       }
@@ -10973,19 +11160,19 @@
         }
       }
     },
-    "That isn’t a Witerm invitation. On the other device, choose Continue on Another Device to get one." : {
+    "That isn’t a Witerm invitation. On the other device, choose Open On ▸ New Device to get one." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "That isn’t a Witerm invitation. On the other device, choose Continue on Another Device to get one."
+            "value" : "That isn’t a Witerm invitation. On the other device, choose Open On ▸ New Device to get one."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "这不是 Witerm 邀请。请在另一台设备上选择“在其他设备上继续”来获取邀请。"
+            "value" : "这不是 Witerm 邀请。请在另一台设备上选择“打开于 ▸ 新设备”来获取。"
           }
         }
       }
@@ -11687,19 +11874,19 @@
         }
       }
     },
-    "This device was unpaired, or can’t be verified. To pair again, choose Continue on Another Device on the other device." : {
+    "This device was unpaired, or can’t be verified. To pair again, choose Open On ▸ New Device on the other device." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This device was unpaired, or can’t be verified. To pair again, choose Continue on Another Device on the other device."
+            "value" : "This device was unpaired, or can’t be verified. To pair again, choose Open On ▸ New Device on the other device."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此设备已被取消配对，或无法验证。要重新配对，请在另一台设备上选择“在其他设备上继续”。"
+            "value" : "此设备已被取消配对，或无法验证。要重新配对，请在另一台设备上选择“打开于 ▸ 新设备”。"
           }
         }
       }
@@ -11734,6 +11921,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未信任此主机，连接已取消。"
+          }
+        }
+      }
+    },
+    "This iPad" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This iPad"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这台 iPad"
+          }
+        }
+      }
+    },
+    "This iPhone" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This iPhone"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这台 iPhone"
           }
         }
       }
@@ -12826,6 +13047,23 @@
         }
       }
     },
+    "Unpair from “%@”?" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unpair from “%@”?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要与“%@”取消配对吗？"
+          }
+        }
+      }
+    },
     "Unpair “%@”?" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -12839,6 +13077,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "要取消与“%@”的配对吗？"
+          }
+        }
+      }
+    },
+    "Unpaired from %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unpaired from %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已与“%@”取消配对"
+          }
+        }
+      }
+    },
+    "Unpairing needs a network connection." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unpairing needs a network connection."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消配对需要网络连接。"
           }
         }
       }
@@ -13183,19 +13455,19 @@
         }
       }
     },
-    "Use it with Continue from Another Device. It already names its server." : {
+    "Use it with Add Device. It already names its server." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Use it with Continue from Another Device. It already names its server."
+            "value" : "Use it with Add Device. It already names its server."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请在“从其他设备继续”中使用它，它已包含所用的服务器。"
+            "value" : "请在“添加设备”中使用。它已包含服务器。"
           }
         }
       }

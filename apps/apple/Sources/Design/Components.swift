@@ -374,13 +374,17 @@ extension View {
 import AppKit
 
 /// Hover feedback for custom, plain, or borderless clickable elements that
-/// have no native hover: a faint fill behind the element. Native buttons,
-/// toolbar items, sidebar rows, and menus already respond and don't use it.
-/// No feedback while disabled; a 150 ms fade, or none with Reduce Motion; a
-/// stronger fill with Increase Contrast. Hover never reveals anything that
-/// isn't already on screen.
+/// have no native hover, and for sidebar rows: a faint fill behind the
+/// element. Native bordered buttons, toolbar items, and menus already respond
+/// and don't use it. No feedback while disabled or inactive (a selected row);
+/// a 150 ms fade, or none with Reduce Motion; twice as strong with Increase
+/// Contrast. Hover never reveals anything that isn't already on screen.
 private struct WitermHover: ViewModifier {
     var cornerRadius: CGFloat
+    /// How far the fill reaches past the element, such as to a row's edges.
+    var outset: CGSize = .zero
+    var isActive = true
+    var strength = 0.08
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorSchemeContrast) private var contrast
@@ -392,14 +396,18 @@ private struct WitermHover: ViewModifier {
             .contentShape(.rect(cornerRadius: cornerRadius, style: .continuous))
             .background {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(Color.primary.opacity(hovering && isEnabled ? (contrast == .increased ? 0.16 : 0.08) : 0))
+                    .fill(Color.primary.opacity(hovering && isEnabled && isActive ? (contrast == .increased ? strength * 2 : strength) : 0))
+                    .padding(.horizontal, -outset.width)
+                    .padding(.vertical, -outset.height)
                     .allowsHitTesting(false)
             }
             // An AppKit tracking area rather than `onHover`, which missed
             // the pointer inside scroll views (forms, the Continue sheet).
             .background(HoverTracker { inside in
                 if reduceMotion { hovering = inside } else { withAnimation(.easeOut(duration: 0.15)) { hovering = inside } }
-            })
+            }
+            .padding(.horizontal, -outset.width)
+            .padding(.vertical, -outset.height))
     }
 }
 
@@ -458,6 +466,13 @@ private struct WitermLinkPointer: ViewModifier {
 extension View {
     /// Hover feedback for a custom clickable element; see `WitermHover`.
     func witermHover(cornerRadius: CGFloat = 8) -> some View { modifier(WitermHover(cornerRadius: cornerRadius)) }
+
+    /// Hover for a sidebar row: a lighter fill than selection, in the
+    /// selection's shape, and none on the selected row. List selection,
+    /// dragging, context menus, and keyboard use are untouched.
+    func witermRowHover(selected: Bool) -> some View {
+        modifier(WitermHover(cornerRadius: 6, outset: CGSize(width: 8, height: 4), isActive: !selected, strength: 0.06))
+    }
 
     /// The pointing hand over a link or link-like text control.
     func witermLinkPointer() -> some View { modifier(WitermLinkPointer()) }

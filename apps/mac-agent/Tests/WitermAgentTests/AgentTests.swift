@@ -506,6 +506,7 @@ final class AgentTests: XCTestCase {
         XCTAssertEqual(listed.map(\.id), [session.id])
         XCTAssertEqual(listed.first?.access, .control)
         XCTAssertNil(listed.first?.sharing)
+        XCTAssertEqual(listed.first?.writers, [], "A paired device learns who can type, even when nobody does")
 
         // The Mac and the phone both have control; the phone sees the Mac's grid until it types.
         let mac = try await client.attach(sessionID: session.id, columns: 80, rows: 24)
@@ -528,6 +529,16 @@ final class AgentTests: XCTestCase {
         XCTAssertEqual(shown?.columns, 80, "A writer that doesn't own the grid must be shown the one in use")
         let attachments = try await client.sessions().first { $0.id == session.id }?.sharing?.controllers.count
         XCTAssertEqual(attachments, 2)
+
+        // A paired device learns who else can type, by name only: this Mac
+        // as a nameless entry, other devices by name, never itself.
+        let phoneView = try await client.sessions(peer: phone).first { $0.id == session.id }
+        XCTAssertEqual(phoneView?.writers, [LocalWriterInfo(name: nil)])
+        let tablet = LocalRemotePeer(deviceID: UUID().uuidString.lowercased(), name: "Tablet")
+        _ = try await client.deviceAccess(LocalDeviceAccess(deviceID: tablet.deviceID, scope: .all, permission: .view))
+        let tabletView = try await client.sessions(peer: tablet).first { $0.id == session.id }
+        XCTAssertEqual(tabletView?.writers, [LocalWriterInfo(name: nil), LocalWriterInfo(name: "Phone")])
+        XCTAssertEqual(tabletView?.access, .view)
 
         try await remote.send(Data("printf 'PHONE_''SIZE:%s\\n' \"$(stty size)\"\n".utf8))
         try await waitFor("PHONE_SIZE:20 40", capture: macOutput)
@@ -623,6 +634,7 @@ final class AgentTests: XCTestCase {
         let after = try await client.sessions(peer: guest)
         XCTAssertEqual(after.map(\.id), [invited.id], "An invitation reached more than its session")
         XCTAssertEqual(after.first?.access, .view)
+        XCTAssertNil(after.first?.writers, "An invitation's guest learned who else types")
         do { let leaked = try await client.attach(sessionID: other.id, mode: .view, peer: guest); await leaked.disconnect(); XCTFail("An invitation reached another session") }
         catch LocalAgentClientError.rejected(.notFound) { }
         do { let typing = try await client.attach(sessionID: invited.id, peer: guest); await typing.disconnect(); XCTFail("A view invitation gained control") }

@@ -119,7 +119,7 @@ struct ServerAddressInput: Equatable {
         case nil, .empty?, .spaces?: nil
         case .sshLogin?: String(localized: "Relay servers don’t use a user name. To open a terminal on a computer, add it as an SSH host.", bundle: .main)
         case .sshPort?: String(localized: "Add this computer under SSH Hosts, or enter the relay server’s own port.", bundle: .main)
-        case .invitation?: String(localized: "Use it with Continue from Another Device. It already names its server.", bundle: .main)
+        case .invitation?: String(localized: "Use it with Add Device. It already names its server.", bundle: .main)
         case .credentials?: String(localized: "Relay servers don’t sign in this way.", bundle: .main)
         case .path(let path)?: String(localized: "Remove “\(path)”. Witerm adds the paths it needs.", bundle: .main)
         case .insecure?: String(localized: "Only a server on this device can use plain HTTP.", bundle: .main)

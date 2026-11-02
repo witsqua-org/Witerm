@@ -517,6 +517,9 @@ final class RemoteAccessFixtureTests: XCTestCase {
     let sessions = try XCTUnwrap(fixture.peer_list_response.sessions)
     XCTAssertEqual(sessions.map(\.access), [.control, .view])
     XCTAssertTrue(sessions.allSatisfy { $0.sharing == nil })
+    // Who else can type: this Mac as {}, another device by name; an older
+    // service (the second session) omits it.
+    XCTAssertEqual(sessions.map(\.writers), [[LocalWriterInfo(name: nil), LocalWriterInfo(name: "iPad")], nil])
     try sessions.forEach(RemoteWire.validate)
     XCTAssertEqual(fixture.local_share_request.operation, .share)
     XCTAssertEqual(fixture.local_share_request.keepPrivate, false)

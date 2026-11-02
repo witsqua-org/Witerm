@@ -110,6 +110,9 @@ struct SSHHostDetail: View {
         .help(String(localized: "Favorites, host keys, and deleting this host", bundle: .main))
         .menuStyle(.borderlessButton)
         .fixedSize()
+        // A borderless menu has no hover of its own.
+        .padding(.horizontal, 6).padding(.vertical, 3)
+        .witermHover(cornerRadius: 6)
         .accessibilityLabel(String(localized: "Actions for \(String(profile.name))", bundle: .main))
         .accessibilityIdentifier("sshProfileActions-\(profile.id.uuidString)")
     }

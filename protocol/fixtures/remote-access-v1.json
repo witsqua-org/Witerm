@@ -11,7 +11,8 @@
         "created_at": "2026-10-28T00:00:00Z",
         "columns": 120,
         "rows": 40,
-        "access": "control"
+        "access": "control",
+        "writers": [{}, { "name": "iPad" }]
       },
       {
         "id": "77777777-7777-4777-8777-777777777777",
