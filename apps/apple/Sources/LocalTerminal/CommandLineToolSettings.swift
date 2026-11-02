@@ -167,10 +167,10 @@ struct CommandLineToolSettings: View {
             }
 
             Section(String(localized: "Examples", bundle: .main)) {
-                CopyableCommand("\(model.command) new --share", caption: String(localized: "Start a shared session in the current folder", bundle: .main))
-                CopyableCommand("\(model.command) sessions", caption: String(localized: "List sessions and who is attached", bundle: .main))
-                CopyableCommand("\(model.command) attach <session>", caption: String(localized: "Attach; press Enter then ~. to detach", bundle: .main))
-                CopyableCommand("\(model.command) unshare", caption: String(localized: "Stop sharing the session you're in", bundle: .main))
+                CopyableCommand("\(model.command) new --share", caption: String(localized: "Start a terminal in this folder that every paired device can open", bundle: .main))
+                CopyableCommand("\(model.command) sessions", caption: String(localized: "List terminals and who has them open", bundle: .main))
+                CopyableCommand("\(model.command) attach <session>", caption: String(localized: "Open a terminal here; press Return, then ~. to leave", bundle: .main))
+                CopyableCommand("\(model.command) unshare", caption: String(localized: "Stop sharing the terminal you're in", bundle: .main))
             }
         }
         .formStyle(.grouped)
@@ -196,10 +196,12 @@ struct CommandLineToolSettings: View {
     }
 }
 
-/// A command in monospaced text with a Copy button.
+/// A command in monospaced text with a Copy button that says Copied for a
+/// moment, so the click visibly did something.
 struct CopyableCommand: View {
     let command: String
     let caption: String?
+    @State private var copied = false
 
     init(_ command: String, caption: String? = nil) {
         self.command = command
@@ -219,8 +221,19 @@ struct CopyableCommand: View {
                 }
             }
             Spacer(minLength: 8)
-            Button(String(localized: "Copy", bundle: .main)) { CommandLineToolModel.copy(command) }
+            Button(copied ? String(localized: "Copied", bundle: .main) : String(localized: "Copy", bundle: .main),
+                   systemImage: copied ? "checkmark" : "doc.on.doc") {
+                CommandLineToolModel.copy(command)
+                copied = true
+                AccessibilityNotification.Announcement(String(localized: "Copied", bundle: .main)).post()
+            }
                 .accessibilityLabel(String(localized: "Copy \(command)", bundle: .main))
+                .help(String(localized: "Copy this command", bundle: .main))
+                .task(id: copied) {
+                    guard copied else { return }
+                    try? await Task.sleep(for: .seconds(2))
+                    copied = false
+                }
         }
     }
 }

@@ -17,10 +17,10 @@ struct PairingIssue {
             switch error {
             case .insecureTransport:
                 title = String(localized: "Pairing Requires a Secure Connection", bundle: .main)
-                recovery = String(localized: "Use an HTTPS address in Server Settings.", bundle: .main)
+                recovery = String(localized: "Give the relay server an HTTPS address.", bundle: .main)
             case .invalidServer:
                 title = String(localized: "Invalid Server Address", bundle: .main)
-                recovery = String(localized: "Close this window and check the address in Server Settings.", bundle: .main)
+                recovery = String(localized: "Check the relay server’s address, then try again.", bundle: .main)
             case .invalidDeviceName:
                 title = String(localized: "Invalid Device Name", bundle: .main)
                 recovery = String(localized: "Check the device name, then open pairing again.", bundle: .main)
@@ -209,7 +209,7 @@ final class DevicePairingModel {
     }
 
     func revoke(_ grant: DeviceGrant) {
-        run(String(localized: "Revoking access…", bundle: .main)) { client in
+        run(String(localized: "Unpairing…", bundle: .main)) { client in
             try await client.revoke(grantID: grant.id, pairingID: grant.pairingID)
             return .revoked(grant.id)
         }

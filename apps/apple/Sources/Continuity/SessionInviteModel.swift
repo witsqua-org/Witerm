@@ -78,7 +78,7 @@ final class SessionInviteModel {
                     // grant here; its own pairing decides what it reaches.
                     if let grants = try? await client.grants(), grants.contains(where: { $0.client.id == device.id }) {
                         _ = try? await client.reject(id: invitation.pairingID)
-                        self.phase = .failed(String(localized: "\(device.name) is already paired with this Mac. It can open the session from Terminals if its access allows.", bundle: .main))
+                        self.phase = .failed(String(localized: "\(device.name) is already paired with this Mac. It can open this terminal from Terminals if you allow it in Settings → Devices.", bundle: .main))
                         return
                     }
                     if invitation.permission == .view {

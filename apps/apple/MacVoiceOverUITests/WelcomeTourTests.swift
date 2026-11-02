@@ -32,7 +32,7 @@ final class WelcomeTourTests: XCTestCase {
         let app = try launch("en", locale: "en_US")
         let tour = app.descendants(matching: .any)["welcomeTour"].firstMatch
         XCTAssertTrue(tour.waitForExistence(timeout: 15), "The tour didn't open on a first launch")
-        waitForTitle("Sessions keep running", in: app)
+        waitForTitle("Terminals keep running", in: app)
 
         // Return moves on; the service page offers its switch in place.
         app.typeKey(.return, modifierFlags: [])
@@ -41,7 +41,7 @@ final class WelcomeTourTests: XCTestCase {
         let turnOn = app.buttons["welcomeTourService"]
         XCTAssertTrue(serviceOn.exists || turnOn.exists || app.buttons["Open Login Items Settings"].exists)
         app.typeKey(.leftArrow, modifierFlags: [])
-        waitForTitle("Sessions keep running", in: app)
+        waitForTitle("Terminals keep running", in: app)
 
         // Esc skips.
         app.typeKey(.escape, modifierFlags: [])
@@ -72,7 +72,7 @@ final class WelcomeTourTests: XCTestCase {
         let app = try launch("zh-Hans", locale: "zh_CN")
         let tour = app.descendants(matching: .any)["welcomeTour"].firstMatch
         XCTAssertTrue(tour.waitForExistence(timeout: 15))
-        waitForTitle("会话持续运行", in: app)
+        waitForTitle("终端持续运行", in: app)
         XCTAssertEqual(app.buttons["welcomeTourSkip"].label, "跳过")
         app.typeKey(.escape, modifierFlags: [])
         XCTAssertTrue(tour.waitForNonExistence(timeout: 5))

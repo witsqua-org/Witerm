@@ -158,7 +158,7 @@ import XCTest
         XCTAssertTrue(app.staticTexts["No Saved Host Key"].waitForExistence(timeout: 5))
         app.buttons["Done"].firstMatch.click()
         menu.click()
-        app.menuItems["Delete Connection"].click()
+        app.menuItems["sshDeleteHostMenu"].click()
         let removed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: created)
         wait(for: [removed], timeout: 5)
         // Deletion is undoable: the host returns with its saved credentials.
@@ -168,7 +168,7 @@ import XCTest
         XCTAssertTrue(created.waitForExistence(timeout: 5))
         created.click()
         menu.click()
-        app.menuItems["Delete Connection"].click()
+        app.menuItems["sshDeleteHostMenu"].click()
         wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: created)], timeout: 5)
     }
 

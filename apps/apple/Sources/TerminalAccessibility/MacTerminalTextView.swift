@@ -22,7 +22,7 @@ import WitermCore
         setAccessibilityRole(.textArea)
         setAccessibilityRoleDescription(String(localized: "Terminal Text", bundle: .main))
         setAccessibilityIdentifier("localTerminalSurface")
-        setAccessibilityLabel(mode == .view ? String(localized: "Read-Only Terminal", bundle: .main) : String(localized: "Terminal", bundle: .main))
+        setAccessibilityLabel(mode == .view ? String(localized: "Terminal, Watching", bundle: .main) : String(localized: "Terminal", bundle: .main))
         setAccessibilityHelp(String(localized: "Read by line, word or character. Text selection is only used for local reading.", bundle: .main))
         notifyUpdateChanges = true
         setAccessibilityCustomActions([
@@ -103,7 +103,8 @@ import WitermCore
     }
 
     override func insertText(_ string: Any, replacementRange: NSRange) {
-        guard inputEnabled else { return }
+        // Watching: say that the key went nowhere, as macOS does elsewhere.
+        guard inputEnabled else { NSSound.beep(); return }
         super.insertText(string, replacementRange: replacementRange)
     }
 

@@ -369,3 +369,97 @@ extension View {
         #endif
     }
 }
+
+#if os(macOS)
+import AppKit
+
+/// Hover feedback for custom, plain, or borderless clickable elements that
+/// have no native hover: a faint fill behind the element. Native buttons,
+/// toolbar items, sidebar rows, and menus already respond and don't use it.
+/// No feedback while disabled; a 150 ms fade, or none with Reduce Motion; a
+/// stronger fill with Increase Contrast. Hover never reveals anything that
+/// isn't already on screen.
+private struct WitermHover: ViewModifier {
+    var cornerRadius: CGFloat
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var contrast
+    @State private var hovering = false
+
+    func body(content: Content) -> some View {
+        content
+            // The whole element responds, not only its text and symbols.
+            .contentShape(.rect(cornerRadius: cornerRadius, style: .continuous))
+            .background {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(Color.primary.opacity(hovering && isEnabled ? (contrast == .increased ? 0.16 : 0.08) : 0))
+                    .allowsHitTesting(false)
+            }
+            // An AppKit tracking area rather than `onHover`, which missed
+            // the pointer inside scroll views (forms, the Continue sheet).
+            .background(HoverTracker { inside in
+                if reduceMotion { hovering = inside } else { withAnimation(.easeOut(duration: 0.15)) { hovering = inside } }
+            })
+    }
+}
+
+/// Reports the pointer entering and leaving its frame, wherever it sits, and
+/// never takes clicks.
+private struct HoverTracker: NSViewRepresentable {
+    let changed: (Bool) -> Void
+
+    func makeNSView(context: Context) -> TrackingView {
+        let view = TrackingView()
+        view.changed = changed
+        return view
+    }
+
+    func updateNSView(_ view: TrackingView, context: Context) { view.changed = changed }
+
+    final class TrackingView: NSView {
+        var changed: ((Bool) -> Void)?
+
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            for area in trackingAreas { removeTrackingArea(area) }
+            addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+                                           owner: self))
+        }
+
+        override func mouseEntered(with event: NSEvent) { changed?(true) }
+        override func mouseExited(with event: NSEvent) { changed?(false) }
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if window == nil { changed?(false) }
+        }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+}
+
+/// The pointing hand, for links and link-like text controls only; never for
+/// bordered buttons, toolbar items, sidebar rows, or menus. A disabled
+/// control keeps the arrow.
+private struct WitermLinkPointer: ViewModifier {
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var pushed = false
+
+    func body(content: Content) -> some View {
+        if #available(macOS 15.0, *) {
+            content.pointerStyle(isEnabled ? .link : nil)
+        } else {
+            content.onHover { inside in
+                if inside, isEnabled, !pushed { NSCursor.pointingHand.push(); pushed = true }
+                else if !inside, pushed { NSCursor.pop(); pushed = false }
+            }
+        }
+    }
+}
+
+extension View {
+    /// Hover feedback for a custom clickable element; see `WitermHover`.
+    func witermHover(cornerRadius: CGFloat = 8) -> some View { modifier(WitermHover(cornerRadius: cornerRadius)) }
+
+    /// The pointing hand over a link or link-like text control.
+    func witermLinkPointer() -> some View { modifier(WitermLinkPointer()) }
+}
+#endif

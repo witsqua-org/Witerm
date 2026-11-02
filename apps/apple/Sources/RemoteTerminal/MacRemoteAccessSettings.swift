@@ -26,7 +26,7 @@ enum MacRemoteAccessState: Equatable {
     var title: String {
         switch self {
         case .off: String(localized: "Off", bundle: .main)
-        case .serviceOff: String(localized: "Local Terminal Off", bundle: .main)
+        case .serviceOff: String(localized: "Terminals Off", bundle: .main)
         case .connecting: String(localized: "Connecting…", bundle: .main)
         case .ready: String(localized: "Online", bundle: .main)
         }
@@ -80,7 +80,7 @@ final class MacRemoteAccessModel {
             try store.upsert(RelayHostConfiguration(serverAddress: address, deviceName: Self.deviceName, enabled: enabled))
             load()
         } catch {
-            issue = enabled ? String(localized: "Unable to enable remote access. Check the server address and local terminal service.", bundle: .main) : String(localized: "Unable to turn off remote access. Try again.", bundle: .main)
+            issue = enabled ? String(localized: "Unable to turn on remote access. Check the relay server’s address, and that terminals are on in Settings → General.", bundle: .main) : String(localized: "Unable to turn off remote access. Try again.", bundle: .main)
         }
     }
 

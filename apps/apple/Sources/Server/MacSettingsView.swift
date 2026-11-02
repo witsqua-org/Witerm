@@ -53,18 +53,23 @@ private struct MacGeneralSettings: View {
 
     var body: some View {
         Form {
-            Section(String(localized: "Local Terminal", bundle: .main)) {
-                LabeledContent(String(localized: "Background Service", bundle: .main), value: serviceStatus)
+            Section(String(localized: "This Mac", bundle: .main)) {
+                // What the background service is for, not what it is: terminals
+                // here exist and keep running only while it's on.
+                LabeledContent(String(localized: "Terminals", bundle: .main), value: serviceStatus)
+                    .help(String(localized: "Witerm keeps terminals running on this Mac in the background, even after you quit it.", bundle: .main))
                 HStack {
                     switch service.state {
                     case .ready:
-                        Button(String(localized: "Disable Local Terminal…", bundle: .main), role: .destructive) { stopping = true }
+                        Button(String(localized: "Turn Off…", bundle: .main), role: .destructive) { stopping = true }
+                            .accessibilityIdentifier("turnOffTerminals")
                     case .requiresApproval:
                         Button(String(localized: "Open Login Items Settings", bundle: .main), action: service.openSettings)
                     case .starting:
                         ProgressView().controlSize(.small)
                     case .notRegistered, .unavailable:
-                        Button(String(localized: "Enable Local Terminal", bundle: .main)) { Task { await service.start() } }
+                        Button(String(localized: "Turn On Terminals", bundle: .main)) { Task { await service.start() } }
+                            .accessibilityIdentifier("turnOnTerminals")
                     }
                     Spacer()
                 }
@@ -75,23 +80,23 @@ private struct MacGeneralSettings: View {
         }
         .formStyle(.grouped)
         .task { await service.refresh() }
-        .alert(String(localized: "Disable Local Terminal?", bundle: .main), isPresented: $stopping) {
+        .alert(String(localized: "Turn Off Terminals on This Mac?", bundle: .main), isPresented: $stopping) {
             Button(String(localized: "Cancel", bundle: .main), role: .cancel) {}
-            Button(String(localized: "Disable", bundle: .main), role: .destructive) {
+            Button(String(localized: "Turn Off", bundle: .main), role: .destructive) {
                 Task { await service.stop() }
             }
         } message: {
-            Text(String(localized: "The current terminal connection will be disconnected.", bundle: .main))
+            Text(String(localized: "Your terminals keep running, but you can’t open them here or from other devices until you turn this back on.", bundle: .main))
         }
     }
 
     private var serviceStatus: String {
         switch service.state {
         case .ready: String(localized: "On", bundle: .main)
-        case .starting: String(localized: "Enabling local terminal…", bundle: .main)
-        case .requiresApproval: String(localized: "Waiting for background approval", bundle: .main)
+        case .starting: String(localized: "Turning on terminals…", bundle: .main)
+        case .requiresApproval: String(localized: "Waiting for approval in System Settings", bundle: .main)
         case .notRegistered: String(localized: "Off", bundle: .main)
-        case .unavailable: String(localized: "Local Terminal Unavailable", bundle: .main)
+        case .unavailable: String(localized: "Not responding", bundle: .main)
         }
     }
 }

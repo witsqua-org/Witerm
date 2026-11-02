@@ -114,6 +114,12 @@ struct WorkspaceActions {
     /// Pauses or allows typing from other devices in the selected session.
     var toggleRemoteTyping: (() -> Void)? = nil
     var remoteTypingPaused = false
+    /// Whether this window types in the terminal it shows (Mac); nil when it
+    /// shows none. `setTyping` switches between typing and watching.
+    var typingHere: Bool? = nil
+    var setTyping: ((Bool) -> Void)? = nil
+    /// Stops showing the terminal here; it keeps running (Mac).
+    var leave: (() -> Void)? = nil
 }
 
 extension FocusedValues {
@@ -128,11 +134,11 @@ struct WitermCommands: Commands {
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
             #if os(macOS)
-            Button(String(localized: "New Terminal Session", bundle: .main)) { actions?.newSession?() }
+            Button(String(localized: "New Terminal", bundle: .main)) { actions?.newSession?() }
                 .keyboardShortcut("n", modifiers: .command)
                 .disabled(actions?.newSession == nil)
             #endif
-            Button(String(localized: "New SSH Connection", bundle: .main)) { actions?.newSSHConnection() }
+            Button(String(localized: "Add SSH Host…", bundle: .main)) { actions?.newSSHConnection() }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
                 .disabled(actions == nil)
             Button(String(localized: "Import SSH Hosts…", bundle: .main)) { actions?.importSSHHosts?() }
@@ -188,15 +194,26 @@ struct WitermCommands: Commands {
             }
             #if os(macOS)
             Divider()
-            // The selected session's commands, so none needs the pointer.
-            Button(String(localized: "Rename Session…", bundle: .main)) { actions?.renameSession?() }
+            // The selected terminal's commands, so none needs the pointer.
+            // Start or Stop Typing is titled by what it does next.
+            Button(actions?.typingHere == false ? String(localized: "Start Typing", bundle: .main)
+                   : String(localized: "Stop Typing", bundle: .main)) {
+                if let typing = actions?.typingHere { actions?.setTyping?(!typing) }
+            }
+                .keyboardShortcut("t", modifiers: [.command, .shift])
+                .disabled(actions?.setTyping == nil)
+            Button(String(localized: "Leave", bundle: .main)) { actions?.leave?() }
+                .disabled(actions?.leave == nil)
+            Divider()
+            Button(String(localized: "Rename Terminal…", bundle: .main)) { actions?.renameSession?() }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
                 .disabled(actions?.renameSession == nil)
-            Button(actions?.remoteTypingPaused == true ? String(localized: "Allow Remote Typing", bundle: .main)
-                   : String(localized: "Pause Remote Typing", bundle: .main)) { actions?.toggleRemoteTyping?() }
+            // A checkmark shows that typing from other devices is paused.
+            Toggle(String(localized: "Pause Remote Typing", bundle: .main), isOn: Binding(
+                get: { actions?.remoteTypingPaused == true }, set: { _ in actions?.toggleRemoteTyping?() }))
                 .keyboardShortcut("p", modifiers: [.command, .shift])
                 .disabled(actions?.toggleRemoteTyping == nil)
-            Button(String(localized: "End Session", bundle: .main)) { actions?.endSession?() }
+            Button(String(localized: "End Terminal…", bundle: .main)) { actions?.endSession?() }
                 .disabled(actions?.endSession == nil)
             Divider()
             // Typed into the focused terminal; a view-only terminal ignores it.

@@ -101,6 +101,9 @@ struct SSHProfileForm: View {
                                 .accessibilityHidden(true)
                         }
                         .contentShape(Rectangle())
+                        #if os(macOS)
+                        .witermHover(cornerRadius: 6)
+                        #endif
                     }
                     .buttonStyle(.plain)
                     .accessibilityValue(showMore ? String(localized: "Expanded", bundle: .main) : String(localized: "Collapsed", bundle: .main))
@@ -134,7 +137,7 @@ struct SSHProfileForm: View {
                 if let issue { Section { Text(issue).foregroundStyle(WitermTheme.warning) } }
             }
             .formStyle(.grouped)
-            .navigationTitle(purpose == .new ? String(localized: "New SSH Connection", bundle: .main)
+            .navigationTitle(purpose == .new ? String(localized: "Add SSH Host", bundle: .main)
                              : purpose == .edit ? String(localized: "Edit SSH Host", bundle: .main)
                              : String(localized: "Connect With SSH", bundle: .main))
             .disabled(saving)
@@ -456,6 +459,9 @@ private struct KeyChoiceCard: View {
                     .strokeBorder(selected ? WitermTheme.accent : WitermTheme.divider, lineWidth: selected ? 2 : 1)
             }
             .contentShape(.rect(cornerRadius: 12))
+            #if os(macOS)
+            .witermHover(cornerRadius: 12)
+            #endif
         }
         .accessibilityAddTraits(selected ? .isSelected : [])
     }

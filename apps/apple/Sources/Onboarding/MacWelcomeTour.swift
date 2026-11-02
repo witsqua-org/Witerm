@@ -13,7 +13,7 @@ extension Notification.Name {
     static let witermShowWelcomeTour = Notification.Name("witerm.showWelcomeTour")
 }
 
-/// Four short pages: sessions outlive the app, the background service that
+/// Four short pages: terminals outlive the app, the background service that
 /// makes that so (switched on right here), continuing on another device, and
 /// `witerm new`. Esc skips, Return moves on, ← and → page.
 struct MacWelcomeTour: View {
@@ -32,15 +32,15 @@ struct MacWelcomeTour: View {
 
     private var pages: [Page] {
         [
-            Page(symbol: "terminal", title: String(localized: "Sessions keep running", bundle: .main),
+            Page(symbol: "terminal", title: String(localized: "Terminals keep running", bundle: .main),
                  line: AttributedString(String(localized: "Quit Witerm anytime. Your shells and programs keep going.", bundle: .main))),
             Page(symbol: "gearshape.2", title: String(localized: "Run in the background", bundle: .main),
-                 line: AttributedString(String(localized: "A small background service keeps your sessions alive.", bundle: .main))),
+                 line: AttributedString(String(localized: "Witerm keeps your terminals running in the background.", bundle: .main))),
             Page(symbol: "laptopcomputer.and.iphone", title: String(localized: "Continue on another device", bundle: .main),
-                 line: AttributedString(String(localized: "Press ⌥⌘P to open a session on another device.", bundle: .main))),
+                 line: AttributedString(String(localized: "Press ⌥⌘P to open a terminal on another device.", bundle: .main))),
             Page(symbol: "apple.terminal", title: String(localized: "Start from any folder", bundle: .main),
-                 line: (try? AttributedString(markdown: String(localized: "Type `witerm new` in Terminal to start a session there.", bundle: .main)))
-                    ?? AttributedString(String(localized: "Type `witerm new` in Terminal to start a session there.", bundle: .main))),
+                 line: (try? AttributedString(markdown: String(localized: "Type `witerm new` in any shell to start a terminal in that folder.", bundle: .main)))
+                    ?? AttributedString(String(localized: "Type `witerm new` in any shell to start a terminal in that folder.", bundle: .main))),
         ]
     }
 
@@ -77,7 +77,7 @@ struct MacWelcomeTour: View {
                     .keyboardShortcut(.cancelAction)
                     .accessibilityIdentifier("welcomeTourSkip")
                 Spacer()
-                PageDots(count: pages.count, current: page)
+                PageDots(count: pages.count, current: page) { page = $0 }
                 Spacer()
                 Button(last ? String(localized: "Get Started", bundle: .main) : String(localized: "Next", bundle: .main)) {
                     if last { close(finished: true) } else { move(1) }
@@ -121,6 +121,7 @@ struct MacWelcomeTour: View {
             Button(String(localized: "Open Login Items Settings", bundle: .main), action: service.openSettings)
         case .notRegistered, .unavailable:
             Button(String(localized: "Turn On", bundle: .main)) { Task { await service.start() } }
+                .help(String(localized: "Lets Witerm keep terminals running on this Mac, even after you quit it", bundle: .main))
                 .accessibilityIdentifier("welcomeTourService")
         }
     }
@@ -140,16 +141,26 @@ struct MacWelcomeTour: View {
 }
 
 /// Where you are in the tour, as dots and as "Page 2 of 4" for VoiceOver.
+/// Each dot also goes to its page, with hover feedback like other custom
+/// controls; Next and the arrow keys remain the main way through.
 private struct PageDots: View {
     let count: Int
     let current: Int
+    let show: (Int) -> Void
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 0) {
             ForEach(0..<count, id: \.self) { index in
-                Circle()
-                    .fill(index == current ? WitermTheme.ink : WitermTheme.secondary.opacity(0.35))
-                    .frame(width: 6, height: 6)
+                Button { show(index) } label: {
+                    Circle()
+                        .fill(index == current ? WitermTheme.ink : WitermTheme.secondary.opacity(0.35))
+                        .frame(width: 6, height: 6)
+                        .frame(width: 18, height: 18)
+                        .contentShape(Rectangle())
+                        .witermHover(cornerRadius: 9)
+                }
+                .buttonStyle(.plain)
+                .help(String(localized: "Page \(index + 1) of \(count)", bundle: .main))
             }
         }
         .accessibilityElement(children: .ignore)

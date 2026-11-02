@@ -248,7 +248,7 @@ struct SSHTrustView: View {
                             Text(String(localized: "First Connection to This Host", bundle: .main))
                                 .font(.headline)
                                 .fixedSize(horizontal: false, vertical: true)
-                            Text(String(localized: "Compare the host fingerprint through a trusted channel before continuing.", bundle: .main))
+                            Text(String(localized: "Check that this matches the fingerprint the host's owner gives you.", bundle: .main))
                                 .font(.subheadline)
                                 .foregroundStyle(WitermTheme.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -421,7 +421,7 @@ struct SSHWorkspaceView<Home: View>: View {
                         .navigationTitle(String(localized: "Terminals", bundle: .main))
                         .toolbar {
                             ToolbarItem(placement: .primaryAction) {
-                                Button(String(localized: "New SSH Connection", bundle: .main), systemImage: "plus", action: ui.presentNew)
+                                Button(String(localized: "Add SSH Host…", bundle: .main), systemImage: "plus", action: ui.presentNew)
                                     .accessibilityIdentifier("newSSHProfile")
                                     .disabled(model.connecting)
                             }
@@ -558,7 +558,7 @@ struct SSHWorkspaceView<Home: View>: View {
                     } label: { Label(String(localized: "Terminal Actions", bundle: .main), systemImage: "ellipsis.circle") }
                     .accessibilityIdentifier("sshSessionActions")
                 } else if sizeClass != .regular {
-                    Button(String(localized: "New SSH Connection", bundle: .main), systemImage: "plus", action: ui.presentNew)
+                    Button(String(localized: "Add SSH Host…", bundle: .main), systemImage: "plus", action: ui.presentNew)
                         .disabled(model.connecting)
                         .accessibilityIdentifier("newSSHProfile")
                 }

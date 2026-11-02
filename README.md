@@ -63,7 +63,7 @@ The Mac app needs `tmux` (`brew install tmux`). Keychain access needs a normally
 
 | To | Do |
 |---|---|
-| Connect over SSH | Mac: File → New SSH Connection (⇧⌘N). iOS: the + button in Terminals. Verify each host's fingerprint on first connect. |
+| Connect over SSH | Mac: File → Add SSH Host… (⇧⌘N). iOS: the + button in Terminals. Verify each host's fingerprint on first connect. |
 | Open a Mac terminal | Start the local service from the main window, then create a session under **This Mac**. |
 | Use the command line | Settings → Command Line → Install, then run `witerm new` in any folder. |
 | Continue a session on another device | See below. |
@@ -72,7 +72,7 @@ The Mac app needs `tmux` (`brew install tmux`). Keychain access needs a normally
 **Continue on another device:**
 
 1. On the Mac, select a session and choose **Continue on Another Device…** (its header, context menu, or File, ⌥⌘P). The sheet goes one step at a time and skips steps already done.
-2. **Server:** pick the continuation server and turn on remote access if asked. Settings → Devices uses the same server.
+2. **Server:** pick the relay server and turn on remote access if asked. Settings → Devices uses the same server.
 3. **Device:** choose a paired device, or **Pair a New Device** to show a code.
 4. On iOS, choose **Continue from Another Device** (first use, or the Devices tab) and scan or paste the code. A new server is added only when you tap Request Access.
 5. On the Mac, compare the code and approve. By default the device can open only this session, and type.
