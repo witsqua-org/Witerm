@@ -4,6 +4,52 @@ import Observation
 import SwiftUI
 import WitermCore
 
+/// Where remote access through one server really stands: the setting, and
+/// what the background service reports, not only whether the server answers.
+enum MacRemoteAccessState: Equatable {
+    /// Allow Remote Access is off for this server.
+    case off
+    /// On, but the local service isn't running, so nothing can reach this Mac.
+    case serviceOff
+    /// On, and the server hasn't accepted this Mac yet.
+    case connecting
+    /// The server accepted this Mac; paired devices can reach it now.
+    case ready
+
+    init(enabled: Bool, serviceReady: Bool, relays: [LocalRelayStatus], address: String) {
+        guard enabled else { self = .off; return }
+        guard serviceReady else { self = .serviceOff; return }
+        let key = ServerAddressKey(address)
+        self = relays.contains { $0.state == .ready && ServerAddressKey($0.server) == key } ? .ready : .connecting
+    }
+
+    var title: String {
+        switch self {
+        case .off: String(localized: "Off", bundle: .main)
+        case .serviceOff: String(localized: "Local Terminal Off", bundle: .main)
+        case .connecting: String(localized: "Connecting…", bundle: .main)
+        case .ready: String(localized: "Online", bundle: .main)
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .off: "antenna.radiowaves.left.and.right.slash"
+        case .serviceOff: "exclamationmark.triangle.fill"
+        case .connecting: "hourglass"
+        case .ready: "antenna.radiowaves.left.and.right"
+        }
+    }
+
+    var tone: StatusBadge.Tone {
+        switch self {
+        case .off, .connecting: .neutral
+        case .serviceOff: .warning
+        case .ready: .positive
+        }
+    }
+}
+
 /// Which servers this Mac accepts remote access through. The background
 /// service keeps one relay connection per enabled server.
 @MainActor @Observable

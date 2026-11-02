@@ -70,6 +70,17 @@ final class CLIUnitTests: XCTestCase {
         XCTAssertEqual(CLIRunner.hosts([LocalRelayStatus(server: "http://localhost:8080", state: .ready)]), "localhost:8080")
     }
 
+    func testSessionsTableNamesPrivateAndPausedSessions() {
+        XCTAssertEqual(CLIRunner.describe(sharing: nil), "no")
+        XCTAssertEqual(CLIRunner.describe(sharing: LocalSessionSharing(shared: true, attachments: [])), "yes")
+        XCTAssertEqual(CLIRunner.describe(sharing: LocalSessionSharing(shared: false, attachments: [])), "no")
+        XCTAssertEqual(CLIRunner.describe(sharing: LocalSessionSharing(shared: true, remoteTyping: false, attachments: [])),
+                       "yes, typing paused")
+        XCTAssertEqual(CLIRunner.describe(sharing: LocalSessionSharing(shared: false, keepPrivate: true, attachments: [])),
+                       "private")
+        XCTAssertFalse(CLIRunner.shareSummary([]).contains("Paired Devices"), "Remote access lives in Settings → Devices")
+    }
+
     func testFindsTheAppItIsInstalledFrom() throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("witerm-cli-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
@@ -191,6 +202,18 @@ final class CLIIntegrationTests: XCTestCase {
         let sessions = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(listed.output.utf8)) as? [[String: Any]])
         XCTAssertEqual(sessions.count, 2)
         XCTAssertEqual(sessions.first { $0["id"] as? String == id }?["shared"] as? Bool, true)
+        XCTAssertEqual(sessions.first { $0["id"] as? String == id }?["private"] as? Bool, false)
+        XCTAssertEqual(sessions.first { $0["id"] as? String == id }?["remote_typing"] as? Bool, true)
+
+        // Keeping a session private (from the app) shows in the list.
+        _ = try await LocalAgentClient(socketURL: socket).configure(sessionID: id, keepPrivate: true)
+        let hidden = try witerm(["sessions", "--json"], socket: socket)
+        let hiddenSessions = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(hidden.output.utf8)) as? [[String: Any]])
+        XCTAssertEqual(hiddenSessions.first { $0["id"] as? String == id }?["private"] as? Bool, true)
+        let table = try witerm(["sessions"], socket: socket)
+        XCTAssertEqual(table.status, 0, table.error)
+        XCTAssertTrue(table.output.contains("private"), table.output)
+        _ = try await LocalAgentClient(socketURL: socket).configure(sessionID: id, keepPrivate: false)
 
         let waited = try witerm(["share", id, "--wait", "1"], socket: socket)
         XCTAssertEqual(waited.status, CLIExit.remoteNotReady.rawValue, "Waiting must fail while remote access is off")

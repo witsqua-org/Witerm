@@ -44,6 +44,16 @@ struct LocalTerminalIssue: Equatable {
     }
 }
 
+extension LocalSessionInfo {
+    /// Other devices attached to this session now, each named once.
+    var remoteDeviceNames: [String] {
+        var seen = Set<String>()
+        return (sharing?.attachments ?? []).compactMap(\.device)
+            .filter { seen.insert($0.deviceID).inserted }
+            .map(\.name)
+    }
+}
+
 @MainActor @Observable
 final class LocalTerminalModel {
     private(set) var sessions: [LocalSessionInfo] = [] {

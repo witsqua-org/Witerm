@@ -87,8 +87,10 @@ struct LocalTerminalDetail: View {
                 .help(String(localized: "Terminal Actions", bundle: .main))
             }
             .buttonStyle(.borderless)
-            // Shown whenever paired devices can or do reach this session.
-            if let sharing = session.sharing, sharing.shared || sharing.attachments.contains(where: { $0.device != nil }) {
+            // Shown whenever paired devices can or do reach this session, or
+            // it's kept from all of them.
+            if let sharing = session.sharing,
+               sharing.shared || sharing.keepPrivate || sharing.attachments.contains(where: { $0.device != nil }) {
                 SessionSharingBar(sharing: sharing, relays: model.relays) {
                     model.configure(session, remoteTyping: !sharing.remoteTyping, using: client)
                 }
@@ -200,7 +202,7 @@ private struct SessionSharingBar: View {
                 .accessibilityIdentifier("sessionSharingStatus")
             Spacer(minLength: 0)
             // A quick way to stop remote input without ending anyone's view.
-            if !sharing.remoteTyping || remoteDevices.contains(where: { $0.mode == .control }) {
+            if !sharing.keepPrivate, !sharing.remoteTyping || remoteDevices.contains(where: { $0.mode == .control }) {
                 Button(sharing.remoteTyping ? String(localized: "Pause Remote Typing", bundle: .main)
                        : String(localized: "Allow Remote Typing", bundle: .main),
                        systemImage: sharing.remoteTyping ? "hand.raised" : "keyboard",
@@ -229,6 +231,9 @@ private struct SessionSharingBar: View {
             }
             return String(localized: "Remote · \(names.joined(separator: ", "))", bundle: .main)
         }
+        if sharing.keepPrivate {
+            return String(localized: "Private · No paired device can open it", bundle: .main)
+        }
         if !sharing.remoteTyping {
             return String(localized: "Remote typing is paused. Paired devices can only watch.", bundle: .main)
         }
@@ -241,11 +246,13 @@ private struct SessionSharingBar: View {
     }
 
     private var symbol: String {
+        if sharing.keepPrivate, remoteDevices.isEmpty { return "lock.fill" }
         if relays.isEmpty { return "antenna.radiowaves.left.and.right.slash" }
         return ready || !remoteDevices.isEmpty ? "antenna.radiowaves.left.and.right" : "hourglass"
     }
 
     private var tint: Color {
+        if sharing.keepPrivate, remoteDevices.isEmpty { return .secondary }
         if relays.isEmpty { return WitermTheme.warning }
         return ready || !remoteDevices.isEmpty ? WitermTheme.positive : .secondary
     }

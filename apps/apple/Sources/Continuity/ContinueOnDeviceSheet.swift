@@ -26,6 +26,8 @@ struct ContinueOnDeviceSheet: View {
     @State private var sessions: [LocalSessionInfo] = []
     @State private var accesses: [String: LocalDeviceAccess] = [:]
     @State private var guestPairings: Set<String> = []
+    /// What the background service reports for each server with remote access on.
+    @State private var relays: [LocalRelayStatus] = []
     @State private var reach = Reach.only
     @State private var chosen: Set<String> = []
     @State private var canType = true
@@ -540,7 +542,19 @@ struct ContinueOnDeviceSheet: View {
         if let continuing {
             let live = session?.sharing?.attachments.first { $0.device?.deviceID == continuing.id }
             VStack(spacing: 0) {
-                if let server { checkRow(String(localized: "Paired through \(server.displayName)", bundle: .main)) }
+                if let server {
+                    checkRow(String(localized: "Paired through \(server.displayName)", bundle: .main))
+                    Divider()
+                    // The other device reaches this Mac only once the server
+                    // has accepted it; say so rather than wait silently.
+                    if remoteState(server) == .ready {
+                        checkRow(String(localized: "This Mac is online through \(server.displayName)", bundle: .main))
+                            .accessibilityIdentifier("continueMacOnline")
+                    } else {
+                        waitRow(String(localized: "Connecting this Mac to \(server.displayName)…", bundle: .main))
+                            .accessibilityIdentifier("continueMacConnecting")
+                    }
+                }
                 Divider()
                 if sessionID != nil {
                     checkRow(typing(continuing) ? String(localized: "Can open “\(sessionName)” and type", bundle: .main)
@@ -555,13 +569,7 @@ struct ContinueOnDeviceSheet: View {
                                  : String(localized: "\(continuing.name) is connected · view only", bundle: .main))
                             .accessibilityIdentifier("continueConnected")
                     } else {
-                        HStack(spacing: 10) {
-                            ProgressView().controlSize(.small)
-                            Text(String(localized: "Waiting for \(continuing.name) to connect…", bundle: .main))
-                            Spacer(minLength: 0)
-                        }
-                        .padding(.vertical, 9).padding(.horizontal, 12)
-                        .accessibilityElement(children: .combine)
+                        waitRow(String(localized: "Waiting for \(continuing.name) to connect…", bundle: .main))
                     }
                 }
             }
@@ -574,6 +582,21 @@ struct ContinueOnDeviceSheet: View {
                 .background(WitermTheme.statusFill, in: .rect(cornerRadius: 10, style: .continuous))
             note(String(localized: "End their access at any time in Settings → Devices.", bundle: .main))
         }
+    }
+
+    private func remoteState(_ server: ConnectionModel) -> MacRemoteAccessState {
+        MacRemoteAccessState(enabled: remoteAccess.isEnabled(for: server.address),
+                             serviceReady: service.state == .ready, relays: relays, address: server.address)
+    }
+
+    private func waitRow(_ text: String) -> some View {
+        HStack(spacing: 10) {
+            ProgressView().controlSize(.small)
+            Text(text)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 9).padding(.horizontal, 12)
+        .accessibilityElement(children: .combine)
     }
 
     private func checkRow(_ text: String) -> some View {
@@ -823,6 +846,7 @@ struct ContinueOnDeviceSheet: View {
 
     private func reload() async {
         guard let agent else { return }
+        if let status = try? await agent.status() { relays = status.relays ?? [] }
         if let list = try? await agent.sessions() { sessions = list }
         if let stored = try? await agent.deviceAccess() {
             accesses = Dictionary(stored.map { ($0.deviceID, $0) }, uniquingKeysWith: { $1 })

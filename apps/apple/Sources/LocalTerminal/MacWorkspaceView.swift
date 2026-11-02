@@ -248,17 +248,36 @@ struct MacWorkspaceView: View {
             ForEach(terminal.sessions.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) }) { session in
                 let attached = terminal.selectedID == session.id && terminal.attachment != nil
                 let shared = session.sharing?.shared == true
+                let keptPrivate = session.sharing?.keepPrivate == true
+                // Who else has this session open right now, at a glance.
+                let elsewhere = session.remoteDeviceNames
                 let doing = terminal.activity(for: session.id).summary(home: NSHomeDirectory())
                 Label {
                     VStack(alignment: .leading, spacing: 1) {
                         HStack(spacing: 6) {
                             Text(session.name).lineLimit(1)
-                            if shared {
+                            if keptPrivate {
+                                Image(systemName: "lock.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .help(String(localized: "Kept private from every paired device", bundle: .main))
+                                    .accessibilityHidden(true)
+                            } else if shared {
                                 Image(systemName: "antenna.radiowaves.left.and.right")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                     .help(String(localized: "Shared with paired devices", bundle: .main))
                                     .accessibilityHidden(true)
+                            }
+                            if !elsewhere.isEmpty {
+                                HStack(spacing: 2) {
+                                    Image(systemName: "laptopcomputer.and.iphone")
+                                    if elsewhere.count > 1 { Text(verbatim: "\(elsewhere.count)").monospacedDigit() }
+                                }
+                                .font(.caption)
+                                .foregroundStyle(WitermTheme.positive)
+                                .help(String(localized: "Open on \(ListFormatter.localizedString(byJoining: elsewhere))", bundle: .main))
+                                .accessibilityHidden(true)
                             }
                         }
                         // What it was doing when last shown here.
@@ -277,7 +296,11 @@ struct MacWorkspaceView: View {
                 .tag(MacDestination.local(session.id))
                 .accessibilityLabel(session.name)
                 .accessibilityValue([attached ? String(localized: "Connected", bundle: .main) : nil,
-                                     shared ? String(localized: "Shared", bundle: .main) : nil, doing]
+                                     keptPrivate ? String(localized: "Kept private", bundle: .main)
+                                        : shared ? String(localized: "Shared", bundle: .main) : nil,
+                                     elsewhere.isEmpty ? nil
+                                        : String(localized: "Open on \(ListFormatter.localizedString(byJoining: elsewhere))", bundle: .main),
+                                     doing]
                     .compactMap { $0 }.joined(separator: ", "))
                 .accessibilityIdentifier("localSession-\(session.id)")
                 .contextMenu {
@@ -328,7 +351,7 @@ struct MacWorkspaceView: View {
     private var serverFooter: some View {
         SettingsLink {
             HStack(spacing: 10) {
-                Image(systemName: servers.selected?.statusSymbol ?? "server.rack")
+                Image(systemName: footerSymbol)
                     .foregroundStyle(footerTint)
                     .frame(width: 18)
                     .accessibilityHidden(true)
@@ -366,19 +389,41 @@ struct MacWorkspaceView: View {
         servers.selected?.displayName ?? String(localized: "No Continuation Server", bundle: .main)
     }
 
+    /// What the background service reports for the selected server, not only
+    /// the setting: a server can answer checks while this Mac isn't online.
+    private var footerRemoteState: MacRemoteAccessState? {
+        guard let server = servers.selected, server.phase.isAvailable else { return nil }
+        return MacRemoteAccessState(enabled: remoteAccess.isEnabled(for: server.address),
+                                    serviceReady: service.state == .ready, relays: terminal.relays,
+                                    address: server.address)
+    }
+
     private var footerStatus: String {
         guard let server = servers.selected else { return String(localized: "Not Set Up", bundle: .main) }
-        guard server.phase.isAvailable else { return server.statusTitle }
-        return remoteAccess.isEnabled(for: server.address)
-            ? String(localized: "Remote access on · Reachable", bundle: .main)
-            : String(localized: "Remote access off · Reachable", bundle: .main)
+        switch footerRemoteState {
+        case nil: return server.statusTitle
+        case .off?: return String(localized: "Remote access off · Reachable", bundle: .main)
+        case .serviceOff?: return String(localized: "Remote access on · Local terminal off", bundle: .main)
+        case .connecting?: return String(localized: "Remote access on · Connecting…", bundle: .main)
+        case .ready?: return String(localized: "Remote access on · Online", bundle: .main)
+        }
+    }
+
+    private var footerSymbol: String {
+        switch footerRemoteState {
+        case .serviceOff?, .connecting?: footerRemoteState?.systemImage ?? "server.rack"
+        default: servers.selected?.statusSymbol ?? "server.rack"
+        }
     }
 
     private var footerTint: Color {
+        if let state = footerRemoteState, state == .serviceOff || state == .connecting {
+            return state == .serviceOff ? WitermTheme.warning : .secondary
+        }
         switch servers.selected?.statusTone ?? .neutral {
-        case .positive: WitermTheme.positive
-        case .warning: WitermTheme.warning
-        case .neutral: .secondary
+        case .positive: return WitermTheme.positive
+        case .warning: return WitermTheme.warning
+        case .neutral: return .secondary
         }
     }
 

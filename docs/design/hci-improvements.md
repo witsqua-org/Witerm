@@ -71,3 +71,14 @@ Device continuation, from the review of 2026-10-28 ([issue #3](https://github.co
 
 **Still to evaluate on real hardware:** the whole continue flow with a camera scan, the Mac and phone flows run together, and VoiceOver through each step.
 
+## Round 6: Mac
+
+From an audit of the Mac app and service on 2026-11-02, against the honest-status and visibility principles.
+
+| # | Principle | Change | Main code |
+|---|---|---|---|
+| 1 | Honest status | Remote access shows what the service reports, not only the setting: the sidebar footer says Online, Connecting…, or Local terminal off; Settings → Devices shows This Mac's live state under Allow Remote Access; the Continue sheet's Open step says whether this Mac is online before waiting for the other device. | [MacRemoteAccessSettings](../../apps/apple/Sources/RemoteTerminal/MacRemoteAccessSettings.swift), [MacWorkspaceView](../../apps/apple/Sources/LocalTerminal/MacWorkspaceView.swift), [MacDevicesView](../../apps/apple/Sources/Pairing/MacDevicesView.swift), [ContinueOnDeviceSheet](../../apps/apple/Sources/Continuity/ContinueOnDeviceSheet.swift) |
+| 2 | Visibility, privacy | Sidebar rows show a lock for private sessions and which other devices have a session open; the bar under the terminal header also names a private session. | [MacWorkspaceView](../../apps/apple/Sources/LocalTerminal/MacWorkspaceView.swift), [LocalTerminalWorkspace](../../apps/apple/Sources/LocalTerminal/LocalTerminalWorkspace.swift) |
+| 3 | Consistency | `witerm sessions` reports private sessions and paused typing (also in JSON), and points to Settings → Devices instead of the old Paired Devices. | [CLIRunner](../../apps/mac-agent/Sources/WitermCLI/CLIRunner.swift) |
+| 4 | Continuity headroom | The server gives tunnel joins their own per-device budget and lets a Mac hold 8 tunnels, so a second phone or tablet no longer spends the first one's allowance. | [pairing/relay.go](../../server/internal/pairing/relay.go), [relay.go](../../server/internal/relay/relay.go) |
+

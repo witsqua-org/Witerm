@@ -69,7 +69,7 @@ struct CLIRunner {
             let rows = sessions.map { session -> [String] in
                 let sharing = session.sharing
                 return [String(session.id.prefix(8)), session.name, "\(session.columns)x\(session.rows)",
-                        sharing?.shared == true ? "yes" : "no",
+                        Self.describe(sharing: sharing),
                         sharing.map { Self.describe($0.attachments) } ?? "—"]
             }
             Self.printTable(header: ["ID", "NAME", "SIZE", "SHARED", "ATTACHED"], rows: rows)
@@ -235,7 +235,7 @@ struct CLIRunner {
         case .waiting:
             return "Waiting for \(hosts(relays)) to connect; paired devices can open it once connected."
         case .off:
-            return "Remote access is off, so paired devices can't reach it yet. Turn on Allow Remote Access in Witerm → Paired Devices."
+            return "Remote access is off, so paired devices can't reach it yet. Turn on Allow Remote Access in Witerm → Settings → Devices."
         }
     }
 
@@ -245,6 +245,15 @@ struct CLIRunner {
         case .waiting: "waiting for \(hosts(relays))"
         case .ready: "ready (\(hosts(relays.filter { $0.state == .ready })))"
         }
+    }
+
+    /// The SHARED column: whether paired devices may reach the session, and
+    /// whether they may type in it.
+    static func describe(sharing: LocalSessionSharing?) -> String {
+        guard let sharing else { return "no" }
+        if sharing.keepPrivate { return "private" }
+        let shared = sharing.shared ? "yes" : "no"
+        return sharing.remoteTyping ? shared : shared + ", typing paused"
     }
 
     static func describe(_ attachments: [LocalAttachmentInfo]) -> String {
@@ -337,12 +346,18 @@ struct SessionJSON: Encodable, Equatable {
     let columns: Int
     let rows: Int
     let shared: Bool
+    /// Hidden from every paired device, even ones allowed all sessions.
+    let `private`: Bool
+    /// Whether paired devices allowed to type may type here now.
+    let remote_typing: Bool
     let attachments: [AttachmentJSON]
 
     init(_ session: LocalSessionInfo) {
         id = session.id; name = session.name; created_at = session.createdAt
         columns = session.columns; rows = session.rows
         shared = session.sharing?.shared ?? false
+        `private` = session.sharing?.keepPrivate ?? false
+        remote_typing = session.sharing?.remoteTyping ?? true
         attachments = (session.sharing?.attachments ?? []).map {
             AttachmentJSON(mode: $0.mode.rawValue, device: $0.device.map { DeviceJSON(id: $0.deviceID, name: $0.name) })
         }

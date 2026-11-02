@@ -65,6 +65,56 @@ final class ContinueFlowTests: XCTestCase {
         wait(for: [closed], timeout: 5)
         // Cancelling shares nothing.
         XCTAssertFalse(app.descendants(matching: .any)["localSession-" + id].firstMatch.value as? String ?? "" == "Shared")
+
+        // Keeping the session private shows on its row, and undoing it clears that.
+        row.rightClick()
+        app.menuItems["Keep Private"].click()
+        let kept = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS 'Kept private'"), object: row)
+        XCTAssertEqual(XCTWaiter.wait(for: [kept], timeout: 10), .completed, row.value as? String ?? "")
+        row.rightClick()
+        app.menuItems["Keep Private"].click()
+        let cleared = XCTNSPredicateExpectation(predicate: NSPredicate(format: "NOT (value CONTAINS 'Kept private')"), object: row)
+        XCTAssertEqual(XCTWaiter.wait(for: [cleared], timeout: 10), .completed, row.value as? String ?? "")
+    }
+
+    /// Release QA for replacing the installed bundle: turns the background
+    /// service off (before quitting the old app) or on (in the new one)
+    /// through Settings → General, the same control a person uses. Shells
+    /// keep running while it's off. Opt-in: WITERM_HCI_SERVICE_ACTION=off|on.
+    func testServiceSwitch() throws {
+        continueAfterFailure = false
+        guard let path = ProcessInfo.processInfo.environment["WITERM_HCI_FIXED_APP"],
+              let action = ProcessInfo.processInfo.environment["WITERM_HCI_SERVICE_ACTION"],
+              ["off", "on"].contains(action) else {
+            throw XCTSkip("Set WITERM_HCI_FIXED_APP and WITERM_HCI_SERVICE_ACTION=off|on")
+        }
+        let app = XCUIApplication(url: URL(fileURLWithPath: path))
+        // Settings opens on General, so only the service control is clicked.
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-witerm.settingsTab", "general"]
+        app.launch()
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 15))
+        app.typeKey(",", modifierFlags: .command)
+        XCTAssertTrue(app.windows["General"].firstMatch.waitForExistence(timeout: 10))
+        app.activate()
+        let disable = app.buttons["Disable Local Terminal…"].firstMatch
+        let enable = app.buttons["Enable Local Terminal"].firstMatch
+        if action == "off" {
+            XCTAssertTrue(disable.waitForExistence(timeout: 10), "the service should be on before turning it off")
+            disable.click()
+            let confirm = app.buttons["Disable"].firstMatch
+            XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+            confirm.click()
+            XCTAssertTrue(enable.waitForExistence(timeout: 15), "the service did not turn off")
+            // The old app quits so the bundle can be replaced.
+            addTeardownBlock { await MainActor.run { app.terminate() } }
+        } else {
+            if !disable.exists {
+                XCTAssertTrue(enable.waitForExistence(timeout: 10))
+                enable.click()
+            }
+            XCTAssertTrue(disable.waitForExistence(timeout: 30), "the service did not turn on")
+            app.typeKey("w", modifierFlags: .command)
+        }
     }
 
     /// Every Settings tab keeps one window size, so switching never resizes it.

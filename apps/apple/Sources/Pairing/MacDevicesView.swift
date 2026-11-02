@@ -19,6 +19,8 @@ struct MacDevicesView: View {
     @State private var pairingDevice = false
     @State private var editingDevice: PairedDevice?
     @State private var editing: ServerEditRequest?
+    /// What the background service reports for each server with remote access on.
+    @State private var relays: [LocalRelayStatus] = []
 
     private var server: ConnectionModel? { servers.selected }
 
@@ -60,6 +62,16 @@ struct MacDevicesView: View {
             connectPairing()
             await reload()
         }
+        .task(id: agent != nil) {
+            // The local socket is cheap; the server is never asked from here.
+            while !Task.isCancelled {
+                if let agent, let status = try? await agent.status() {
+                    let next = status.relays ?? []
+                    if next != relays { relays = next }
+                }
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
         .onChange(of: scenePhase) { _, phase in if phase == .active { refresh() } }
         .onChange(of: pairing?.grants.map(\.id)) { _, _ in Task { await reload() } }
     }
@@ -97,6 +109,21 @@ struct MacDevicesView: View {
             .toggleStyle(.switch)
             .disabled(!remoteAccess.loaded || (service.state != .ready && !remoteAccess.isEnabled(for: server.address)))
             .accessibilityIdentifier("allowRemoteConnections")
+            let state = MacRemoteAccessState(enabled: remoteAccess.isEnabled(for: server.address),
+                                             serviceReady: service.state == .ready, relays: relays,
+                                             address: server.address)
+            if state == .ready || state == .connecting {
+                LabeledContent {
+                    StatusBadge(state.title, systemImage: state.systemImage, tone: state.tone)
+                } label: {
+                    Text(String(localized: "This Mac", bundle: .main))
+                    Text(state == .ready
+                         ? String(localized: "Paired devices can reach the sessions you allow now.", bundle: .main)
+                         : String(localized: "Waiting for the server to accept this Mac. Paired devices can’t reach it yet.", bundle: .main))
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("remoteAccessState")
+            }
             if service.state != .ready {
                 HStack {
                     Text(String(localized: "Turn on the local terminal service first.", bundle: .main))

@@ -3056,6 +3056,23 @@
         }
       }
     },
+    "Connecting this Mac to %@…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connecting this Mac to %@…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在将此 Mac 连接到 %@…"
+          }
+        }
+      }
+    },
     "Connecting to %@…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3103,6 +3120,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在连接终端…"
+          }
+        }
+      }
+    },
+    "Connecting…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connecting…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在连接…"
           }
         }
       }
@@ -6060,6 +6094,40 @@
         }
       }
     },
+    "Kept private" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kept private"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已设为私密"
+          }
+        }
+      }
+    },
+    "Kept private from every paired device" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kept private from every paired device"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "对所有已配对设备保持私密"
+          }
+        }
+      }
+    },
     "Key Type" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6379,6 +6447,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "本地终端"
+          }
+        }
+      }
+    },
+    "Local Terminal Off" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Local Terminal Off"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本地终端已关闭"
           }
         }
       }
@@ -7471,6 +7556,23 @@
         }
       }
     },
+    "Online" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Online"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在线"
+          }
+        }
+      }
+    },
     "Only a server on this device can use plain HTTP." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7586,6 +7688,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "打开系统设置"
+          }
+        }
+      }
+    },
+    "Open on %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open on %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已在 %@ 上打开"
           }
         }
       }
@@ -7892,6 +8011,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已配对设备 · %@"
+          }
+        }
+      }
+    },
+    "Paired devices can reach the sessions you allow now." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paired devices can reach the sessions you allow now."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已配对设备现在可以访问你允许的会话。"
           }
         }
       }
@@ -8423,6 +8559,23 @@
         }
       }
     },
+    "Private · No paired device can open it" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Private · No paired device can open it"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "私密 · 已配对设备都无法打开"
+          }
+        }
+      }
+    },
     "Programs in this session will be terminated. Unsaved changes may be lost." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8882,19 +9035,53 @@
         }
       }
     },
-    "Remote access on · Reachable" : {
+    "Remote access on · Connecting…" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Remote access on · Reachable"
+            "value" : "Remote access on · Connecting…"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "远程连接已开启 · 可以访问"
+            "value" : "远程连接已开启 · 正在连接…"
+          }
+        }
+      }
+    },
+    "Remote access on · Local terminal off" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remote access on · Local terminal off"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "远程连接已开启 · 本地终端已关闭"
+          }
+        }
+      }
+    },
+    "Remote access on · Online" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remote access on · Online"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "远程连接已开启 · 在线"
           }
         }
       }
@@ -11993,6 +12180,23 @@
         }
       }
     },
+    "This Mac is online through %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This Mac is online through %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此 Mac 已通过 %@ 在线"
+          }
+        }
+      }
+    },
     "This Mac stops accepting remote access through this server. Pairings on the server are not revoked." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13740,6 +13944,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "等待服务器响应"
+          }
+        }
+      }
+    },
+    "Waiting for the server to accept this Mac. Paired devices can’t reach it yet." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for the server to accept this Mac. Paired devices can’t reach it yet."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在等待服务器接受此 Mac。已配对设备暂时无法访问。"
           }
         }
       }
