@@ -96,7 +96,7 @@ Which paired devices reach a session is decided here, per device and per session
 
 When the grid changes, every attached client gets a `geometry` frame carrying the full `session`, before the redraw at that size. A new controller attaching at a different size triggers the same frame. Viewers apply it directly and never send a resize back.
 
-The geometry frame carries no `id`, `data`, `mode`, or `status`. The session's ID, name, and creation date stay the same.
+The geometry frame carries no `id`, `data`, `mode`, or `status`. The session's ID and creation date stay the same; its name is the current one, which a rename while attached may have changed.
 
 The service confirms a resize only after the shell's PTY reports the new size. If it never does:
 1. All of that session's connections close.

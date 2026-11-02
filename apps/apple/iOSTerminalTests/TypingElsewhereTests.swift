@@ -54,6 +54,24 @@ import XCTest
                           TypingElsewhere.watchingNotice(nil, hostName: "Studio"))
     }
 
+    /// Unpair ends every pairing this device holds with that device, the one
+    /// asked for first, so an earlier pairing never keeps it listed.
+    func testUnpairEndsEveryPairingWithThatDevice() {
+        func device(_ id: String, _ name: String) -> PairedDevice {
+            PairedDevice(id: id, name: name, platform: .macos, publicKey: "")
+        }
+        let phone = PairedDevice(id: "phone", name: "iPhone", platform: .ios, publicKey: "")
+        func grant(_ id: String, _ host: PairedDevice) -> DeviceGrant {
+            DeviceGrant(id: id, pairingID: "p-" + id, host: host, client: phone, permission: .control,
+                        approvalSignature: "", createdAt: .now)
+        }
+        let studio = device("mac-1", "Studio"), laptop = device("mac-2", "Laptop")
+        let older = grant("g1", studio), other = grant("g2", laptop), newer = grant("g3", studio)
+        let ended = RemoteTerminalModel.pairings(endedBy: newer, in: [older, other, newer])
+        XCTAssertEqual(ended.map(\.id), ["g3", "g1"])
+        XCTAssertEqual(RemoteTerminalModel.pairings(endedBy: other, in: [older, other, newer]).map(\.id), ["g2"])
+    }
+
     func testOnlyARefusedTypingNamesWhoTypes() {
         XCTAssertTrue(RemoteTerminalIssue(RelayError.sessionBusy).typingElsewhere)
         XCTAssertFalse(RemoteTerminalIssue(RelayError.readOnly).typingElsewhere)

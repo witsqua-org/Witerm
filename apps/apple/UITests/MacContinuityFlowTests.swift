@@ -93,6 +93,34 @@ final class MacContinuityFlowTests: XCTestCase {
         }
         wait(for: [state("Typing")], timeout: 30)
         shot("07-terminal")
+
+        // Stop Typing, then Start Typing: the menu item names the switch from
+        // the current state, and the title bar changes as soon as it's done.
+        // Done before either side types, while the Mac's own window has the
+        // terminal open to type, so watching here shows Typing on the Mac.
+        app.buttons["terminalActionsMenu"].tap()
+        let stop = app.buttons["Stop Typing"]
+        XCTAssertTrue(stop.waitForExistence(timeout: 5), "Typing must offer Stop Typing")
+        XCTAssertFalse(app.buttons["Start Typing"].exists)
+        shot("09a-menu-typing")
+        stop.tap()
+        wait(for: [state("Watching")], timeout: 30)
+        // The title says where typing is, from the list it polls while watching.
+        let typingOn = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "Typing on"), object: status)
+        wait(for: [typingOn], timeout: 20)
+        XCTAssertFalse(app.buttons["remoteKeyboard"].exists, "Watching has no keyboard")
+        shot("09b-watching")
+        app.buttons["terminalActionsMenu"].tap()
+        let startTyping = app.buttons["Start Typing"]
+        XCTAssertTrue(startTyping.waitForExistence(timeout: 5), "Watching must offer Start Typing")
+        XCTAssertFalse(app.buttons["Stop Typing"].exists)
+        shot("09c-menu-watching")
+        startTyping.tap()
+        wait(for: [state("Typing")], timeout: 30)
+        // Start Typing brings the keyboard up, as a new connection does.
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        shot("09d-typing-again")
+
         signal("phone-attached", UIDevice.current.name)
 
         // Type while the Mac is attached too. The keyboard is already up:
@@ -128,31 +156,6 @@ final class MacContinuityFlowTests: XCTestCase {
         RunLoop.current.run(until: Date().addingTimeInterval(1.5))
         shot("09-together")
 
-        // Stop Typing, then Start Typing: the menu item names the switch from
-        // the current state, and the title bar changes as soon as it's done.
-        app.buttons["terminalActionsMenu"].tap()
-        let stop = app.buttons["Stop Typing"]
-        XCTAssertTrue(stop.waitForExistence(timeout: 5), "Typing must offer Stop Typing")
-        XCTAssertFalse(app.buttons["Start Typing"].exists)
-        shot("09a-menu-typing")
-        stop.tap()
-        wait(for: [state("Watching")], timeout: 30)
-        // The Mac still has the terminal open and can type, so the title says
-        // where typing is (from the list it polls while watching).
-        let typingOn = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "Typing on"), object: status)
-        wait(for: [typingOn], timeout: 20)
-        XCTAssertFalse(app.buttons["remoteKeyboard"].exists, "Watching has no keyboard")
-        shot("09b-watching")
-        app.buttons["terminalActionsMenu"].tap()
-        let startTyping = app.buttons["Start Typing"]
-        XCTAssertTrue(startTyping.waitForExistence(timeout: 5), "Watching must offer Start Typing")
-        XCTAssertFalse(app.buttons["Stop Typing"].exists)
-        shot("09c-menu-watching")
-        startTyping.tap()
-        wait(for: [state("Typing")], timeout: 30)
-        // Start Typing brings the keyboard up, as a new connection does.
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
-        shot("09d-typing-again")
         app.buttons["remoteKeyboard"].tap()
         // Hiding the keyboard resizes the grid; let that settle first.
         RunLoop.current.run(until: Date().addingTimeInterval(3))
@@ -188,7 +191,9 @@ final class MacContinuityFlowTests: XCTestCase {
         shot("13-confirm")
         confirm.tap()
         XCTAssertTrue(any("unpairedNote").waitForExistence(timeout: 30), "No feedback after unpairing")
-        XCTAssertFalse(details.exists, "The Mac is still listed after unpairing")
+        // The row leaves with the list's own animation.
+        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: details)
+        XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 10), .completed, "The Mac is still listed after unpairing")
         shot("14-unpaired")
         signal("phone-unpaired")
     }

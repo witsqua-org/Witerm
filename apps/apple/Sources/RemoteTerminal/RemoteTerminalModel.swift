@@ -529,7 +529,10 @@ final class RemoteTerminalModel {
         unpairingID = grant.id
         defer { unpairingID = nil }
         let pairing = try pairingClient()
-        if selectedGrant?.id == grant.id {
+        // Every pairing with that device ends, so it leaves the lists: an
+        // earlier one that was never cleaned up would otherwise keep it there.
+        let ending = Self.pairings(endedBy: grant, in: grants)
+        if let selected = selectedGrant, ending.contains(where: { $0.id == selected.id }) {
             cancelWork()
             resumeWhenActive = false
             notice = false
@@ -545,11 +548,19 @@ final class RemoteTerminalModel {
             selectedGrant = nil
             connectionState = .browsing
         }
-        try await pairing.revoke(grantID: grant.id, pairingID: grant.pairingID)
-        grants.removeAll { $0.id == grant.id }
+        for pairingToEnd in ending {
+            try await pairing.revoke(grantID: pairingToEnd.id, pairingID: pairingToEnd.pairingID)
+            grants.removeAll { $0.id == pairingToEnd.id }
+        }
         if unpairedName == grant.host.name { unpairedName = nil }
         UIAccessibility.post(notification: .announcement,
                              argument: String(localized: "Unpaired from \(grant.host.name)", bundle: .main))
+    }
+
+    /// The pairings Unpair ends: `grant` and any other this device holds with
+    /// the same device, the one asked for first.
+    static func pairings(endedBy grant: DeviceGrant, in grants: [DeviceGrant]) -> [DeviceGrant] {
+        [grant] + grants.filter { $0.id != grant.id && $0.host.id == grant.host.id }
     }
 
     /// Back to the device's terminals. An open terminal is left first (it

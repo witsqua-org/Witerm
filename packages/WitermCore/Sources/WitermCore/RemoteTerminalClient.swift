@@ -257,8 +257,9 @@ actor RemoteRPCConnection {
           guard attached, let previous = attachedSession, let session = frame.session,
             frame.id == nil, frame.ok == nil, frame.error == nil, frame.data == nil,
             frame.status == nil, frame.sessions == nil, frame.mode == nil,
-            session.id == previous.id, session.name == previous.name,
-            session.createdAt == previous.createdAt
+            // The ID and creation time identify the session. Its name may have
+            // changed: a terminal can be renamed while it's open.
+            session.id == previous.id, session.createdAt == previous.createdAt
           else { throw RelayError.invalidMessage }
           try RemoteWire.validate(session)
           attachedSession = session

@@ -353,8 +353,6 @@
       let wrongID = LocalSessionInfo(
         id: "22222222-2222-4222-8222-222222222222", name: original.name,
         createdAt: original.createdAt, columns: 100, rows: 30)
-      let wrongName = LocalSessionInfo(
-        id: original.id, name: "Other", createdAt: original.createdAt, columns: 100, rows: 30)
       let wrongDate = LocalSessionInfo(
         id: original.id, name: original.name,
         createdAt: original.createdAt.addingTimeInterval(1), columns: 100, rows: 30)
@@ -363,7 +361,6 @@
         createdAt: original.createdAt, columns: 19, rows: 30)
       let variants = [
         LocalAgentFrame(kind: .geometry, session: wrongID),
-        LocalAgentFrame(kind: .geometry, session: wrongName),
         LocalAgentFrame(kind: .geometry, session: wrongDate),
         LocalAgentFrame(kind: .geometry, session: invalidSize),
         LocalAgentFrame(kind: .geometry, session: original, data: Data([0])),
@@ -390,6 +387,26 @@
           XCTFail("invalid geometry accepted")
         } catch { XCTAssertEqual(error as? LocalAgentClientError, .invalidResponse) }
       }
+    }
+
+    /// A terminal renamed while open keeps its attachment: the next geometry
+    /// carries the new name, and the ID and creation time still match.
+    func testGeometryAfterRenameKeepsTheAttachment() async throws {
+      let original = Self.session
+      let renamed = LocalSessionInfo(
+        id: original.id, name: "Renamed", createdAt: original.createdAt, columns: 100, rows: 30)
+      let broker = try LocalTestBroker { request, descriptor in
+        try LocalTestBroker.send(
+          LocalAgentFrame(id: request.id, kind: .response, ok: true, session: original, mode: request.mode),
+          to: descriptor)
+        try LocalTestBroker.send(LocalAgentFrame(kind: .geometry, session: renamed), to: descriptor)
+      }
+      defer { broker.stop() }
+      let attachment = try await LocalAgentClient(socketURL: broker.socketURL).attach(sessionID: original.id)
+      var events = attachment.events.makeAsyncIterator()
+      let event = try await events.next()
+      XCTAssertEqual(event, .geometry(renamed))
+      await attachment.disconnect()
     }
 
     func testReadOnlyAttachmentRejectsInputAndResize() async throws {

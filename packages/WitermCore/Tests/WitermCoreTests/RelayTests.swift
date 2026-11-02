@@ -1145,8 +1145,6 @@ final class RelayTests: XCTestCase {
     let otherID = LocalSessionInfo(
       id: "88888888-8888-4888-8888-888888888888", name: original.name,
       createdAt: original.createdAt, columns: 100, rows: 30)
-    let otherName = LocalSessionInfo(
-      id: original.id, name: "Other", createdAt: original.createdAt, columns: 100, rows: 30)
     let otherDate = LocalSessionInfo(
       id: original.id, name: original.name,
       createdAt: original.createdAt.addingTimeInterval(1), columns: 100, rows: 30)
@@ -1154,7 +1152,6 @@ final class RelayTests: XCTestCase {
       id: original.id, name: original.name, createdAt: original.createdAt, columns: 100, rows: 201)
     let variants = [
       LocalAgentFrame(kind: .geometry, session: otherID),
-      LocalAgentFrame(kind: .geometry, session: otherName),
       LocalAgentFrame(kind: .geometry, session: otherDate),
       LocalAgentFrame(kind: .geometry, session: invalidSize),
       LocalAgentFrame(kind: .geometry, session: original, data: Data([0])),
@@ -1192,6 +1189,34 @@ final class RelayTests: XCTestCase {
       await rpc.close()
       await host.close()
     }
+  }
+
+  /// A terminal renamed on the Mac while a paired device has it open: the
+  /// next geometry carries the new name and the attachment stays.
+  func testRemoteGeometryAfterRenameKeepsTheAttachment() async throws {
+    let original = LocalSessionInfo(
+      id: "77777777-7777-4777-8777-777777777777", name: "Shell",
+      createdAt: Date(timeIntervalSince1970: 1_700_000_000), columns: 80, rows: 24)
+    let renamed = LocalSessionInfo(
+      id: original.id, name: "Renamed", createdAt: original.createdAt, columns: 100, rows: 30)
+    let p = try RelayTestPeers()
+    let (client, host, _, _) = try await p.channels()
+    let server = Task {
+      let request = try RemoteWire.decoder().decode(LocalAgentRequest.self, from: await host.receive())
+      try await host.send(RemoteWire.encoder().encode(
+        LocalAgentFrame(id: request.id, kind: .response, ok: true, session: original, mode: .view)))
+      try await host.send(RemoteWire.encoder().encode(LocalAgentFrame(kind: .geometry, session: renamed)))
+    }
+    let rpc = RemoteRPCConnection(channel: client)
+    await rpc.start()
+    _ = try await rpc.request(
+      LocalAgentRequest(operation: .attach, sessionID: original.id, columns: 80, rows: 24, mode: .view))
+    var events = rpc.events.makeAsyncIterator()
+    let event = try await events.next()
+    XCTAssertEqual(event, .geometry(renamed))
+    try await server.value
+    await rpc.close()
+    await host.close()
   }
 
   func testViewGrantRejectsControlBeforeOpeningNetwork() async throws {
