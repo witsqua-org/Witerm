@@ -325,6 +325,8 @@ import XCTest
         let app = XCUIApplication()
         app.launchArguments = ["-witerm.onboarding.completedVersion", "1", "--witerm-ui-test-steady-terminal-cursor",
                                "-witerm.commandSnippets", "<\(hex)>", "--witerm-ui-test-layout-probe", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        // Round 15's renderer trial (DEBUG builds): `WITERM_RENDERER=metal`.
+        if let renderer = environment["WITERM_RENDERER"] { app.launchArguments += ["-witerm.debug.renderer", renderer] }
         addTeardownBlock { await MainActor.run { app.terminate() } }
         app.launch()
         func shot(_ name: String) {

@@ -91,6 +91,11 @@ import XCTest
         app.launchArguments = ["-witerm.onboarding.completedVersion", "1", "--witerm-ui-test-steady-terminal-cursor",
                                "--witerm-ui-test-layout-probe", "-witerm.commandSnippets", "<\(hex)>",
                                "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        // Round 15's renderer trial (DEBUG builds): `WITERM_RENDERER=metal`,
+        // and `WITERM_METAL_RAW=1` for SwiftTerm's renderer without Witerm's fixes.
+        let environment = ProcessInfo.processInfo.environment
+        if let renderer = environment["WITERM_RENDERER"] { app.launchArguments += ["-witerm.debug.renderer", renderer] }
+        if environment["WITERM_METAL_RAW"] == "1" { app.launchArguments += ["-witerm.debug.metalRaw", "YES"] }
         addTeardownBlock { await MainActor.run { app.terminate() } }
         app.launch()
         XCUIDevice.shared.orientation = .portrait
@@ -680,6 +685,7 @@ import XCTest
         XCTAssertGreaterThan(frames, 0, "The probe must have seen the scroll")
         XCTAssertLessThan(readings / max(1, frames), 0.1, "A touch scroll must not rebuild the reading page every frame")
         shot("r14-smooth-1-scrolled-back")
+        report("r15_memory_after_100k_mb", probe("mem") ?? -1, "%.1f")
         let latest = app.buttons["terminalJumpToLatest"]
         if latest.waitForExistence(timeout: 3) { latest.tap() }
         XCTAssertNotNil(until(5) { lastLine().hasSuffix("~$") })
@@ -723,6 +729,7 @@ import XCTest
         XCTAssertGreaterThan(pinch["pinchsteps"] ?? 0, 0, "The probe must have seen the pinch")
         XCTAssertLessThanOrEqual(pinch["layouts"] ?? 99, 2, "Pinching must not lay the terminal out at every step")
         shot("r14-smooth-3-pinched")
+        report("r15_memory_after_3m_and_pinch_mb", probe("mem") ?? -1, "%.1f")
         XCTAssertGreaterThan(probe("cell") ?? 0, cell, "Pinching out must enlarge the text")
         XCTAssertNotEqual(probedGrid(), gridBefore, "Pinching out must reflow the grid")
         let host = try XCTUnwrap(stty())
@@ -889,6 +896,92 @@ import XCTest
         shot("r15-handles-4-pasted")
         app.buttons["terminalInterrupt"].tap()
         XCTAssertNotNil(until(5) { lastLine().hasSuffix("~$") })
+        disconnectAndRemove(name, fingerprint: fingerprint)
+    }
+
+    // MARK: Round 15: renderer trial
+
+    /// Changes Terminal Display, opened from the bar's actions menu: toggles
+    /// Increase Terminal Contrast, or picks a color scheme by its title.
+    private func changeTerminalDisplay(scheme: String? = nil) {
+        let actions = app.buttons["sshSessionActions"]
+        if !actions.isHittable, keyboard.exists { app.buttons["sshKeyboard"].tap() }
+        XCTAssertNotNil(until(5) { actions.isHittable })
+        actions.tap()
+        let display = app.buttons["Terminal Display"]
+        XCTAssertTrue(display.waitForExistence(timeout: 5))
+        display.tap()
+        let contrast = app.switches["terminalHighContrast"]
+        XCTAssertTrue(contrast.waitForExistence(timeout: 5))
+        if let scheme {
+            app.buttons["terminalColorScheme"].tap()
+            let choice = app.buttons[scheme].firstMatch
+            XCTAssertTrue(choice.waitForExistence(timeout: 5), "The \(scheme) scheme must be offered")
+            choice.tap()
+            _ = until(1) { false }
+        } else {
+            contrast.tap()
+        }
+        app.buttons["closeTerminalAppearance"].tap()
+        XCTAssertNotNil(until(5) { !contrast.exists })
+        _ = until(1) { false }
+    }
+
+    /// Screens to compare the two renderers by eye, with the same steps:
+    /// the prompt and cursor, a selection with its handles and menu, Increase
+    /// Terminal Contrast on and off again, landscape, scrolled back, and
+    /// after Jump to Latest. Run with `WITERM_RENDERER=metal` (and
+    /// `WITERM_METAL_RAW=1`) and without; `WITERM_SHOTS_DIR` keeps the
+    /// captures. The reading text (what VoiceOver reads) is checked either way.
+    func testRendererTrialScreens() throws {
+        continueAfterFailure = true
+        executionTimeAllowance = 300
+        let expected = ProcessInfo.processInfo.environment["WITERM_RENDERER"] == "metal" ? "metal" : "coretext"
+        let (name, fingerprint) = try connectWithWords("R15 Render")
+        XCTAssertTrue(terminal.label.contains(" renderer=" + expected), "The probe must report the \(expected) renderer")
+        app.buttons["sshKeyboard"].tap()
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+        _ = until(1) { false }
+        shot("r15-render-\(expected)-1-prompt")
+        XCTAssertTrue(lastLine().hasSuffix("~$"), "The reading text ends with the prompt")
+        app.buttons["sshKeyboard"].tap()
+        XCTAssertNotNil(until(5) { !keyboard.exists })
+
+        terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.35)).press(forDuration: 0.8)
+        XCTAssertTrue(copyItem.waitForExistence(timeout: 5))
+        _ = until(0.5) { false }
+        XCTAssertEqual(selected(), Self.word.count)
+        shot("r15-render-\(expected)-2-selection")
+        terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8)).tap()
+        XCTAssertNotNil(until(3) { selected() == 0 })
+
+        changeTerminalDisplay()
+        shot("r15-render-\(expected)-3-contrast-on")
+        changeTerminalDisplay()
+        shot("r15-render-\(expected)-4-contrast-off")
+        // A scheme with its own text color (Ocean's is navy), then back.
+        changeTerminalDisplay(scheme: "Ocean")
+        shot("r15-render-\(expected)-4b-ocean")
+        changeTerminalDisplay(scheme: "System")
+        shot("r15-render-\(expected)-4c-system")
+
+        XCUIDevice.shared.orientation = .landscapeLeft
+        _ = until(3) { terminal.frame.width > terminal.frame.height }
+        _ = until(1) { false }
+        shot("r15-render-\(expected)-5-landscape")
+        XCUIDevice.shared.orientation = .portrait
+        _ = until(3) { terminal.frame.width < terminal.frame.height }
+
+        terminal.swipeDown(velocity: .fast)
+        let latest = app.buttons["terminalJumpToLatest"]
+        XCTAssertTrue(latest.waitForExistence(timeout: 5), "Scrolled back shows Jump to Latest")
+        _ = until(2) { false }
+        shot("r15-render-\(expected)-6-scrolled-back")
+        latest.tap()
+        XCTAssertNotNil(until(5) { lastLine().hasSuffix("~$") }, "Jump to Latest returns to the prompt")
+        _ = until(1) { false }
+        shot("r15-render-\(expected)-7-latest")
+        report("r15_memory_\(expected)_mb", probe("mem") ?? -1, "%.1f")
         disconnectAndRemove(name, fingerprint: fingerprint)
     }
 }

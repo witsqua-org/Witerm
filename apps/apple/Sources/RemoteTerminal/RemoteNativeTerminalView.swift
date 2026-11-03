@@ -3,6 +3,7 @@ import SwiftUI
 import UIKit
 import UIKit.UIGestureRecognizerSubclass
 import SwiftTerm
+import MetalKit
 import UniformTypeIdentifiers
 import WitermCore
 
@@ -661,6 +662,8 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
                 installedPalette = palette
             }
             paletteDark = dark
+            // The handles the Metal trial draws follow the tint.
+            terminal.updateMetalHandles()
         }
 
         func updateAppearance(highContrast: Bool, scheme: ColorScheme?, palette: TerminalColorScheme = .system) {
@@ -730,6 +733,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
                     + " events=" + Self.probeEvents.joined(separator: ",")
                     + " gridlog=" + probeGridLog.joined(separator: ">")
                     + probeSelection()
+                    + (terminal.isUsingMetalRenderer ? " renderer=metal" : " renderer=coretext")
             }
             #endif
         }
@@ -798,6 +802,11 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             var draws = 0, drawTotal = 0.0, drawWorst = 0.0
             var layouts = 0, layoutTotal = 0.0, readings = 0
             var pinchSteps = 0, pinchStepWorst = 0.0
+            /// Main-thread busy time between frames (everything the run loop
+            /// did: output parsing, layout, drawing, Core Animation's commit
+            /// with Core Graphics' rasterizing, Metal's encoding), and the
+            /// drawing the probe times, per frame.
+            var busy: [Double] = [], draw: [Double] = []
         }
         private var motionLink: CADisplayLink?
         private var motionLast: CFTimeInterval = 0
@@ -806,6 +815,12 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         private var motionReport = ""
         private var pinchEndedAt: CFTimeInterval?
         private var pinchSettle = ""
+        /// Run-loop observers for when the main thread wakes and sleeps.
+        /// (Bracketing Core Animation's commit with observers either side of
+        /// its order measured nothing on iOS 27; Time Profiler splits it.)
+        private var busyObservers: [CFRunLoopObserver] = []
+        private var awakeSince: CFTimeInterval?
+        private var busyThisFrame = 0.0, drawThisFrame = 0.0
 
         func probeMotion() {
             guard Self.layoutProbe else { return }
@@ -816,6 +831,48 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             let link = CADisplayLink(target: self, selector: #selector(probeFrame(_:)))
             link.add(to: .main, forMode: .common)
             motionLink = link
+            startBusyObservers()
+        }
+
+        private func startBusyObservers() {
+            busyThisFrame = 0; drawThisFrame = 0
+            awakeSince = CACurrentMediaTime()
+            func observe(_ activities: CFRunLoopActivity, _ order: CFIndex, _ body: @escaping @MainActor (CFRunLoopActivity) -> Void) {
+                let observer = CFRunLoopObserverCreateWithHandler(nil, activities.rawValue, true, order) { _, activity in
+                    MainActor.assumeIsolated { body(activity) }
+                }
+                if let observer {
+                    CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
+                    busyObservers.append(observer)
+                }
+            }
+            // First after waking, last before sleeping: the run loop's awake time.
+            observe(.afterWaiting, CFIndex.min) { [weak self] _ in self?.awakeSince = CACurrentMediaTime() }
+            observe(.beforeWaiting, CFIndex.max) { [weak self] _ in
+                guard let self, let since = self.awakeSince else { return }
+                self.busyThisFrame += CACurrentMediaTime() - since
+                self.awakeSince = nil
+            }
+        }
+
+        private func stopBusyObservers() {
+            for observer in busyObservers { CFRunLoopObserverInvalidate(observer) }
+            busyObservers = []
+        }
+
+        /// Ends the frame's busy time at the display link, which runs while awake.
+        private func closeBusyFrame() {
+            let now = CACurrentMediaTime()
+            if let since = awakeSince { busyThisFrame += now - since; awakeSince = now }
+            motion.busy.append(busyThisFrame)
+            motion.draw.append(drawThisFrame)
+            busyThisFrame = 0; drawThisFrame = 0
+        }
+
+        private static func percentile(_ values: [Double], _ p: Double) -> Double {
+            guard !values.isEmpty else { return 0 }
+            let sorted = values.sorted()
+            return sorted[min(sorted.count - 1, Int((Double(sorted.count - 1) * p).rounded()))]
         }
 
         @objc private func probeFrame(_ link: CADisplayLink) {
@@ -825,22 +882,31 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
                 motion.worst = max(motion.worst, delta)
                 motion.nominal = link.duration
                 if delta > link.duration * 1.5 { motion.hitches += 1 }
+                closeBusyFrame()
+            } else {
+                busyThisFrame = 0; drawThisFrame = 0
             }
             motionLast = link.timestamp
             guard link.timestamp - motionAt > 0.4, pinchStartSize == nil else { return }
             link.invalidate()
             motionLink = nil
+            stopBusyObservers()
             let m = motion
+            func mean(_ values: [Double]) -> Double { values.isEmpty ? 0 : values.reduce(0, +) / Double(values.count) * 1000 }
             motionReport = String(format: "frames:%d,hitches:%d,worstms:%.1f,nominalms:%.1f,draws:%d,drawms:%.2f,drawworstms:%.2f,layouts:%d,layoutms:%.2f,readings:%d,pinchsteps:%d,pinchstepworstms:%.2f",
                                   m.frames, m.hitches, m.worst * 1000, m.nominal * 1000, m.draws, m.draws > 0 ? m.drawTotal / Double(m.draws) * 1000 : 0,
                                   m.drawWorst * 1000, m.layouts, m.layouts > 0 ? m.layoutTotal / Double(m.layouts) * 1000 : 0, m.readings,
                                   m.pinchSteps, m.pinchStepWorst * 1000)
+                + String(format: ",busyms:%.2f,busyp95ms:%.2f,busyworstms:%.2f,drawframems:%.2f,drawframep95ms:%.2f",
+                         mean(m.busy), Self.percentile(m.busy, 0.95) * 1000, (m.busy.max() ?? 0) * 1000,
+                         mean(m.draw), Self.percentile(m.draw, 0.95) * 1000)
             refreshReadingDocument()
         }
 
         private func probeDraw(_ seconds: CFTimeInterval) {
             guard motionLink != nil else { return }
             motion.draws += 1
+            drawThisFrame += seconds
             motion.drawTotal += seconds
             motion.drawWorst = max(motion.drawWorst, seconds)
         }
@@ -1306,6 +1372,10 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
+            #if DEBUG || WITERM_RENDERER_TRIAL
+            // SwiftTerm's Metal renderer attaches once the view is in a window.
+            if window != nil, RendererTrial.usesMetal, !isUsingMetalRenderer { startMetalTrial() }
+            #endif
             guard window != nil, focusesWhenShown, acceptsInput else { return }
             focusesWhenShown = false
             // After this layout pass, like the keyboard button's request.
@@ -1465,7 +1535,8 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         var drawObserver: ((CFTimeInterval) -> Void)?
 
         override func draw(_ layer: CALayer, in ctx: CGContext) {
-            guard let drawObserver else { return super.draw(layer, in: ctx) }
+            // With Metal, the Metal view's frames are timed instead.
+            guard let drawObserver, !isUsingMetalRenderer else { return super.draw(layer, in: ctx) }
             let started = CACurrentMediaTime()
             super.draw(layer, in: ctx)
             drawObserver(CACurrentMediaTime() - started)
@@ -1531,6 +1602,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         override var contentOffset: CGPoint {
             didSet {
                 if oldValue != contentOffset {
+                    alignMetalRows()
                     requestReadingRefresh(output: false)
                     scrollStateChanged?(false)
                 }
@@ -1547,9 +1619,149 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
 
         override func selectionChanged(source: Terminal) {
             super.selectionChanged(source: source)
+            updateMetalHandles()
             readingChanged?(false)
         }
+
+        // MARK: Renderer trial
+
+        /// SwiftTerm's Metal renderer draws no selection handles (its Core
+        /// Graphics path draws them with the text), so Witerm draws the same
+        /// line and 12 pt knob over it, in the handle color.
+        private var metalHandles: [CAShapeLayer] = []
+        /// Witerm's fixes for the Metal renderer are on (off with `metalRaw`).
+        private var fixesMetal = false
+        private weak var trialMetalView: MTKView?
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            alignMetalRows()
+            updateMetalHandles()
+        }
+
+        /// SwiftTerm 1.19's Metal renderer draws whole rows from the top of
+        /// its view, starting at the first row the scroll offset reaches, and
+        /// ignores the part of that row scrolled past: the text sat up to a
+        /// row lower than where touches, selection and its handles put it,
+        /// and moved in whole-row steps while the content scrolled smoothly.
+        /// Moving its view up by that part puts every row where it belongs.
+        /// (The renderer still can't draw below its first row plus the view's
+        /// height, so up to a row at the bottom stays blank, the prompt's foot
+        /// included; that needs SwiftTerm itself.) Under it, a plain view in
+        /// the terminal's background covers what the Core Graphics layer
+        /// leaves there.
+        private func alignMetalRows() {
+            guard fixesMetal, let metalView = trialMetalView else { return }
+            if metalBackdrop.superview !== self { insertSubview(metalBackdrop, belowSubview: metalView) }
+            if metalBackdrop.frame != bounds { metalBackdrop.frame = bounds }
+            let height = cell.height
+            guard height > 0 else { return }
+            // SwiftTerm's content is its lines times the row height, as the renderer counts them.
+            let offset = min(max(0, contentOffset.y), max(0, contentSize.height - bounds.height))
+            let part = offset - (offset / height).rounded(.down) * height
+            let origin = CGPoint(x: bounds.minX, y: bounds.minY - part)
+            if metalView.frame.origin != origin { metalView.frame.origin = origin }
+        }
+
+        private let metalBackdrop: UIView = {
+            let view = UIView()
+            view.isUserInteractionEnabled = false
+            view.isAccessibilityElement = false
+            return view
+        }()
+
+        func updateMetalHandles() {
+            guard isUsingMetalRenderer, fixesMetal else { return }
+            metalBackdrop.backgroundColor = nativeBackgroundColor
+            if metalHandles.isEmpty {
+                metalHandles = [CAShapeLayer(), CAShapeLayer()]
+                for handle in metalHandles {
+                    handle.lineWidth = 2
+                    layer.addSublayer(handle)
+                }
+            }
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            defer { CATransaction.commit() }
+            guard let knobs = selectionKnobs() else {
+                for handle in metalHandles where !handle.isHidden { handle.isHidden = true }
+                return
+            }
+            let rise = Self.knobRadius + cell.height
+            let color = selectionHandleColor.resolvedColor(with: traitCollection).cgColor
+            for (index, knob) in [knobs.start, knobs.end].enumerated() {
+                let path = CGMutablePath()
+                // The start's line runs down from its knob, the end's up to it.
+                path.move(to: knob)
+                path.addLine(to: CGPoint(x: knob.x, y: knob.y + (index == 0 ? rise : -rise)))
+                path.addEllipse(in: CGRect(x: knob.x - Self.knobRadius, y: knob.y - Self.knobRadius,
+                                           width: Self.knobRadius * 2, height: Self.knobRadius * 2))
+                let handle = metalHandles[index]
+                handle.path = path
+                handle.fillColor = color
+                handle.strokeColor = color
+                handle.isHidden = false
+                // Above the Metal view, which SwiftTerm may add after us.
+                handle.zPosition = 1
+            }
+        }
+
+        #if DEBUG || WITERM_RENDERER_TRIAL
+        private func startMetalTrial() {
+            do { try setUseMetal(true) } catch { return }
+            trialMetalView = subviews.first(where: { $0 is MTKView }) as? MTKView
+            #if DEBUG
+            if let metal = trialMetalView, let renderer = metal.delegate {
+                let probe = MetalDrawProbe(renderer: renderer)
+                probe.observer = { [weak self] in self?.drawObserver?($0) }
+                metalProbe = probe
+                metal.delegate = probe
+            }
+            #endif
+            fixesMetal = !RendererTrial.raw
+            alignMetalRows()
+            updateMetalHandles()
+        }
+        #endif
+
+        #if DEBUG
+        private var metalProbe: MetalDrawProbe?
+        #endif
     }
+
+    #if DEBUG || WITERM_RENDERER_TRIAL
+    /// Which renderer draws iOS terminals, for measuring only, never in
+    /// product UI: launching with `-witerm.debug.renderer metal` selects
+    /// SwiftTerm's Metal renderer; anything else keeps Core Graphics, the
+    /// default. Debug builds only (or builds with `WITERM_RENDERER_TRIAL`).
+    enum RendererTrial {
+        static let usesMetal = UserDefaults.standard.string(forKey: "witerm.debug.renderer") == "metal"
+        /// `-witerm.debug.metalRaw YES`: SwiftTerm's Metal renderer as it
+        /// comes, without Witerm's handles and color refresh, for comparison.
+        static let raw = UserDefaults.standard.bool(forKey: "witerm.debug.metalRaw")
+    }
+    #endif
+
+    #if DEBUG
+    /// Times the Metal renderer's frames (main-thread CPU: building rows and
+    /// encoding; the GPU's own time isn't included) for the motion probe.
+    @MainActor final class MetalDrawProbe: NSObject, MTKViewDelegate {
+        private let renderer: any MTKViewDelegate
+        var observer: ((CFTimeInterval) -> Void)?
+
+        init(renderer: any MTKViewDelegate) { self.renderer = renderer }
+
+        func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
+            renderer.mtkView(view, drawableSizeWillChange: size)
+        }
+
+        func draw(in view: MTKView) {
+            let started = CACurrentMediaTime()
+            renderer.draw(in: view)
+            observer?(CACurrentMediaTime() - started)
+        }
+    }
+    #endif
 
     /// A touch that lands while the output is still moving (a fling's
     /// coast, here or in the grid's sideways scroll) only stops it, as
