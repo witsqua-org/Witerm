@@ -546,34 +546,63 @@ private struct AddressChips: View {
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        // One row when it fits; otherwise one chip per line, so the host,
-        // the thing to check, is never cut short.
-        ViewThatFits(in: .horizontal) {
-            if !typeSize.isAccessibilitySize {
-                HStack(spacing: 6) { chips(wrapping: false) }
-            }
-            VStack(alignment: .leading, spacing: 6) { chips(wrapping: true) }
-        }
+        // Chips flow like words: as many per line as fit, so the host, the
+        // thing to check, is never cut short; one longer than a line wraps
+        // between characters.
+        ChipFlow(spacing: 6) { chips() }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(localized: "User \(parsed.username) · Host \(parsed.hostname) · Port \(String(parsed.port))", bundle: .main))
         .accessibilityIdentifier("sshAddressSummary")
     }
 
-    @ViewBuilder private func chips(wrapping: Bool) -> some View {
-        chip(String(localized: "User", bundle: .main), parsed.username, wrapping: wrapping)
-        chip(String(localized: "Host", bundle: .main), parsed.hostname, wrapping: wrapping)
-        chip(String(localized: "Port", bundle: .main), String(parsed.port), wrapping: wrapping)
+    @ViewBuilder private func chips() -> some View {
+        chip(String(localized: "User", bundle: .main), parsed.username)
+        chip(String(localized: "Host", bundle: .main), parsed.hostname)
+        chip(String(localized: "Port", bundle: .main), String(parsed.port))
     }
 
-    /// A wrapping chip breaks between characters, never with a hyphen.
-    private func chip(_ label: String, _ value: String, wrapping: Bool) -> some View {
+    /// A chip longer than a line breaks between characters, never with a hyphen.
+    private func chip(_ label: String, _ value: String) -> some View {
         (Text(label + " ").foregroundStyle(WitermTheme.secondary) + Text(verbatim: value.breakingAnywhere).fontWeight(.semibold))
             .font(WitermType.meta)
-            .fixedSize(horizontal: !wrapping, vertical: true)
+            .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, WitermMetrics.Space.s)
             .padding(.vertical, 3)
             .background(WitermTheme.statusFill, in: .capsule)
             .witermOutline(Capsule())
+    }
+}
+
+/// Lays chips out left to right, starting a new line when the next one
+/// doesn't fit; a chip wider than a line gets the whole line.
+private struct ChipFlow: Layout {
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? .infinity
+        return arrange(subviews, width: width).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (subview, frame) in zip(subviews, arrange(subviews, width: bounds.width).frames) {
+            subview.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
+                          proposal: ProposedViewSize(frame.size))
+        }
+    }
+
+    private func arrange(_ subviews: Subviews, width: CGFloat) -> (frames: [CGRect], size: CGSize) {
+        var frames: [CGRect] = []
+        var x: CGFloat = 0, y: CGFloat = 0, line: CGFloat = 0, widest: CGFloat = 0
+        for subview in subviews {
+            var size = subview.sizeThatFits(.unspecified)
+            if size.width > width { size = subview.sizeThatFits(ProposedViewSize(width: width, height: nil)) }
+            if x > 0, x + size.width > width { x = 0; y += line + spacing; line = 0 }
+            frames.append(CGRect(origin: CGPoint(x: x, y: y), size: CGSize(width: min(size.width, width), height: size.height)))
+            x += size.width + spacing
+            line = max(line, size.height)
+            widest = max(widest, min(x - spacing, width))
+        }
+        return (frames, CGSize(width: widest, height: y + line))
     }
 }
 
