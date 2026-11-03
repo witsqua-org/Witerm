@@ -6,7 +6,9 @@ import Foundation
 /// A single PTY channel. The lock protects lifecycle and pending input bytes;
 /// the channel handler and reply queue are exclusively event-loop owned.
 public final class SSHShell: @unchecked Sendable {
-    public let output: AsyncThrowingStream<Data, Error>
+    /// The shell's output in arrival order. Reading it is what lets more
+    /// arrive; nothing is ever dropped (see `SSHOutputFlow`).
+    public let output: SSHShellOutput
     internal let id = UUID()
     private let channel: Channel
     private let continuation: AsyncThrowingStream<Data, Error>.Continuation
@@ -14,19 +16,24 @@ public final class SSHShell: @unchecked Sendable {
     private var closed = false
     private var pendingInput = 0
 
-    private init(channel: Channel, output: AsyncThrowingStream<Data, Error>,
+    private init(channel: Channel, output: SSHShellOutput,
                  continuation: AsyncThrowingStream<Data, Error>.Continuation) {
         self.channel = channel; self.output = output; self.continuation = continuation
     }
 
     internal static func open(client: SSHClient, columns: Int, rows: Int) async throws -> SSHShell {
         try validateDimensions(columns, rows)
-        let pair = AsyncThrowingStream<Data, Error>.makeStream(bufferingPolicy: .bufferingOldest(64))
-        let handler = SSHPTYHandler(continuation: pair.continuation)
+        // Unbounded in elements, bounded in bytes by the flow: past its high
+        // water mark the channel stops reading and the SSH window holds the
+        // host back. A fixed element count dropped output, and with it the
+        // session, whenever one socket read carried more than it (`seq 1 100000`).
+        let pair = AsyncThrowingStream<Data, Error>.makeStream(bufferingPolicy: .unbounded)
+        let flow = SSHOutputFlow()
+        let handler = SSHPTYHandler(continuation: pair.continuation, flow: flow)
         let channel = try await client.createSessionChannel { channel in
             channel.pipeline.addHandler(handler)
         }
-        let shell = SSHShell(channel: channel, output: pair.stream, continuation: pair.continuation)
+        let shell = SSHShell(channel: channel, output: SSHShellOutput(stream: pair.stream, flow: flow), continuation: pair.continuation)
         pair.continuation.onTermination = { [weak shell] _ in
             guard let shell else { return }
             Task { await shell.close() }
@@ -96,14 +103,86 @@ public final class SSHShell: @unchecked Sendable {
     deinit { continuation.finish(); channel.close(promise: nil) }
 }
 
-private final class SSHPTYHandler: ChannelInboundHandler, @unchecked Sendable {
+/// Shell output as an async sequence; each element read is counted as
+/// consumed, which is what resumes a channel the flow paused.
+public struct SSHShellOutput: AsyncSequence, Sendable {
+    public typealias Element = Data
+    let stream: AsyncThrowingStream<Data, Error>
+    let flow: SSHOutputFlow
+
+    public struct AsyncIterator: AsyncIteratorProtocol {
+        var base: AsyncThrowingStream<Data, Error>.AsyncIterator
+        let flow: SSHOutputFlow
+
+        public mutating func next() async throws -> Data? {
+            let data = try await base.next()
+            if let data { flow.consumed(data.count) }
+            return data
+        }
+    }
+
+    public func makeAsyncIterator() -> AsyncIterator { AsyncIterator(base: stream.makeAsyncIterator(), flow: flow) }
+}
+
+/// Bytes the shell produced that its reader hasn't taken yet. Above
+/// `highWater` the channel's next read waits (`park`) until the reader is
+/// back under `lowWater`; meanwhile NIOSSH holds what arrived without
+/// widening the SSH window, so the host pauses rather than flooding memory.
+final class SSHOutputFlow: @unchecked Sendable {
+    static let highWater = 1 << 20
+    static let lowWater = 256 << 10
+    private let lock = NSLock()
+    private var queued = 0
+    private var resume: (() -> Void)?
+
+    func produced(_ count: Int) { lock.withLock { queued += count } }
+
+    var isAboveHighWater: Bool { lock.withLock { queued > Self.highWater } }
+
+    /// Keeps `resume` for when the reader catches up. False when it already
+    /// has, and the caller should read now.
+    func park(_ resume: @escaping () -> Void) -> Bool {
+        lock.withLock {
+            guard queued > Self.lowWater else { return false }
+            self.resume = resume
+            return true
+        }
+    }
+
+    func consumed(_ count: Int) {
+        let resume = lock.withLock { () -> (() -> Void)? in
+            queued -= count
+            guard queued <= Self.lowWater, let waiting = self.resume else { return nil }
+            self.resume = nil
+            return waiting
+        }
+        resume?()
+    }
+}
+
+private final class SSHPTYHandler: ChannelDuplexHandler, @unchecked Sendable {
     typealias InboundIn = SSHChannelData
+    typealias OutboundIn = SSHChannelData
+    typealias OutboundOut = SSHChannelData
     private let continuation: AsyncThrowingStream<Data, Error>.Continuation
+    private let flow: SSHOutputFlow
     private var reply: EventLoopPromise<Void>?
     private var replyTimeout: Scheduled<Void>?
     private var ended = false
 
-    init(continuation: AsyncThrowingStream<Data, Error>.Continuation) { self.continuation = continuation }
+    init(continuation: AsyncThrowingStream<Data, Error>.Continuation, flow: SSHOutputFlow) {
+        self.continuation = continuation; self.flow = flow
+    }
+
+    /// Reads wait while the reader is far behind; see `SSHOutputFlow`.
+    func read(context: ChannelHandlerContext) {
+        if flow.isAboveHighWater {
+            let loop = context.eventLoop
+            let bound = NIOLoopBound(context, eventLoop: loop)
+            if flow.park({ loop.execute { bound.value.read() } }) { return }
+        }
+        context.read()
+    }
 
     func request<Event: Sendable>(channel: Channel, event: Event) async throws {
         try await channel.eventLoop.flatSubmit { () -> EventLoopFuture<Void> in
@@ -125,9 +204,10 @@ private final class SSHPTYHandler: ChannelInboundHandler, @unchecked Sendable {
               incoming.type == .channel || incoming.type == .stdErr else {
             fail(SSHFailure.disconnected, channel: context.channel); return
         }
-        // Each buffered element is <=8KiB, so 64 queued elements are <=512KiB.
+        // Elements of at most 8 KiB; the flow bounds how many bytes wait.
         while bytes.readableBytes > 0 {
             guard let part = bytes.readBytes(length: min(bytes.readableBytes, 8192)) else { break }
+            flow.produced(part.count)
             switch continuation.yield(Data(part)) {
             case .enqueued: break
             case .dropped: fail(SSHFailure.backpressure, channel: context.channel); return

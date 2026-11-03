@@ -87,6 +87,33 @@ private actor SSHVerifiedAuthorities {
         } catch { await connection.disconnect(); throw error }
     }
 
+    /// Long output that arrives faster than it's read: the channel pauses
+    /// the host instead of dropping output and ending the session.
+    func testLongOutputWithSlowReaderLosesNothing() async throws {
+        let fixture = try SSHFixture.load()
+        let connection = try await fixture.connect(profile: fixture.profile(), encrypted: true)
+        do {
+            let shell = try await connection.openShell(columns: 80, rows: 24)
+            try await shell.send(Data("seq 1 300000; printf 'WITERM_''SEQ_DONE\\n'\n".utf8))
+            // Nothing reads for a while, so megabytes are waiting by then.
+            try await Task.sleep(for: .seconds(2))
+            var tail = Data(), total = 0
+            for try await data in shell.output {
+                total += data.count
+                tail.append(data)
+                if tail.count > 4096 { tail = tail.suffix(4096) }
+                if String(decoding: tail, as: UTF8.self).contains("WITERM_SEQ_DONE\r\n") { break }
+            }
+            XCTAssertTrue(String(decoding: tail, as: UTF8.self).contains("300000\r\nWITERM_SEQ_DONE\r\n"))
+            XCTAssertGreaterThan(total, 2_000_000)
+            try await shell.send(Data("printf 'WITERM_''STILL_OPEN\\n'\n".utf8))
+            let (sink, reader) = read(shell)
+            defer { reader.cancel() }
+            try await sink.wait("WITERM_STILL_OPEN\r\n")
+            await connection.disconnect()
+        } catch { await connection.disconnect(); throw error }
+    }
+
     func testJumpPasswordAuthenticationAndSFTPStreamingNoOverwrite() async throws {
         let fixture = try SSHFixture.load()
         let connection = try await fixture.connect(profile: fixture.profile(jump: true), password: true)

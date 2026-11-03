@@ -143,10 +143,9 @@ struct SSHNativeTerminalView: UIViewRepresentable {
     }
 
     /// The shell's output is drained off the main thread into `batch`, and
-    /// the main thread feeds whatever has gathered in one go. The shell
-    /// buffers only 64 chunks, and a program printing line by line fills them
-    /// in moments; draining on the main thread let any pause there (layout,
-    /// an accessibility snapshot) end the session with a backpressure error.
+    /// the main thread feeds whatever has gathered in one go. While the main
+    /// thread is a megabyte behind, draining waits, so the shell's own flow
+    /// control pauses the host instead of the session ending.
     func start(_ view: TerminalView) {
         terminal = view
         stabilizeTestCursor(view)
@@ -159,6 +158,9 @@ struct SSHNativeTerminalView: UIViewRepresentable {
                     case .first: Task { @MainActor [weak self] in self?.deliver(batch) }
                     case .queued: break
                     case .overflow: throw SSHFailure.backpressure
+                    }
+                    while batch.count > SSHOutputBatch.pauseAbove {
+                        try await Task.sleep(for: .milliseconds(8))
                     }
                 }
                 try Task.checkCancellation()
@@ -305,13 +307,17 @@ struct SSHNativeTerminalView: UIViewRepresentable {
     }
 }
 
-/// Shell output waiting for the main thread. Bounded: past the limit the
-/// session ends with a backpressure error, as before, instead of growing.
+/// Shell output waiting for the main thread. The reader stops taking more
+/// past `pauseAbove`, so `limit` is only a safety net: past it the session
+/// would end with a backpressure error instead of growing.
 final class SSHOutputBatch: @unchecked Sendable {
     enum Appended { case first, queued, overflow }
     static let limit = 8 << 20
+    static let pauseAbove = 1 << 20
     private let lock = NSLock()
     private var data = Data()
+
+    var count: Int { lock.withLock { data.count } }
 
     /// `.first` when the batch was empty, so the caller schedules a delivery.
     func append(_ bytes: Data) -> Appended {
