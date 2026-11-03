@@ -364,6 +364,13 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             terminal.nativeForegroundColor = highContrast ? (dark ? .white : .black)
                 : values.map { UIColor(terminalRGB: $0.foreground) } ?? UIColor.label.resolvedColor(with: traitCollection)
             terminal.caretColor = dark ? .white : .black
+            // Selection looks like selection elsewhere in iOS: the tint's
+            // highlight behind the text, which keeps its own color, and
+            // handles in the tint.
+            let tint = terminal.tintColor.resolvedColor(with: traitCollection)
+            terminal.selectionHandleColor = tint
+            terminal.selectedTextBackgroundColor = tint.withAlphaComponent(highContrast ? 0.4 : 0.28)
+            terminal.selectedTextForegroundColor = terminal.nativeForegroundColor
             backgroundColor = terminal.nativeBackgroundColor
             if paletteDark == nil || highContrast || installedPalette != palette || (palette != .system && paletteDark != dark) {
                 terminal.installColors(TerminalPalette.colors(highContrast: highContrast, dark: dark, scheme: palette))
@@ -427,9 +434,10 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             #if DEBUG
             if Self.layoutProbe {
                 let base = readingView.accessibilityLabel?.components(separatedBy: " |").first ?? ""
-                readingView.accessibilityLabel = base + String(format: " | rows=%d yDisp=%d pos=%.3f page=%d..<%d cell=%.3f frameH=%.2f boundsH=%.2f offset=%.2f content=%.2f",
+                readingView.accessibilityLabel = base + String(format: " | rows=%d yDisp=%d pos=%.3f page=%d..<%d cell=%.3f frameH=%.2f boundsH=%.2f offset=%.2f content=%.2f mem=%.1f",
                     core.rows, core.getTopVisibleRow(), terminal.scrollPosition, page.rows.lowerBound, page.rows.upperBound,
-                    cellSize.height, terminal.frame.height, bounds.height, terminal.contentOffset.y, terminal.contentSize.height)
+                    cellSize.height, terminal.frame.height, bounds.height, terminal.contentOffset.y, terminal.contentSize.height,
+                    Self.footprintMB()) + String(format: " burst=%.3f", terminal.probeBurst.last - terminal.probeBurst.start)
             }
             #endif
         }
@@ -437,6 +445,16 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         #if DEBUG
         /// UI tests that measure layout read the grid's numbers from the label.
         private static let layoutProbe = ProcessInfo.processInfo.arguments.contains("--witerm-ui-test-layout-probe")
+
+        /// The app's memory as the system counts it, for the performance probe.
+        private static func footprintMB() -> Double {
+            var info = task_vm_info_data_t()
+            var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+            let result = withUnsafeMutablePointer(to: &info) {
+                $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count) }
+            }
+            return result == KERN_SUCCESS ? Double(info.phys_footprint) / 1_048_576 : 0
+        }
         #endif
 
         func pageReading(forward: Bool) -> Bool {
@@ -474,6 +492,8 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         private weak var pasteReview: UIViewController?
         private var editMenu: UIEditMenuInteraction?
         private var focusTapRecognizer: UITapGestureRecognizer?
+        /// Drags a selection's start or end handle; anywhere else a drag scrolls.
+        private var handleRecognizer: UIPanGestureRecognizer?
         var acceptsInput: Bool { mode == .control && inputEnabled }
         /// The view scrolled or got output; `true` for output.
         var scrollStateChanged: ((Bool) -> Void)?
@@ -519,7 +539,57 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             let menu = UIEditMenuInteraction(delegate: self)
             addInteraction(menu)
             editMenu = menu
+            let handles = UIPanGestureRecognizer(target: self, action: #selector(dragHandle(_:)))
+            handles.maximumNumberOfTouches = 1
+            addGestureRecognizer(handles)
+            // Scrolling waits only until a drag is known not to start on a handle.
+            panGestureRecognizer.require(toFail: handles)
+            handleRecognizer = handles
             allowMouseReporting = acceptsInput
+        }
+
+        /// The cell size, as the renderer lays out its rows.
+        private var cell: CGSize {
+            let core = getTerminal(), frame = getOptimalFrameSize()
+            return CGSize(width: frame.width / CGFloat(max(1, core.cols)), height: frame.height / CGFloat(max(1, core.rows)))
+        }
+
+        /// The selection's end that a touch at `point` grabs, within a
+        /// 44 pt target around its handle: the start's handle hangs above
+        /// its first character, the end's below its last.
+        func selectionHandle(near point: CGPoint) -> SelectionHandle? {
+            guard selection.active else { return nil }
+            let cell = cell
+            let (first, last) = Position.compare(selection.start, selection.end) == .before
+                ? (selection.start, selection.end) : (selection.end, selection.start)
+            let start = CGPoint(x: CGFloat(first.col) * cell.width, y: CGFloat(first.row) * cell.height)
+            let end = CGPoint(x: CGFloat(last.col) * cell.width, y: CGFloat(last.row + 1) * cell.height)
+            func distance(_ handle: CGPoint) -> CGFloat { hypot(point.x - handle.x, point.y - handle.y) }
+            let reach: CGFloat = 22 + cell.height / 2
+            let toStart = distance(start), toEnd = distance(end)
+            guard min(toStart, toEnd) <= reach else { return nil }
+            return toStart < toEnd ? .start : .end
+        }
+
+        enum SelectionHandle { case start, end }
+
+        @objc private func dragHandle(_ pan: UIPanGestureRecognizer) {
+            let point = pan.location(in: self)
+            switch pan.state {
+            case .began:
+                guard let handle = selectionHandle(near: point) else { return }
+                editMenu?.dismissMenu()
+                let (first, last) = Position.compare(selection.start, selection.end) == .before
+                    ? (selection.start, selection.end) : (selection.end, selection.start)
+                // The other end stays put while this one follows the finger.
+                selection.pivot = handle == .start ? last : first
+                UISelectionFeedbackGenerator().selectionChanged()
+            case .changed:
+                extendSelection(to: point)
+            case .ended, .cancelled:
+                editMenu?.presentEditMenu(with: UIEditMenuConfiguration(identifier: nil, sourcePoint: point))
+            default: break
+            }
         }
 
         /// The buffer position under a point in this view's coordinates,
@@ -572,6 +642,13 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         /// with the keyboard up, SwiftTerm's own tap handles links and mouse clicks.
         override func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
             if recognizer === focusTapRecognizer { return selection.active || (acceptsInput && !isFirstResponder) }
+            if recognizer === handleRecognizer { return selectionHandle(near: recognizer.location(in: self)) != nil }
+            // SwiftTerm's own selection drag (after a double tap) would move
+            // the selection's end from anywhere; here a drag away from the
+            // handles scrolls, as in other iOS text. Its mouse drag, for a
+            // program that asked for the mouse, still begins.
+            if recognizer is UIPanGestureRecognizer, recognizer !== panGestureRecognizer,
+               !(allowMouseReporting && getTerminal().mouseMode != .off) { return false }
             return super.gestureRecognizerShouldBegin(recognizer)
         }
 
@@ -773,6 +850,9 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         /// rather than once per chunk while long output streams in.
         func requestReadingRefresh(output: Bool) {
             if output { scrollStateChanged?(true) }
+            #if DEBUG
+            if output { probeOutputArrived() }
+            #endif
             readingRefreshHasOutput = readingRefreshHasOutput || output
             guard !readingRefreshQueued else { return }
             readingRefreshQueued = true
@@ -784,6 +864,19 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
                 self.readingChanged?(output)
             }
         }
+
+        #if DEBUG
+        /// The latest run of output, for the performance probe: when its
+        /// first and last deliveries reached the renderer. A pause of a
+        /// second starts a new run.
+        private(set) var probeBurst: (start: CFTimeInterval, last: CFTimeInterval) = (0, 0)
+
+        private func probeOutputArrived() {
+            let now = CACurrentMediaTime()
+            if now - probeBurst.last > 1 { probeBurst.start = now }
+            probeBurst.last = now
+        }
+        #endif
 
         /// A scroll that comes to rest within half a row of the bottom counts
         /// as back at the live screen in SwiftTerm, but the view stayed a few
