@@ -401,6 +401,8 @@ Fixed on 2026-11-03 (Round 11: iOS in the [HCI log](hci-improvements.md#round-11
 | P2 | F-16, F-17, F-18, F-19, F-20, F-21 (iOS strings), F-22, F-23 (part), F-24, F-25, F-26, F-27, F-28, F-29, F-30 (iOS), F-32, F-33 (Face ID), F-34, F-35, F-36, F-51 | F-23's full-width Paste: the system Paste button keeps its own size; F-31 (the Mac crew's key cards); F-21 and F-30 in Mac-shared views (`ConnectionFeedback`, the RSA line in the key area) |
 | P3 | F-37, F-38, F-39 (tiles), F-40, F-41, F-43, F-44, F-45, F-48, F-50 | F-42 (SwiftTerm's selection color), F-39 row heights (the system's) |
 
+**Round 12 ([HCI log](hci-improvements.md#round-12-ios)):** F-09's paired terminals in ⌘1–⌘9 and Find Next/Previous, F-21 and F-30 in shared models and views (relay and SSH error sentences, `ConnectionFeedback`, the RSA line), F-42 (selection in the app tint, with draggable handles), and F-47 in sentences and chips are fixed. Still open: F-23's full-width Paste, F-31 (Mac crew), F-39's row heights.
+
 **Distinct literal values in the 15 iOS-only files:** spacing 14 → 7, padding 12 → 6, radii 4 → 4, fonts 14 → 13, every remaining value on the token scale (tokens resolved to their iOS values). The only literal sizes left are the tour's 56 pt symbol and the rows' chevron (`footnote.semibold`). In all code compiled for iOS: spacing 15 → 9, padding 15 → 8, radii 7 → 6, fonts 23 → 22; the remainder is Mac-shared code.
 
 **Verification.**

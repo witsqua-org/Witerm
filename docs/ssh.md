@@ -8,7 +8,7 @@ Saved hosts are under **SSH Hosts** in the Mac sidebar. On iOS they're in **Term
 
 **Adding a host.** File → Add SSH Host… (⇧⌘N) on the Mac, or the add button on iOS. Type the address the way you would in a shell: `user@host`, `user@host:port`, `user@[fe80::1]:2222`, or an `ssh://` URL. The form shows what it understood as User, Host, and Port chips under the field. Then pick **Password** or **Private Key**: a **New Key** made on the device (copy its public key to the server) or an **Existing Key** file, OpenSSH Ed25519, plain or passphrase-protected.
 
-- **Connect** saves the host and connects; **Save for Later** stores it without connecting. Both sit at the bottom of the form.
+- **Connect** saves the host and connects, at the bottom of the form. Saving without connecting is **Save** in the iPhone and iPad sheet's navigation bar and **Save for Later** in the Mac sheet's footer.
 - Editing a host uses **Save** and never connects.
 - **More Options** holds the name (optional; defaults to the address) and jump hosts. It opens on its own when either is already set or has an error.
 - **Generate New Key** makes an Ed25519 key in the form and shows its public key to copy or share into the host's `~/.ssh/authorized_keys`. The private key stays on the device: in memory, or in the Keychain if **Save Credentials on This Device** is on (the form warns when it's off).
@@ -48,7 +48,8 @@ Saved hosts are under **SSH Hosts** in the Mac sidebar. On iOS they're in **Term
 
 - By default, credentials live in memory for one connection only.
 - **Save Credentials on This Device** opts into the local Keychain. Every saved password, key, and passphrase is protected by device-owner authentication: Keychain access control `.userPresence` (Face ID, Touch ID, or Optic ID, with the device passcode, or the Mac's login password, as the fallback) and `kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly`, never synced. The form says what protects them in one line ("Face ID protects them."). Saving the host alone doesn't opt in.
-- **Without a passcode** nothing can be saved: the switch is off and the line says to set one. Credentials then stay in memory for the session. There is no unprotected or file fallback.
+- **Without a passcode** nothing can be saved: the switch is off and the line says to set one. Credentials then stay in memory for the session. There is no unprotected or file fallback. Removing the passcode later makes the system delete every saved credential; the next connection asks for the password, and saving again needs a passcode.
+- **Face ID turned off for Witerm** (declined at its first prompt, or switched off in Settings → Witerm): the passcode protects saved credentials instead, and the line says so ("Your passcode protects them. Face ID is off for Witerm in Settings."). Declining Face ID at the prompt continues with the passcode in the same attempt rather than failing.
 - **Connecting with saved credentials** asks once per attempt ("Sign in to “*host*”"), and the same authentication reads every hop of a jump-host chain. Cancelling ends the attempt quietly and opens the form to type the password for that attempt; so does **Enter Password**, offered after a failed match. A credential typed then doesn't replace the saved one unless you save it. Editing a host with saved credentials asks first; cancelling leaves them as they are.
 - **Migration.** Credentials saved before protection read without a prompt until their next successful connection, which saves them again with protection.
 - Knowing which hosts have saved credentials never asks: only their attributes are read.
