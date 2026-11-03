@@ -181,6 +181,15 @@ struct MacWorkspaceView: View {
                 selection = terminals[next].destination
             }
         )
+        if case .ssh(let id) = selection, let profile = ssh.profiles.first(where: { $0.id == id }) {
+            if let session = ssh.session(for: id) {
+                actions.sshFiles = { sshUI.files = session }
+                actions.sshForwarding = { sshUI.forwarding = session }
+                actions.disconnect = { NotificationCenter.default.post(name: .witermDisconnectSSH, object: id) }
+            } else if !ssh.connecting {
+                actions.connect = { sshUI.open(profile, model: ssh) }
+            }
+        }
         if let session = selectedLocalSession {
             actions.openOn = { continuing = ContinueRequest(sessionID: session.id, target: $0) }
             actions.openOnDevices = openOnDevices

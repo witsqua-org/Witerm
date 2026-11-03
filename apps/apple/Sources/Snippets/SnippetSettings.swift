@@ -36,6 +36,7 @@ struct SnippetSections: View {
                 #endif
                 .accessibilityHint(String(localized: "Edit snippet", bundle: .main))
                 .contextMenu {
+                    Button(String(localized: "Edit Snippet", bundle: .main), systemImage: "pencil") { editing = snippet }
                     Button(String(localized: "Delete", bundle: .main), systemImage: "trash", role: .destructive) { remove(snippet.id) }
                 }
             }
@@ -94,6 +95,60 @@ private struct SnippetEditor: View {
     }
 
     var body: some View {
+        #if os(macOS)
+        // The Mac sheet shape: title, fields, then Delete leading and Cancel
+        // and Save trailing.
+        SheetScaffold(isNew ? String(localized: "New Snippet", bundle: .main) : String(localized: "Edit Snippet", bundle: .main),
+                      width: .form, onEscape: { dismiss() }) {
+            VStack(alignment: .leading, spacing: WitermMetrics.Space.s) {
+                TextField(String(localized: "Name", bundle: .main), text: $snippet.name,
+                          prompt: Text(String(localized: "Name", bundle: .main)))
+                    .textFieldStyle(.roundedBorder)
+                    .labelsHidden()
+                    .accessibilityIdentifier("snippetName")
+                TextEditor(text: $snippet.text)
+                    .font(WitermType.code)
+                    .autocorrectionDisabled()
+                    .scrollContentBackground(.hidden)
+                    .padding(WitermMetrics.Space.xs)
+                    .frame(minHeight: 120)
+                    .background(Color(nsColor: .textBackgroundColor), in: .rect(cornerRadius: WitermMetrics.Radius.s))
+                    .witermOutline(cornerRadius: WitermMetrics.Radius.s, hairline: true)
+                    .overlay(alignment: .topLeading) {
+                        if snippet.text.isEmpty {
+                            Text(String(localized: "Command", bundle: .main))
+                                .font(WitermType.code).foregroundStyle(WitermTheme.secondary)
+                                .padding(.horizontal, WitermMetrics.Space.s).padding(.vertical, WitermMetrics.Space.xs)
+                                .allowsHitTesting(false).accessibilityHidden(true)
+                        }
+                    }
+                    .accessibilityLabel(String(localized: "Command", bundle: .main))
+                    .accessibilityIdentifier("snippetText")
+                Toggle(String(localized: "Press Return after inserting", bundle: .main), isOn: $snippet.runsImmediately)
+                    .toggleStyle(.checkbox)
+                    .disabled(snippet.isMultiline)
+                    .help(snippet.isMultiline
+                          ? String(localized: "Multiline snippets are inserted like a paste and never press Return. On iPhone and iPad they're shown for review first.", bundle: .main)
+                          : String(localized: "Without Return, the command waits on the line for you to check it.", bundle: .main))
+                if let issue {
+                    Label(issue, systemImage: "exclamationmark.circle")
+                        .font(WitermType.rowDetail).foregroundStyle(WitermTheme.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        } leading: {
+            if !isNew {
+                Button(String(localized: "Delete Snippet", bundle: .main), role: .destructive) { delete(); dismiss() }
+            }
+        } trailing: {
+            Button(String(localized: "Cancel", bundle: .main)) { dismiss() }
+                .keyboardShortcut(.cancelAction)
+            Button(String(localized: "Save", bundle: .main), action: commit)
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .accessibilityIdentifier("saveSnippet")
+        }
+        #else
         NavigationStack {
             Form {
                 Section {
@@ -133,24 +188,23 @@ private struct SnippetEditor: View {
                     Button(String(localized: "Cancel", bundle: .main)) { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(String(localized: "Save", bundle: .main)) {
-                        snippet.name = snippet.name.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if let problem = CommandSnippets.validate(name: snippet.name, text: snippet.text) { issue = problem; return }
-                        if snippet.isMultiline { snippet.runsImmediately = false }
-                        save(snippet)
-                        dismiss()
-                    }
+                    Button(String(localized: "Save", bundle: .main), action: commit)
                     .accessibilityIdentifier("saveSnippet")
                 }
             }
         }
         .witermTint()
-        #if os(macOS)
-        .frame(minWidth: 420, idealWidth: 480, minHeight: 360)
-        #else
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         #endif
+    }
+
+    private func commit() {
+        snippet.name = snippet.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let problem = CommandSnippets.validate(name: snippet.name, text: snippet.text) { issue = problem; return }
+        if snippet.isMultiline { snippet.runsImmediately = false }
+        save(snippet)
+        dismiss()
     }
 }
 

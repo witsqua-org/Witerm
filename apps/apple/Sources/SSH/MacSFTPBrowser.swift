@@ -159,11 +159,13 @@ struct MacSFTPBrowser: View {
                     IssueBanner(issue).accessibilityIdentifier("sshSFTPIssue")
                 }
                 table
+                    .witermOutline(cornerRadius: WitermMetrics.Radius.m, hairline: true)
                     .overlay {
-                        RoundedRectangle(cornerRadius: WitermMetrics.Radius.m, style: .continuous)
-                            .strokeBorder(dropTargeted ? WitermTheme.selectedBorder : WitermTheme.hairline,
-                                          lineWidth: dropTargeted ? WitermMetrics.selectedBorder : 1)
-                            .allowsHitTesting(false)
+                        if dropTargeted {
+                            RoundedRectangle(cornerRadius: WitermMetrics.Radius.m, style: .continuous)
+                                .strokeBorder(WitermTheme.selectedBorder, lineWidth: WitermMetrics.selectedBorder)
+                                .allowsHitTesting(false)
+                        }
                     }
                     .clipShape(.rect(cornerRadius: WitermMetrics.Radius.m, style: .continuous))
                     .dropDestination(for: URL.self) { urls, _ in

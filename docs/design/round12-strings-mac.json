@@ -1,0 +1,16 @@
+{
+  "add": {
+    "Press Return after inserting": "插入后按回车",
+    "Keys and passwords aren’t imported.": "不会导入密钥和密码。",
+    "The server your devices use to reach each other.": "你的设备通过此服务器互相连接。",
+    "Find": "查找",
+    "SFTP Files…": "SFTP 文件…",
+    "Port Forwarding…": "端口转发…",
+    "Paired %@": "配对于 %@",
+    "It printed faster than this window could show. Open it again; it kept running.": "它输出的速度超过了此窗口的显示速度。请重新打开；它仍在运行。"
+  },
+  "change": {},
+  "remove": [
+    "step.open"
+  ]
+}

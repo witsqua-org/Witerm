@@ -17,6 +17,9 @@ struct SSHHostKeysView: View {
     @State private var removing: SSHHostKey?
 
     var body: some View {
+        #if os(macOS)
+        macBody
+        #else
         NavigationStack {
             List {
                 if let issue {
@@ -61,13 +64,72 @@ struct SSHHostKeysView: View {
                 Text(String(localized: "The saved key for \(String(removing?.authority ?? "")) will be removed. Verify the host change first; you will need to compare its fingerprint when connecting again.", bundle: .main))
             }
         }
-        #if os(macOS)
-        .frame(minWidth: 440, idealWidth: 560, minHeight: 420)
-        #else
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         #endif
     }
+
+    #if os(macOS)
+    /// The Mac sheet shape: one group per hop (target, then jump hosts), each
+    /// with its saved key and Remove Host Trust, and Done trailing.
+    private var macBody: some View {
+        SheetScaffold(String(localized: "Host Keys", bundle: .main), subtitle: profile.name, width: .form,
+                      onEscape: { dismiss() }) {
+            VStack(alignment: .leading, spacing: WitermMetrics.Space.m) {
+                if let issue {
+                    IssueBanner(issue).accessibilityIdentifier("sshHostKeysIssue")
+                }
+                if loading, rows.isEmpty {
+                    ActivityRow(String(localized: "Loading host keys…", bundle: .main))
+                }
+                ForEach(rows) { row in
+                    GroupBox {
+                        VStack(alignment: .leading, spacing: WitermMetrics.Space.s) {
+                            Text(row.authority).font(WitermType.code).textSelection(.enabled)
+                            if let key = row.key {
+                                LabeledContent(String(localized: "Key Type", bundle: .main), value: key.algorithm)
+                                Text(key.fingerprint)
+                                    .font(WitermType.codeInline)
+                                    .foregroundStyle(WitermTheme.ink)
+                                    .textSelection(.enabled)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .accessibilityLabel(String(localized: "Host fingerprint, \(String(key.fingerprint))", bundle: .main))
+                                HStack {
+                                    Spacer()
+                                    Button(String(localized: "Remove Host Trust", bundle: .main), role: .destructive) { removing = key }
+                                        .accessibilityIdentifier("sshRemoveHostTrust-\(row.id.uuidString)")
+                                }
+                            } else {
+                                Text(String(localized: "No Saved Host Key", bundle: .main))
+                                    .font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(WitermMetrics.Space.xs)
+                    } label: {
+                        Text(row.role).font(WitermType.cardTitle).accessibilityAddTraits(.isHeader)
+                    }
+                }
+            }
+            .disabled(loading)
+        } trailing: {
+            Button(String(localized: "Done", bundle: .main)) { dismiss() }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+        }
+        .task { await load() }
+        .alert(String(localized: "Remove Host Trust?", bundle: .main), isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
+            Button(String(localized: "Cancel", bundle: .main), role: .cancel) { removing = nil }
+            Button(String(localized: "Remove Trust", bundle: .main), role: .destructive) {
+                guard let key = removing else { return }
+                removing = nil
+                Task { await forget(key) }
+            }.accessibilityIdentifier("sshConfirmForgetHostKey")
+        } message: {
+            Text(String(localized: "The saved key for \(String(removing?.authority ?? "")) will be removed. Verify the host change first; you will need to compare its fingerprint when connecting again.", bundle: .main))
+        }
+    }
+    #endif
 
     private func load() async {
         loading = true

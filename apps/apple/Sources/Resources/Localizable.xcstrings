@@ -4484,6 +4484,23 @@
         }
       }
     },
+    "Find" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Find"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查找"
+          }
+        }
+      }
+    },
     "Find Next" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5533,6 +5550,23 @@
         }
       }
     },
+    "It printed faster than this window could show. Open it again; it kept running." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It printed faster than this window could show. Open it again; it kept running."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它输出的速度超过了此窗口的显示速度。请重新打开；它仍在运行。"
+          }
+        }
+      }
+    },
     "Its earlier access ended, but the new pairing wasn’t approved. Show a new QR code to pair it again." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5801,6 +5835,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "按键与手势"
+          }
+        }
+      }
+    },
+    "Keys and passwords aren’t imported." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keys and passwords aren’t imported."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不会导入密钥和密码。"
           }
         }
       }
@@ -7709,6 +7760,23 @@
         }
       }
     },
+    "Paired %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paired %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "配对于 %@"
+          }
+        }
+      }
+    },
     "Paired Devices" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8168,6 +8236,23 @@
         }
       }
     },
+    "Port Forwarding…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Port Forwarding…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "端口转发…"
+          }
+        }
+      }
+    },
     "Preparing device identity…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8192,6 +8277,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Press Return After Inserting"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "插入后按回车"
+          }
+        }
+      }
+    },
+    "Press Return after inserting" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Press Return after inserting"
           }
         },
         "zh-Hans" : {
@@ -9422,6 +9524,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "SFTP 文件"
+          }
+        }
+      }
+    },
+    "SFTP Files…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SFTP Files…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SFTP 文件…"
           }
         }
       }
@@ -11870,6 +11989,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "将移除 %@ 的已记住密钥。请先核实主机变更；下次连接需重新核对指纹。"
+          }
+        }
+      }
+    },
+    "The server your devices use to reach each other." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The server your devices use to reach each other."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你的设备通过此服务器互相连接。"
           }
         }
       }
@@ -14471,23 +14607,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "刚刚"
-          }
-        }
-      }
-    },
-    "step.open" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "step.open"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开"
           }
         }
       }

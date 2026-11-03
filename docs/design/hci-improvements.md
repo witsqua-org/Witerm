@@ -417,3 +417,67 @@ Times measured by the UI test include its polling (about 50 ms) and the keyboard
 - Real VoiceOver speech, Voice Control and Full Keyboard Access were reviewed from code and labels, not by ear.
 
 **Verification:** see [verification.md](../verification.md), Round 12: iOS.
+
+## Round 12: Mac
+
+Further production work on 2026-11-03: the Round 11 leftovers, a second review of the Round 11 after-captures and new captures of the installed build, responsiveness measured before and after, and test coverage for the device Edit sheet and the Approve step without a phone. Captures are in `.build/screenshots/audit-mac/round12/` (`before/` is the installed build, `after/` this round's, each in English light, English dark and Chinese), and the fixture tests' pictures in `.build/screenshots/round12-mac/`. The `after/` pass stops at the snippet editor: Esc didn't close it (fixed, see Keyboard below), so the Settings, SSH and sheet pictures after it are missing; the re-run was stopped because the Mac was in use.
+
+| # | Role | Finding | Change | Main code |
+|---|---|---|---|---|
+| 1 | PS, VD | The snippet editor, Import SSH Hosts, the relay server address, Host Keys and Port Forwarding used toolbar placements: a title indented in a toolbar band away from the content, a system-blue Done, and fixed minimum heights (Host Keys 420 pt, about 60% blank; Port Forwarding 580 pt). | `SheetScaffold` on the Mac, iOS unchanged: title, content in group boxes, a divider, then destructive and secondary actions leading and Cancel and the primary trailing, each sheet as tall as its content. | [SnippetSettings](../../apps/apple/Sources/Snippets/SnippetSettings.swift), [SSHConfigImportView](../../apps/apple/Sources/SSH/SSHConfigImportView.swift), [ServerAddressSheet](../../apps/apple/Sources/Server/ServerAddressSheet.swift), [SSHHostKeysView](../../apps/apple/Sources/SSH/SSHHostKeysView.swift), [SSHForwardingView](../../apps/apple/Sources/SSH/SSHForwardingView.swift) |
+| 2 | IxD | In Port Forwarding, Return in a port field pressed Done and closed the sheet without starting the forward. | Start Forwarding is the sheet's primary (Return); Done is Esc. The fields sit in a two-column grid with trailing labels, and the direction is a segmented control. | [SSHForwardingView](../../apps/apple/Sources/SSH/SSHForwardingView.swift) |
+| 3 | UXW, PS | Import SSH Hosts opened with a 29-word paragraph and its two buttons inside the content. | One line ("Keys and passwords aren’t imported."); Choose File… leading, Cancel and Read ~/.ssh/config trailing; hosts are checkboxes. | [SSHConfigImportView](../../apps/apple/Sources/SSH/SSHConfigImportView.swift) |
+| 4 | PS, UXW | The snippet editor had a switch titled "Press Return After Inserting" and a footer paragraph. | A checkbox in sentence case, the explanation as its tooltip, Delete Snippet in the footer. | [SnippetSettings](../../apps/apple/Sources/Snippets/SnippetSettings.swift) |
+| 5 | A11Y (M-33) | Increase Contrast doubled hover fills, but cards, choice cards and code tiles kept faint or no edges. | `witermOutline`: `WitermTheme.outline(increasedContrast:)` at 1.5 pt with Increase Contrast, on `SelectableCard`, the QR tile and its blank stand-in, the codes on Approve and invitations, the Open step's checklist, the SFTP table, the snippet field and the tmux command. | [SelectableCard](../../apps/apple/Sources/Design/SelectableCard.swift) |
+| 6 | VD | The blank QR stand-in (16 pt corners) and the QR tile (14 pt) changed shape when the code arrived. | Both use `Radius.xl`. | [PairingQRCode](../../apps/apple/Sources/Pairing/PairingQRCode.swift) |
+| 7 | UXR, IxD (M-08) | Two pairings with one name (a device set up again, older pairing kept) looked like one device listed twice. | Their rows say "Paired *date*" in Settings → Devices and on the Open On sheet's device step, and Settings lists devices by name, oldest pairing first, so the two sit together. The Edit sheet's code fills its row like the groups above it. | [MacDevicesView](../../apps/apple/Sources/Pairing/MacDevicesView.swift), [ContinueOnDeviceSheet](../../apps/apple/Sources/Continuity/ContinueOnDeviceSheet.swift) |
+| 8 | PS | Find, Find Next, Find Previous and Use Selection for Find sat at the top of Edit. | Edit ▸ Find ▸, as in every Mac app; the shortcuts are unchanged. | [WitermApp](../../apps/apple/Sources/WitermApp.swift) |
+| 9 | PS | The menu bar had no command for a selected SSH host; Connect, SFTP Files, Port Forwarding and Disconnect needed the pointer or Full Keyboard Access in the toolbar. | Terminal menu: Connect, or SFTP Files…, Port Forwarding… and Disconnect (which asks first while a program runs, like the toolbar). | [WitermApp](../../apps/apple/Sources/WitermApp.swift), [MacWorkspaceView](../../apps/apple/Sources/LocalTerminal/MacWorkspaceView.swift) |
+| 10 | IxD | Right-clicking terminal text did nothing. | Copy (with a selection), Paste (only while typing), Select All, and Find…, for Mac and SSH terminals. | [MacTerminalTextView](../../apps/apple/Sources/TerminalAccessibility/MacTerminalTextView.swift) |
+| 11 | IxD | Paired devices, relay servers, invitations had no context menu; snippets offered only Delete. | Devices: Edit…, Unpair… (confirmed). Relay servers: Edit…, Check Now, Remove…. Invitations: End Invitation. Snippets: Edit Snippet, Delete. | [MacDevicesView](../../apps/apple/Sources/Pairing/MacDevicesView.swift), [SnippetSettings](../../apps/apple/Sources/Snippets/SnippetSettings.swift) |
+| 12 | IxD | Dropping a Finder file on a terminal did nothing; Terminal types its path. | A file dropped on a terminal you're typing in types its path, one shell word each (single-quoted when needed), and never presses Return; watching, the drop is refused. | [MacTerminalTextView](../../apps/apple/Sources/TerminalAccessibility/MacTerminalTextView.swift) |
+| 13 | PS, VD | The SSH form's title sat in a toolbar band like the toolbar sheets. | On the Mac the title is in the content's inset, as in `SheetScaffold`. | [SSHProfileForm](../../apps/apple/Sources/SSH/SSHProfileForm.swift) |
+| 14 | UXW, QA | The step strip's last step read "step.open" in English: the catalog's English for that key is the key itself. | The strip uses `terminal.open` (Open, 打开); `step.open` can be removed from the catalog. | [ContinueOnDeviceSheet](../../apps/apple/Sources/Continuity/ContinueOnDeviceSheet.swift) |
+| 15 | UXW, PS | A terminal interrupted by too much output said "Paste long text in smaller parts". | Output that outruns the window says so: "It printed faster than this window could show. Open it again; it kept running." Pastes keep their wording. Pair a Device's last step no longer repeats its subtitle as a note. | [NativeTerminalView](../../apps/apple/Sources/LocalTerminal/NativeTerminalView.swift), [LocalTerminalModel](../../apps/apple/Sources/LocalTerminal/LocalTerminalModel.swift) |
+| 16 | QA | The device Edit sheet and Approve's "Also unpair the older…" had never been seen live. | A DEBUG-only pairing fixture (`-witerm.debug.pairingFixture 1`) and `DevicePairingFixtureTests`. | [MacPairingFixture](../../apps/apple/Sources/Pairing/MacPairingFixture.swift), [DevicePairingModel](../../apps/apple/Sources/Pairing/DevicePairingModel.swift) |
+
+**Responsiveness (performance engineer), installed build before → this round's build.** From the opt-in `PerformanceTests` against each signed app, with the app's footprint and CPU sampled once a second outside the runner. XCTest times include its own polling (about 0.05 s); launch was also timed outside XCTest. No regression; nothing here needed a fix in the app's own code.
+
+| Measure | Before | After |
+|---|---|---|
+| Launch to the first window on screen (Launch Services, no restored state, median of 7) | 0.47–0.50 s | 0.42 s |
+| Launch to the first sidebar row, after the window (XCTest, 3 runs) | 0.17–0.30 s | 0.11–0.13 s |
+| ⌘N to a focused terminal (mean of 5) | 0.34 s | 0.31 s |
+| ⌘N to the first command's output (mean of 5) | 1.06 s | 1.01 s |
+| 16 terminals: relaunch to the rows listed | 2.2 s | 2.0 s |
+| 16 terminals: 32 row hovers, app CPU (XCTest metric, 3 runs) | 0.93 s (29 ms a hover) | 0.84 s (26 ms a hover) |
+| 16 terminals: click a row to a focused terminal (mean) | 0.82 s | 0.82 s |
+| Opening Rename, Open On, Add SSH Host, Import SSH Hosts, Welcome Tour, Settings (median of 3) | 0.06, 0.006, 0.06, 0.06, 0.03, 0.004 s | 0.06, 0.006, 0.06, 0.02, 0.01, 0.003 s |
+| Opening Port Forwarding, Host Keys (toolbar and menu, with XCTest's idle wait) | 0.99, 1.70 s | 0.96, 1.85 s |
+| SFTP: double-click a folder of 1,000 files to its first row (median of 3) | 2.8 s | 2.6 s |
+| 360,000 lines, 100 every 50 ms (an hour of a busy log) | 244 s, not interrupted | 245 s, not interrupted |
+| Footprint before, while printing, and settled after those lines | 92, ~190, 95 MB | 90–100, ~180, 90 MB |
+
+**Found while measuring (not fixed here; for the lead):**
+- **A burst of output interrupts a Mac terminal.** `seq 1 1000` keeps up; `seq 1 3600` (17 KB) ends the window's attachment with Terminal Interrupted, on both builds; a million lines never finish. The shell keeps running. The client's event stream holds 64 events and drops the attachment when it's full (`LocalTerminalStreams`, `bufferingOldest(64)`), and the service also ends a connection whose queue passes 256 KB (`AgentConnection.deliveryLimit`); neither waits for the reader, so many small tmux writes overflow the 64 events long before any byte limit. The fix belongs in WitermCore and the service: the socket reader should wait for room (counting bytes, not events), and the service should stop reading a pane while a connection's queue is full, so tmux coalesces the screen for a slow client instead of the window closing. This round only makes the window say what happened.
+- **A full accessibility snapshot of the 1,000-file SFTP table** costs the app about 1 GB and 20–35 s of CPU (XCTest's snapshots after End). Listed and left alone, the same table sits at 96–100 MB and 0% CPU, so ordinary use is fine; VoiceOver over a large folder wasn't tried.
+- **"Application performed a reentrant operation in its NSTableView delegate"** is logged at every launch of both builds (the sidebar list). No visible effect yet; AppKit says it will become an assert.
+
+**Second pass, checked and kept (QA, PS, A11Y):**
+- **Light and dark parity, Chinese.** The installed build's captures match Round 11's after-captures apart from row 15; the Settings strings that were English in Chinese at Round 11 are translated now. New strings this round show in English in Chinese until the catalog takes `round12-strings-mac.json`.
+- **Keyboard.** Every Mac sheet now ends in the same footer, so Full Keyboard Access reaches the content first and then the footer, left to right; Esc closes every sheet whose Cancel only closes it (the snippet editor's text field had kept Esc from its Cancel button). Approve and Trust keep no Return.
+- **VoiceOver headings.** Every sheet title is a heading; the group titles in Host Keys and Port Forwarding are too.
+- **Menu shortcuts.** No conflicts: ⌘R Refresh and ⇧⌘R Rename, ⌘1–9 terminals and ⌥⌘1–9 snippets, ⇧⌘P and ⇧⌘T as noted in M-36.
+- **Drag and drop.** Reordering terminals or SSH hosts by dragging was considered and left out: terminals are listed in the order they started (which ⌘1–⌘9 follows) and hosts are ordered favorites first, then by use, so a manual order would fight both. Files dropped on a terminal (row 12) and SFTP's drag in and out are the drags that save typing.
+
+**Not changed:**
+- **M-29** (More Options as `DisclosureGroup`) and **M-32** (one Settings size), by earlier decision.
+- **M-33 for `witermCard` and `IssueBanner`.** Both are shared components outside the Mac hover block; they can use `witermOutline` the same way.
+- **M-34 (part), M-37.** The offline banner, the snippets footer and SSH's "session" errors are shared iOS text.
+- **M-35.** Ask Siri is the system's.
+- The SSH form keeps its own grouped `Form` and footer bar; only its title moved.
+
+**Verification:**
+- `WitermMacTerminalTests` (33, with the new `MacRound12Tests`: dropped paths are one shell word each, the terminal's menu offers Paste only while typing, the Open step's title is a word, and "Paired *date*").
+- On this round's signed build: `DevicePairingFixtureTests` (the Edit sheet; Approve with "Also unpair the older…" on, which leaves one Fixture iPhone; Approve with it off, which leaves two with their dates; and Approve in Chinese), `LocalSessionFlowTests.testRenameAndFindInFreshSession`, `ContinueFlowTests.testContinueSheetStartsAtTheFirstUnfinishedStep`, `SSHConfigurationTests.testSaveEditFavoriteAndSearchWithoutConnecting`, `SSHHostFlowTests.testCreateTrustConnectAndRemoveFixtureHost` (disposable OpenSSH fixture), both `WelcomeTourTests`, and `PerformanceTests`. `AuditScreenshotTests` (light, dark and Chinese) ran up to the snippet editor; after the Esc fix its re-run was cut short by another app coming to the front, and wasn't repeated while the Mac was in use.
+- WitermiOS builds (`CODE_SIGNING_ALLOWED=NO`) with the shared-file changes.

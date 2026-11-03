@@ -100,7 +100,12 @@ final class DevicePairingModel {
         case revoked(String)
     }
 
-    init(serverAddress: String) { self.serverAddress = serverAddress }
+    init(serverAddress: String) {
+        self.serverAddress = serverAddress
+        #if DEBUG && os(macOS)
+        _ = fixture(.refresh)
+        #endif
+    }
 
     var isWorking: Bool { busy != nil }
     var hasLivePairing: Bool {
@@ -113,6 +118,9 @@ final class DevicePairingModel {
 
     func connect() {
         guard !isWorking else { return }
+        #if DEBUG && os(macOS)
+        if fixture(.refresh) { return }
+        #endif
         do {
             if client == nil {
                 #if os(macOS)
@@ -136,6 +144,9 @@ final class DevicePairingModel {
     }
 
     func create() {
+        #if DEBUG && os(macOS)
+        if fixture(.create) { return }
+        #endif
         run(String(localized: "Creating invitation…", bundle: .main)) { client in
             let invitation = try await client.createPairing()
             let pairing = try await client.pairing(id: invitation.pairingID)
@@ -178,6 +189,9 @@ final class DevicePairingModel {
     func approve(permission: PairingPermission, alsoUnpair older: [DeviceGrant] = []) {
         guard mayApprove, let pairing else { return }
         let replaced = existingGrantForRequest
+        #if DEBUG && os(macOS)
+        if fixture(.approve(permission, Set(older.map(\.id) + [replaced?.id].compactMap { $0 }))) { return }
+        #endif
         run(String(localized: "Approving pairing…", bundle: .main)) { client in
             // The same identity's current grant has to end first: the server
             // allows one active grant per pair of identities. If approving
@@ -199,6 +213,9 @@ final class DevicePairingModel {
 
     func reject() {
         guard let pairing, hasLivePairing else { return }
+        #if DEBUG && os(macOS)
+        if fixture(.reject) { return }
+        #endif
         run(String(localized: "Cancelling pairing…", bundle: .main)) { client in
             let result = try await client.reject(id: pairing.id)
             let grants = try await client.grants()
@@ -217,6 +234,9 @@ final class DevicePairingModel {
 
     func refresh() {
         guard issue?.integrityFailure != true else { return }
+        #if DEBUG && os(macOS)
+        if fixture(.refresh) { return }
+        #endif
         guard client != nil, device != nil else { connect(); return }
         let id = pairing?.id
         run(String(localized: "Refreshing…", bundle: .main)) { client in
@@ -228,6 +248,9 @@ final class DevicePairingModel {
     }
 
     func revoke(_ grant: DeviceGrant) {
+        #if DEBUG && os(macOS)
+        if fixture(.revoke(grant.id)) { return }
+        #endif
         run(String(localized: "Unpairing…", bundle: .main)) { client in
             try await client.revoke(grantID: grant.id, pairingID: grant.pairingID)
             return .revoked(grant.id)
@@ -339,3 +362,42 @@ final class DevicePairingModel {
         AccessibilityNotification.Announcement(issue.title + "。" + issue.recovery).post()
     }
 }
+
+#if DEBUG && os(macOS)
+/// UI tests only: `PairingFixture` stands in for the relay server, so nothing
+/// here reaches it. See `MacPairingFixture.swift`.
+extension DevicePairingModel {
+    enum FixtureOperation { case refresh, create, approve(PairingPermission, Set<String>), reject, revoke(String) }
+
+    /// Applies `operation` to the fixture; false when the fixture is off.
+    fileprivate func fixture(_ operation: FixtureOperation) -> Bool {
+        guard PairingFixture.isActive else { return false }
+        issue = nil
+        switch operation {
+        case .refresh:
+            device = PairingFixture.me
+        case .create:
+            pairing = PairingFixture.request(.waiting)
+            // The other device scans a moment later.
+            polling = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled, let self, self.pairing?.status == .waiting else { return }
+                self.pairing = PairingFixture.request(.pending)
+            }
+        case .approve(let permission, let removing):
+            guard let pairing else { return true }
+            apply(.refreshed(PairingFixture.approve(pairing, permission: permission, removing: removing), PairingFixture.grants))
+            return true
+        case .reject:
+            if let pairing { apply(.refreshed(PairingFixture.ended(pairing, .rejected), PairingFixture.grants)) }
+            return true
+        case .revoke(let id):
+            PairingFixture.revoke(id)
+            apply(.revoked(id))
+            return true
+        }
+        grants = PairingFixture.grants
+        return true
+    }
+}
+#endif

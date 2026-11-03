@@ -4,6 +4,10 @@ import Foundation
 import Observation
 import WitermCore
 
+/// The terminal printed faster than this window's renderer took it in, so
+/// the background service ended the attachment rather than drop output.
+struct LocalOutputOverflow: Error {}
+
 struct LocalTerminalIssue: Equatable {
     let title: String
     let recovery: String
@@ -12,6 +16,12 @@ struct LocalTerminalIssue: Equatable {
     init(_ error: Error) {
         canViewReadOnly = (error as? LocalAgentClientError) == .rejected(.sessionBusy)
             || (error as? LocalAgentClientError) == .rejected(.readOnly)
+        if error is LocalOutputOverflow {
+            // Not a paste: say what happened, and that nothing stopped.
+            title = String(localized: "Terminal Interrupted", bundle: .main)
+            recovery = String(localized: "It printed faster than this window could show. Open it again; it kept running.", bundle: .main)
+            return
+        }
         switch error as? LocalAgentClientError {
         case .rejected(.sessionBusy):
             title = String(localized: "Typing Somewhere Else", bundle: .main)
