@@ -107,9 +107,9 @@ There is no Typing or Watching mode to switch. The keyboard is the state:
 | Open it | Keyboard up, typing | Keyboard up, typing (an explicit tap on the terminal), unless someone else is typing: then it opens with the keyboard down and the status says Typing on *device* | Keyboard down; no keyboard button; the status says Can only watch |
 | Tap the keyboard button | Keyboard up | Asks the Mac for typing, after the detach ACK of the watching connection; the keyboard rises once the Mac accepts. Refused: the keyboard stays down and the status says Typing on *device*. Never takes typing from anyone silently, never resends input | — |
 | Hide the keyboard (Hide Keyboard key, swipe down on the keyboard, or leaving) | Keyboard down; the shell is unchanged | Stops typing: the Mac's grid becomes authoritative again and this device no longer resizes it (detach ACK, then attach to watch) | — |
-| Tap the terminal | Keyboard up, as before (an SSH terminal takes typing from no one) | While watching: selection and scrolling only | Selection and scrolling only |
+| Tap the terminal | Keyboard up, as before (an SSH terminal takes typing from no one) | Round 17: as the keyboard button when nobody else types there; when someone does, keeps watching and says Typing on *device* | Selection and scrolling only |
 
-On a paired terminal a tap never starts typing: taps select, scroll and read with VoiceOver, and an accidental tap must not take a terminal from someone else, so the keyboard button is the one way in. An SSH terminal keeps tap-to-type (Round 15's touch model is unchanged).
+(Round 17 changed this at the owner's request: a tap now starts typing when nobody else types there; see the answers below.) On a paired terminal a tap never started typing: taps select, scroll and read with VoiceOver, and an accidental tap must not take a terminal from someone else, so the keyboard button is the one way in. An SSH terminal keeps tap-to-type (Round 15's touch model is unchanged).
 
 The status line under the name says only plain facts: the device (paired) or `user@host:port` (SSH); Typing on *device* when someone else types; Can only watch; Disconnected; Terminal Ended. The Start Typing and Stop Typing menu items, the Typing and Watching labels, and the "Switching to Typing…" and "Switching to Watching…" progress words go from the iPhone and iPad UI. While the keyboard is asked for, the button shows progress. ⇧⌘T (Start or Stop Typing) leaves the iPhone and iPad command list; with a hardware keyboard the keyboard button does the same.
 
@@ -119,8 +119,9 @@ The grant **Can only watch** stays: it's a permission, not a mode.
 
 Unchanged. A Mac window has no software keyboard, so "keyboard hidden" has no Mac meaning, and its Typing and Watching states (Stop Typing, ⇧⌘T, Watch) remain how a window lets go of a terminal. The words a Mac shows about a phone (Typing on *device*, Watching on *device*) still describe the phone correctly: a phone with its keyboard down is watching.
 
-## 4. Open questions for the owner
+## 4. Open questions for the owner, answered in Round 17
 
-1. **Ending an invitation early from the phone.** Shared with You has no Remove action; access ends when the invitation does or when the Mac ends it. Should the phone be able to leave an invitation early (it would be irreversible, with a confirmation)?
-2. **Announce New Output while VoiceOver runs.** It's in Advanced. Should it show in the main list automatically while VoiceOver is on?
-3. **Tap to type on a paired terminal.** The lead kept tapping a paired terminal from starting to type, so an accidental tap never takes it from someone. Should a tap start typing when nobody else is typing there?
+1. **Ending an invitation early from the phone.** Yes: **End Invitation…** on a Shared with You terminal (trailing swipe, never full, and the long-press menu), confirmed, saying it can't be undone.
+2. **Announce New Output while VoiceOver runs.** Yes: it shows in Settings' Terminal group while VoiceOver runs, and in Advanced otherwise; one setting, one key.
+3. **Tap to type on a paired terminal.** Yes, when nobody else types there; when someone does, the tap keeps watching and says Typing on *device*.
+4. **Invitations joined before Round 16** (listed under Devices, because the phone didn't record them as invitations then): no change. They stay paired-device rows and end with Unpair…, or when the invitation ends.

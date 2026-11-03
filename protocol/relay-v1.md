@@ -7,7 +7,7 @@ An iOS client lists and attaches to existing Mac sessions through the server. Th
 - SSH and SFTP
 - file transfer and clipboard sync
 - forced takeover (devices type together instead; see [local-agent-v1](local-agent-v1.md))
-- iOS background execution
+- iOS background execution beyond what iOS gives any app (a background task of about 30 seconds; no background modes). The 3-minute window below is the client's policy, not a server feature
 
 ## Server routes
 
@@ -122,7 +122,17 @@ The server closes a tunnel when a leg's queue passes 16 messages or 256 KiB. It 
 - Once a `detach` arrives the Mac sends no more output: the device renders nothing after the reply, and its next attach redraws. The reply itself, like every response and `closed`, is outside the window. An `ack` that arrives while the Mac waits for the device to close after a reply is not taken as the close.
 - Revocation checks (every 250 ms), detach acknowledgements, and never resending input work as without flow control.
 
-**Reconnects** run a full handshake and grant check every time. The iOS client reconnects on its own after backgrounding (once its 15-second grace ends) and after a network drop while active, with backoff and at most four tries; never after leaving, revocation, or the session ending. Input is never resent.
+**Reconnects** run a full handshake and grant check every time. Input is never resent.
+
+**The iOS client in the background** (Round 17; it replaces the 15-second grace). A terminal the person leaves without disconnecting is kept for a **3-minute window**:
+
+- While iOS lets the app run (a background task, usually about 30 seconds, never guaranteed), the attachment stays as it is. Coming back then continues the same attachment: nothing is sent or redone.
+- Five seconds before that time runs out the client detaches with the usual ACK, so the Mac releases control while the client can still hear the reply (if iOS ends the time first, it closes the connection, and the Mac releases control when the connection closes). A suspended app answers no pings, so the server (15-second pings, 5-second deadline) and the client's own health checks (5 s / 3 s) would close the tunnel within about 20 seconds anyway.
+- Returning within the window, the client attaches again (`history`, the same mode, its own grid) and feeds the new attachment to the same renderer, under a still picture of the old screen until the redraw has arrived: the person sees the terminal they left, with nothing reconnecting. If someone else types there now, it attaches to watch and says so, never by force. A link found dead within 10 seconds of returning (the server closed the tunnel meanwhile) is resumed the same way.
+- After the window, the client has let go; coming back reconnects the visible way below.
+- Keys typed while a link is being replaced are dropped, never sent later.
+
+After the window, after a resume that failed, and after a network drop while active, the iOS client reconnects on its own, with backoff and at most four tries; never after leaving, revocation, or the session ending.
 
 ## Mac side
 

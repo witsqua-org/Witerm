@@ -48,7 +48,7 @@ Witerm reaches a terminal in one of two ways:
 | Per-session sharing and the `witerm` command | Done |
 | Per-device access policy, private sessions, typing together | Done |
 | Session invitations without pairing | Done |
-| iOS background grace and automatic reconnect | Done |
+| iOS background window (3 minutes, resume in place) and automatic reconnect | Done |
 | Direct SSH: host keys, Ed25519 and passwords, jump hosts, SFTP, forwarding | Done |
 | Remote session create or close, forced takeover, accounts | Not planned yet |
 | Opening `witerm://` links from other apps | Future |

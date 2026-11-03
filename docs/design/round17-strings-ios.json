@@ -1,0 +1,16 @@
+{
+  "add": {
+    "%@ can no longer open it. This can’t be undone: to open it again, %@ must invite you again.": "%@将无法再打开它。此操作无法撤销：要再次打开，需要%@重新邀请你。",
+    "%@. The invitation is still in effect. Try again.": "%@。邀请仍然有效。请重试。",
+    "Disconnected after 3 minutes in the background. Reconnecting opens a new shell.": "在后台 3 分钟后已断开连接。重新连接会打开新的 Shell。",
+    "End Invitation to “%@”?": "要结束“%@”的邀请吗？",
+    "End Invitation…": "结束邀请…",
+    "Invitation ended": "邀请已结束",
+    "SSH stays connected for 3 minutes in the background. Use tmux to keep programs running longer.": "SSH 在后台会保持连接 3 分钟。要让程序运行更久，请使用 tmux。"
+  },
+  "change": {},
+  "remove": [
+    "SSH stopped when Witerm went to the background. Reconnecting opens a new shell.",
+    "SSH stops in the background. Use tmux to keep programs running."
+  ]
+}

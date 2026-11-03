@@ -27,7 +27,7 @@ Saved hosts are under **SSH Hosts** in the Mac sidebar. On iOS they're in the **
 ## Sessions
 
 - Up to 8 hosts stay connected at once. Switching hosts doesn't disconnect; Disconnect is always explicit.
-- Closing the Mac window disconnects everything. So does sending the iOS app to the background.
+- Closing the Mac window disconnects everything. On iOS, connections stay open for 3 minutes in the background: returning within them continues the same connection and shell. iOS runs the app for only about 30 seconds of that, so a host that closes unresponsive clients (`ClientAliveInterval`) may end the connection meanwhile; one that doesn't keeps it. After 3 minutes they're closed (when the app next runs, if it was suspended), with "Disconnected after 3 minutes in the background".
 - After a disconnect, iOS keeps the host on screen with the reason and a **Reconnect** button. Reconnecting opens a new shell and never replays earlier input.
 - When the device has no network, SSH views say so before a connection times out. A returning network doesn't reconnect on its own.
 
