@@ -5550,23 +5550,6 @@
         }
       }
     },
-    "It printed faster than this window could show. Open it again; it kept running." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "It printed faster than this window could show. Open it again; it kept running."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "它输出的速度超过了此窗口的显示速度。请重新打开；它仍在运行。"
-          }
-        }
-      }
-    },
     "Its earlier access ended, but the new pairing wasn’t approved. Show a new QR code to pair it again." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -12533,6 +12516,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此中继服务器已在列表中。"
+          }
+        }
+      }
+    },
+    "This window stopped showing its output. Open it again; it kept running." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This window stopped showing its output. Open it again; it kept running."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此窗口停止显示它的输出。请重新打开；它仍在运行。"
           }
         }
       }
