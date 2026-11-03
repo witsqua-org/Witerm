@@ -338,7 +338,7 @@ import XCTest
             XCTAssertGreaterThan(landscape.rows, 5, "Hiding the bar gives the terminal rows")
             // The actions menu from the key row has what the bar's had.
             actionsKey.tap()
-            for item in ["SFTP Files", "Port Forwarding", "Text and Colors", "Find in Terminal", "Disconnect"] {
+            for item in ["SFTP Files", "Port Forwarding", "Increase Text Size", "Find in Terminal", "Disconnect"] {
                 // With the software keyboard up in landscape the menu scrolls;
                 // its last item can start out of view.
                 if !app.buttons[item].waitForExistence(timeout: 5) { app.buttons["terminalFind"].swipeDown() }
