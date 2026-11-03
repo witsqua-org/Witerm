@@ -12010,23 +12010,6 @@
         }
       }
     },
-    "The server your devices use to reach each other. To sign in to a computer with SSH, add it under SSH Hosts instead." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The server your devices use to reach each other. To sign in to a computer with SSH, add it under SSH Hosts instead."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "你的设备通过此服务器互相连接。要用 SSH 登录某台电脑，请改为在 SSH 主机中添加。"
-          }
-        }
-      }
-    },
     "The system alert sound plays, and the Dock icon bounces once if Witerm is in the background." : {
       "extractionState" : "manual",
       "localizations" : {
