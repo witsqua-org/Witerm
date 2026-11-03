@@ -9,6 +9,9 @@ extension Notification.Name {
     /// A terminal's input view gained or lost the keyboard focus; the object
     /// is the view and `focused` in the user info says which.
     static let witermTerminalFocusChanged = Notification.Name("witermTerminalFocusChanged")
+    /// Posted just before a terminal's input view takes or gives up the
+    /// keyboard focus, with the same object and user info.
+    static let witermTerminalFocusWillChange = Notification.Name("witermTerminalFocusWillChange")
 }
 
 struct RemoteNativeTerminalView: UIViewRepresentable {
@@ -23,6 +26,8 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
     var announceOutput: Bool = false
     var finder: TerminalFinder? = nil
     var inputDestination: String? = nil
+    /// The bar's actions for the key row while the bar is hidden for typing.
+    var barActions: AnyView? = nil
     let onFailure: (Error) -> Void
     let onEnded: () -> Void
 
@@ -51,6 +56,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         view.updateFontSize(fontSize)
         view.updateAppearance(highContrast: highContrast, scheme: preferredColorScheme, palette: palette)
         view.announceOutput = announceOutput
+        view.terminal.setBarActions(barActions)
         context.coordinator.requestKeyboardToggle(keyboardRequest, terminal: view.terminal)
     }
 
@@ -278,6 +284,9 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
                     terminal.terminalDelegate?.sizeChanged(source: terminal, newCols: fit.columns, newRows: fit.rows)
                 }
             }
+            #if DEBUG
+            countProbedGrid()
+            #endif
             refreshReadingDocument()
             updateLatestButton(output: false)
         }
@@ -434,10 +443,11 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             #if DEBUG
             if Self.layoutProbe {
                 let base = readingView.accessibilityLabel?.components(separatedBy: " |").first ?? ""
-                readingView.accessibilityLabel = base + String(format: " | rows=%d yDisp=%d pos=%.3f page=%d..<%d cell=%.3f frameH=%.2f boundsH=%.2f offset=%.2f content=%.2f mem=%.1f",
-                    core.rows, core.getTopVisibleRow(), terminal.scrollPosition, page.rows.lowerBound, page.rows.upperBound,
+                readingView.accessibilityLabel = base + String(format: " | cols=%d grids=%d rows=%d yDisp=%d pos=%.3f page=%d..<%d cell=%.3f frameH=%.2f boundsH=%.2f offset=%.2f content=%.2f mem=%.1f",
+                    core.cols, probeGridChanges, core.rows, core.getTopVisibleRow(), terminal.scrollPosition, page.rows.lowerBound, page.rows.upperBound,
                     cellSize.height, terminal.frame.height, bounds.height, terminal.contentOffset.y, terminal.contentSize.height,
                     Self.footprintMB()) + String(format: " burst=%.3f", terminal.probeBurst.last - terminal.probeBurst.start)
+                    + " gridlog=" + probeGridLog.joined(separator: ">")
             }
             #endif
         }
@@ -445,6 +455,27 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         #if DEBUG
         /// UI tests that measure layout read the grid's numbers from the label.
         private static let layoutProbe = ProcessInfo.processInfo.arguments.contains("--witerm-ui-test-layout-probe")
+        /// How many times layout changed the grid, so a test can tell one
+        /// resize from several on the way to the same size.
+        private var probeGridChanges = 0
+        private var probeLastGrid: (columns: Int, rows: Int)?
+        /// The last few grids layout went through, oldest first.
+        private var probeGridLog: [String] = []
+        private var probeLastGridTime = CACurrentMediaTime()
+
+        private func countProbedGrid() {
+            guard Self.layoutProbe else { return }
+            let grid = (columns: terminal.getTerminal().cols, rows: terminal.getTerminal().rows)
+            if let last = probeLastGrid, last != grid {
+                probeGridChanges += 1
+                // Each grid with the milliseconds since the one before it.
+                let now = CACurrentMediaTime()
+                let gap = Int(((now - probeLastGridTime) * 1000).rounded())
+                probeLastGridTime = now
+                probeGridLog = Array((probeGridLog + ["\(grid.columns)x\(grid.rows)+\(gap)"]).suffix(6))
+            }
+            probeLastGrid = grid
+        }
 
         /// The app's memory as the system counts it, for the performance probe.
         private static func footprintMB() -> Double {
@@ -753,20 +784,32 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         }
 
         override func becomeFirstResponder() -> Bool {
+            if !isFirstResponder { postFocus(true, will: true) }
             let became = super.becomeFirstResponder()
-            if became { postFocus(true) }
+            if became { postFocus(true) } else if !isFirstResponder { postFocus(false) }
             return became
         }
 
         override func resignFirstResponder() -> Bool {
+            if isFirstResponder { postFocus(false, will: true) }
             let resigned = super.resignFirstResponder()
-            if resigned { postFocus(false) }
+            if resigned { postFocus(false) } else if isFirstResponder { postFocus(true) }
             return resigned
         }
 
+        /// While the navigation bar is hidden for typing, the key row ends
+        /// with Hide Keyboard and these actions; `nil` puts it back.
+        func setBarActions(_ actions: AnyView?) {
+            (inputAccessoryView as? MobileTerminalAccessory)?.setBarActions(actions)
+        }
+
         /// Lets the keyboard button say whether it shows or hides the keyboard.
-        private func postFocus(_ focused: Bool) {
-            NotificationCenter.default.post(name: .witermTerminalFocusChanged, object: self, userInfo: ["focused": focused])
+        /// `will` comes just before the change, so a layout that depends on
+        /// it (the bar hidden while typing in landscape) lands in the same
+        /// pass as the keyboard's, and the grid is resized once.
+        private func postFocus(_ focused: Bool, will: Bool = false) {
+            NotificationCenter.default.post(name: will ? .witermTerminalFocusWillChange : .witermTerminalFocusChanged,
+                                            object: self, userInfo: ["focused": focused])
         }
 
         func disableInput() {
