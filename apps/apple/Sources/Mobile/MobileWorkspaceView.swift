@@ -91,6 +91,39 @@ struct MobileWorkspaceView: View {
     private var shownSSH: SSHSession? { activeMac == nil ? sshUI.shownID.flatMap(ssh.session(for:)) : nil }
     private var shownMac: RemoteTerminalModel? { activeMac.flatMap { $0.isInteractive ? $0 : nil } }
 
+    /// What ⌘1–⌘9 and ⇧⌘] / ⇧⌘[ step through, in the Terminal menu's order:
+    /// the terminals of the paired device open here, then connected SSH hosts.
+    private enum OpenTerminal: Equatable {
+        case paired(String)
+        case ssh(UUID)
+    }
+
+    private var openTerminals: [(terminal: OpenTerminal, name: String)] {
+        let paired = activeMac.map { model in model.sessions.map { (OpenTerminal.paired($0.id), $0.name) } } ?? []
+        let hosts = ssh.orderedProfiles().filter { ssh.session(for: $0.id) != nil }.map { (OpenTerminal.ssh($0.id), $0.name) }
+        return paired + hosts
+    }
+
+    private var currentTerminal: OpenTerminal? {
+        if let model = activeMac { return model.displayAttachment.map { .paired($0.session.id) } }
+        return sshUI.shownID.flatMap { ssh.session(for: $0) != nil ? .ssh($0) : nil }
+    }
+
+    /// A paired terminal switches through the same detach-then-attach as the
+    /// title's switcher; an SSH host is shown as it is.
+    private func show(_ terminal: OpenTerminal) {
+        guard terminal != currentTerminal else { return }
+        tab = .terminals
+        switch terminal {
+        case .paired(let id):
+            guard let model = activeMac, model.busy == nil, let session = model.sessions.first(where: { $0.id == id }) else { return }
+            model.attach(session)
+        case .ssh(let id):
+            activeServerID = nil
+            sshUI.requestedSession = id
+        }
+    }
+
     private var workspace: some View {
         TabView(selection: $tab) {
             terminalsTab
@@ -130,29 +163,26 @@ struct MobileWorkspaceView: View {
                 servers.servers.forEach { $0.check() }
                 Task { await ssh.load() }
             },
-            terminalNames: ssh.orderedProfiles().filter { ssh.session(for: $0.id) != nil }.map(\.name),
+            terminalNames: openTerminals.map(\.name),
             showTerminal: { index in
-                let open = ssh.orderedProfiles().filter { ssh.session(for: $0.id) != nil }
+                let open = openTerminals
                 guard open.indices.contains(index) else { return }
-                tab = .terminals
-                activeServerID = nil
-                sshUI.requestedSession = open[index].id
+                show(open[index].terminal)
             },
-            // ⇧⌘] and ⇧⌘[ step through open SSH terminals, wrapping around.
+            // ⇧⌘] and ⇧⌘[ step through open terminals, wrapping around.
             showAdjacentTerminal: { step in
-                let open = ssh.orderedProfiles().filter { ssh.session(for: $0.id) != nil }
+                let open = openTerminals
                 guard !open.isEmpty else { return }
-                let current = open.firstIndex { $0.id == sshUI.shownID } ?? (step > 0 ? -1 : 0)
-                tab = .terminals
-                activeServerID = nil
-                sshUI.requestedSession = open[(current + step + open.count) % open.count].id
+                let current = open.firstIndex { $0.terminal == currentTerminal } ?? (step > 0 ? -1 : 0)
+                show(open[(current + step + open.count) % open.count].terminal)
             },
             // A paired terminal this device may type in: ⇧⌘T switches, as on the Mac.
             typingHere: shownMac.flatMap { $0.canRequestControl ? $0.mode == .control : nil },
             setTyping: shownMac.flatMap { model in model.canRequestControl ? { _ in model.switchMode() } : nil },
             leave: shownMac.map { model in { model.showSessions() } },
             disconnect: shownSSH.map { session in { ssh.disconnect(session) } },
-            find: shownSSH != nil || shownMac != nil ? { NotificationCenter.default.post(name: .witermFindInTerminal, object: nil) } : nil
+            find: shownSSH != nil || shownMac != nil ? { NotificationCenter.default.post(name: .witermFindInTerminal, object: nil) } : nil,
+            findStep: shownSSH != nil || shownMac != nil ? { NotificationCenter.default.post(name: .witermFindStep, object: $0) } : nil
         ))
         // A connection someone just started is shown in Terminals, from any tab.
         .onChange(of: ssh.connectingProfile?.id) { _, id in
@@ -324,7 +354,7 @@ private struct ServerSettingsPage: View {
                 Button(String(localized: "Cancel", bundle: .main), role: .cancel) {}
                 Button(String(localized: "Remove", bundle: .main), role: .destructive) { servers.remove(server) }
             } message: {
-                Text(String(localized: "Devices paired through this server stop appearing here. They stay paired.", bundle: .main))
+                Text(String(localized: "Devices paired through this relay server stop appearing here. They stay paired.", bundle: .main))
             }
             .navigationTitle(server.displayName)
             .navigationBarTitleDisplayMode(.inline)

@@ -192,7 +192,9 @@ struct SSHUndoRemovalBar: View {
         Group {
             if let removed = model.recentlyRemoved {
                 HStack(spacing: WitermMetrics.Space.m) {
-                    Text(String(localized: "Deleted \(String(removed.profile.name)) and its saved credentials.", bundle: .main))
+                    Text(removed.hadCredentials
+                         ? String(localized: "Deleted \(String(removed.profile.name)) and its saved credentials.", bundle: .main)
+                         : String(localized: "Deleted \(String(removed.profile.name)).", bundle: .main))
                         .font(WitermType.rowDetail)
                         .foregroundStyle(WitermTheme.ink)
                         .fixedSize(horizontal: false, vertical: true)
@@ -505,6 +507,10 @@ struct SSHWorkspaceView<Home: View>: View {
         .sensoryFeedback(.error, trigger: model.connectFailures)
         .onChange(of: shownID) { finding = false }
         .onReceive(NotificationCenter.default.publisher(for: .witermFindInTerminal)) { _ in
+            if shown != nil, remote == nil { finding = true }
+        }
+        // Find Next or Previous before there's a search opens the bar for one.
+        .onReceive(NotificationCenter.default.publisher(for: .witermFindStep)) { _ in
             if shown != nil, remote == nil { finding = true }
         }
         .onChange(of: ui.requestedSession, initial: true) { _, id in

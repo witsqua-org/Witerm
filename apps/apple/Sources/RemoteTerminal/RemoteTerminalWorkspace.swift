@@ -44,6 +44,9 @@ struct RemoteTerminalWorkspace: View {
         .onReceive(NotificationCenter.default.publisher(for: .witermFindInTerminal)) { _ in
             if model.displayAttachment != nil { finding = true }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .witermFindStep)) { _ in
+            if model.displayAttachment != nil { finding = true }
+        }
         .onChange(of: model.displayAttachment != nil, initial: true) { _, shown in
             var transaction = Transaction()
             transaction.disablesAnimations = true

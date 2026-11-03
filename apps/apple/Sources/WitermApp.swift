@@ -205,11 +205,15 @@ struct WorkspaceActions {
     var disconnect: (() -> Void)? = nil
     /// Shows the find bar in the shown terminal (iOS; the Mac routes Find itself).
     var find: (() -> Void)? = nil
+    /// Moves to the next (+1) or previous (−1) match in the shown terminal (iOS).
+    var findStep: ((Int) -> Void)? = nil
 }
 
 extension Notification.Name {
     /// Asks the terminal on screen to show its find bar.
     static let witermFindInTerminal = Notification.Name("witerm.findInTerminal")
+    /// Asks the terminal on screen for its next (`object` 1) or previous (−1) match.
+    static let witermFindStep = Notification.Name("witerm.findStep")
 }
 
 extension FocusedValues {
@@ -294,6 +298,12 @@ struct WitermCommands: Commands {
             Button(String(localized: "Find in Terminal", bundle: .main)) { actions?.find?() }
                 .keyboardShortcut("f", modifiers: .command)
                 .disabled(actions?.find == nil)
+            Button(String(localized: "Find Next", bundle: .main)) { actions?.findStep?(1) }
+                .keyboardShortcut("g", modifiers: .command)
+                .disabled(actions?.findStep == nil)
+            Button(String(localized: "Find Previous", bundle: .main)) { actions?.findStep?(-1) }
+                .keyboardShortcut("g", modifiers: [.command, .shift])
+                .disabled(actions?.findStep == nil)
             Button(actions?.typingHere == false ? String(localized: "Start Typing", bundle: .main)
                    : String(localized: "Stop Typing", bundle: .main)) {
                 if let typing = actions?.typingHere { actions?.setTyping?(!typing) }

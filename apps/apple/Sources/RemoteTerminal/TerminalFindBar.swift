@@ -132,6 +132,10 @@ struct TerminalFindBar: View {
         .background(WitermTheme.surface)
         .onAppear { focused = true }
         .onDisappear { finder.terminal?.clearSearch() }
+        // ⌘G and ⇧⌘G with a hardware keyboard, from the Terminal menu.
+        .onReceive(NotificationCenter.default.publisher(for: .witermFindStep)) { note in
+            find(next: (note.object as? Int ?? 1) > 0, announce: true)
+        }
     }
 
     private var field: some View {
