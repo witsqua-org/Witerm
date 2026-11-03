@@ -17,15 +17,11 @@ final class MacFollowProbeTests: XCTestCase {
         app.launch()
         func shot(_ label: String) { try? app.screenshot().pngRepresentation.write(to: folder.appendingPathComponent("probe-\(label).png")) }
         app.tabBars.buttons["Terminals"].tap()
-        let mac = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "remoteMac-")).firstMatch
-        XCTAssertTrue(mac.waitForExistence(timeout: 30))
-        mac.tap()
-        // A Mac sharing a single session opens it directly; otherwise pick it.
+        // Each paired Mac's terminals are listed in its own section.
         let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "remoteSession-", name)).firstMatch
         let keyboardButton = app.buttons["remoteKeyboard"]
-        let deadline = Date().addingTimeInterval(30)
-        while Date() < deadline, !row.exists, !keyboardButton.exists { RunLoop.current.run(until: Date().addingTimeInterval(0.5)) }
-        if !keyboardButton.exists { row.tap() }
+        XCTAssertTrue(row.waitForExistence(timeout: 30))
+        row.tap()
         XCTAssertTrue(keyboardButton.waitForExistence(timeout: 30))
         RunLoop.current.run(until: Date().addingTimeInterval(2))
         shot("1-following")

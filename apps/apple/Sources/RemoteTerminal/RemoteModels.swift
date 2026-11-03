@@ -3,7 +3,7 @@ import SwiftUI
 import WitermCore
 
 /// One remote-terminal model per saved server, kept across view updates and
-/// shared by the Terminals and Machines tabs. A
+/// shared by the Terminals and Devices tabs. A
 /// server whose address changes gets a fresh model, because grants and
 /// identities belong to an address.
 @MainActor
@@ -54,13 +54,12 @@ final class RemoteModels {
 }
 
 /// One paired device's page in Devices: what this device may do there,
-/// through which relay server, its code, a way to its terminals, and Unpair.
+/// through which relay server, its code, and Unpair. Its terminals have
+/// their own section in Terminals.
 struct MacDeviceDetails: View {
     let server: ConnectionModel
     let grant: DeviceGrant
     let model: RemoteTerminalModel
-    /// Shows the device's terminals in Terminals.
-    let openTerminals: () -> Void
     /// Called once every pairing with the device has ended, before the page closes.
     let unpaired: () -> Void
     @Environment(NetworkStatus.self) private var network: NetworkStatus?
@@ -79,13 +78,6 @@ struct MacDeviceDetails: View {
 
     var body: some View {
         Form {
-            Section {
-                Button(action: openTerminals) {
-                    ContentActionLabel(String(localized: "Show Terminals", bundle: .main), systemImage: WitermSymbols.sshHost)
-                }
-                .disabled(unpairing || model.busy != nil)
-                .accessibilityIdentifier("deviceShowTerminals")
-            }
             Section {
                 // What this device may do on that one.
                 LabeledContent(String(localized: "Access", bundle: .main), value: grant.permission == .view

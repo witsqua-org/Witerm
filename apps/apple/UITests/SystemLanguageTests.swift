@@ -20,9 +20,14 @@ import XCTest
                                "-witerm.serverAddresses", "()"]
         addTeardownBlock { await MainActor.run { app.terminate() } }
         app.launch()
-        let continuing = app.buttons["firstUseContinue"]
+        // Add Device is in Devices; Add SSH Host… in Terminals' SSH Hosts.
+        app.tabBars.buttons.element(boundBy: 1).tap()
+        let continuing = app.buttons["continueFromDevice"]
         XCTAssertTrue(continuing.waitForExistence(timeout: 10))
         XCTAssertTrue(continuing.label.hasPrefix(action), continuing.label)
+        app.tabBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.buttons["newSSHProfile"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["newSSHProfile"].label.hasPrefix(title), app.buttons["newSSHProfile"].label)
         app.buttons["newSSHProfile"].tap()
         XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons[cancel].exists)

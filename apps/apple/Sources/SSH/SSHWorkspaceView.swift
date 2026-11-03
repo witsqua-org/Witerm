@@ -488,15 +488,9 @@ struct SSHWorkspaceView<Home: View>: View {
                 // The split view is the tab's root: the list in the sidebar,
                 // the SSH or paired terminal beside it in its own stack.
                 NavigationSplitView {
+                    // Add SSH Host… lives in the list's SSH Hosts section.
                     home
                         .navigationTitle(String(localized: "Terminals", bundle: .main))
-                        .toolbar {
-                            ToolbarItem(placement: .primaryAction) {
-                                Button(String(localized: "Add SSH Host…", bundle: .main), systemImage: "plus", action: ui.presentNew)
-                                    .accessibilityIdentifier("newSSHProfile")
-                                    .disabled(model.connecting)
-                            }
-                        }
                 } detail: {
                     NavigationStack {
                         if let remote { remote } else { detail }
@@ -641,10 +635,6 @@ struct SSHWorkspaceView<Home: View>: View {
                 if let session = shown {
                     Menu { sessionActions(session, find: sizeClass != .regular) } label: { Label(String(localized: "Terminal Actions", bundle: .main), systemImage: WitermSymbols.more) }
                     .accessibilityIdentifier("sshSessionActions")
-                } else if sizeClass != .regular {
-                    Button(String(localized: "Add SSH Host…", bundle: .main), systemImage: "plus", action: ui.presentNew)
-                        .disabled(model.connecting)
-                        .accessibilityIdentifier("newSSHProfile")
                 }
             }
         }
@@ -700,15 +690,16 @@ struct SSHWorkspaceView<Home: View>: View {
     }
 }
 
-/// Host search, attached only when the list is long enough to need it.
+/// Search, attached only when the list is long enough to need it.
 struct HostSearch: ViewModifier {
     let enabled: Bool
     @Binding var text: String
+    let prompt: String
 
     func body(content: Content) -> some View {
         if enabled {
             content.searchable(text: $text, placement: .navigationBarDrawer(displayMode: .always),
-                               prompt: String(localized: "Search Hosts", bundle: .main))
+                               prompt: prompt)
         } else {
             content
         }

@@ -1,7 +1,8 @@
 import XCTest
 
-/// The one first-use screen: SSH needs no server, and continuing from
-/// another device goes straight to scanning or pasting an invitation.
+/// The first-use screen: SSH needs no server, Add SSH Host… and Import SSH
+/// Hosts… are the SSH Hosts section's own rows, and Add Device lives only in
+/// Devices, where it goes straight to scanning or pasting an invitation.
 @MainActor final class FirstUseTests: XCTestCase {
     private func launchFirstUse(largeText: Bool = false) -> XCUIApplication {
         continueAfterFailure = false
@@ -16,19 +17,34 @@ import XCTest
         return app
     }
 
+    private func showDevices(_ app: XCUIApplication) {
+        let tab = app.tabBars.buttons.element(boundBy: 1)
+        XCTAssertTrue(tab.waitForExistence(timeout: 10))
+        tab.tap()
+    }
+
     func testSSHChoiceDoesNotRequireServerSetup() {
         let app = launchFirstUse()
-        XCTAssertTrue(app.buttons["sshAddFirstHost"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.buttons["firstUseContinue"].exists)
+        XCTAssertTrue(app.buttons["newSSHProfile"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["sshImportHosts"].exists)
+        // One place for each: no Add Device row and no + button here, only
+        // words saying where devices are added.
+        XCTAssertFalse(app.buttons["continueFromDevice"].exists)
+        XCTAssertEqual(app.buttons.matching(identifier: "newSSHProfile").count, 1, "Add SSH Host… appears once")
+        XCTAssertTrue(app.staticTexts["terminalsDevicesPointer"].exists)
         capture("first-use", app: app)
-        app.buttons["sshAddFirstHost"].tap()
+        app.buttons["newSSHProfile"].tap()
         XCTAssertTrue(app.textFields["sshHostAddress"].waitForExistence(timeout: 5))
     }
 
     func testContinueOpensScanOrPasteWithoutServerSetup() {
         let app = launchFirstUse()
-        XCTAssertTrue(app.buttons["firstUseContinue"].waitForExistence(timeout: 10))
-        app.buttons["firstUseContinue"].tap()
+        showDevices(app)
+        XCTAssertTrue(app.buttons["continueFromDevice"].waitForExistence(timeout: 10))
+        // Devices holds devices and relay servers only.
+        XCTAssertFalse(app.buttons["newSSHProfile"].exists)
+        XCTAssertFalse(app.buttons["sshImportHosts"].exists)
+        app.buttons["continueFromDevice"].tap()
         XCTAssertTrue(app.buttons["pasteInvitation"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["typeInvitation"].exists)
         XCTAssertFalse(app.textFields["serverAddressField"].exists, "Continuing asked for a server first")
@@ -43,13 +59,18 @@ import XCTest
 
     func testLargeTextKeepsEveryChoiceReachable() {
         let app = launchFirstUse(largeText: true)
-        XCTAssertTrue(app.buttons["sshAddFirstHost"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.buttons["sshAddFirstHost"].isHittable)
-        let continuing = app.buttons["firstUseContinue"]
-        for _ in 0..<4 where !continuing.isHittable { app.swipeUp() }
+        XCTAssertTrue(app.buttons["newSSHProfile"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["newSSHProfile"].isHittable)
+        let importing = app.buttons["sshImportHosts"]
+        for _ in 0..<4 where !importing.isHittable { app.swipeUp() }
+        XCTAssertTrue(importing.isHittable)
+        XCTAssertGreaterThanOrEqual(importing.frame.height, 44)
+        capture("first-use-large-type", app: app)
+        showDevices(app)
+        let continuing = app.buttons["continueFromDevice"]
+        XCTAssertTrue(continuing.waitForExistence(timeout: 10))
         XCTAssertTrue(continuing.isHittable)
         XCTAssertGreaterThanOrEqual(continuing.frame.height, 44)
-        capture("first-use-large-type", app: app)
     }
 
     private func capture(_ name: String, app: XCUIApplication) {

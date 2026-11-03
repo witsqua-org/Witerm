@@ -133,15 +133,40 @@ struct TerminalFeedbackSections: View {
 }
 
 #if os(iOS)
-/// Keyboard row and snippets, reachable from a terminal's Display sheet.
-struct TerminalInputLinks: View {
+/// Text size and color scheme as rows, for the collapsible Text and Colors
+/// group in Settings. Terminal contrast is in Settings ▸ Advanced, so the
+/// reset here restores only what's shown here.
+struct TerminalTextAndColorsRows: View {
+    @AppStorage(TerminalFontSize.key) private var fontSize = TerminalFontSize.standard
+    @AppStorage("witerm.terminalHighContrast") private var highContrast = false
+    @AppStorage(TerminalColorScheme.key) private var palette = TerminalColorScheme.system
+    @Environment(\.dynamicTypeSize) private var typeSize
+    private var effectiveSize: Double { fontSize * Double(TerminalTextScale.factor(typeSize)) }
+
     var body: some View {
-        Section(String(localized: "Keyboard", bundle: .main)) {
-            NavigationLink(String(localized: "Keyboard Row", bundle: .main)) { MobileKeyRowSettings() }
-                .accessibilityIdentifier("mobileKeyRowSettings")
-            NavigationLink(String(localized: "Snippets", bundle: .main)) { SnippetSettingsView() }
-                .accessibilityIdentifier("snippetSettings")
+        Stepper(value: $fontSize, in: TerminalFontSize.range, step: 1) {
+            LabeledContent(String(localized: "Font Size", bundle: .main), value: String(localized: "\(Int(fontSize)) pt"))
         }
+        .accessibilityIdentifier("terminalFontSize")
+        Text("Aa 0123456789")
+            .font(.system(size: effectiveSize, design: .monospaced))
+            .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+            .accessibilityLabel(String(localized: "Font preview, \(Int(effectiveSize.rounded())) pt"))
+        Picker(String(localized: "Color Scheme", bundle: .main), selection: $palette) {
+            ForEach(TerminalColorScheme.allCases) { scheme in
+                Text(scheme.title).tag(scheme)
+            }
+        }
+        .accessibilityIdentifier("terminalColorScheme")
+        TerminalSchemePreview(scheme: palette, highContrast: highContrast)
+        Button {
+            fontSize = TerminalFontSize.standard
+            palette = .system
+        } label: {
+            ContentActionLabel(String(localized: "Restore Display Defaults", bundle: .main), systemImage: "arrow.counterclockwise")
+        }
+        .disabled(fontSize == TerminalFontSize.standard && palette == .system)
+        .accessibilityIdentifier("resetTerminalAppearance")
     }
 }
 #endif
@@ -194,10 +219,11 @@ struct TerminalAppearanceSettings: View {
         NavigationStack {
             Form {
                 TerminalDisplaySections()
-                #if os(iOS)
-                TerminalInputLinks()
-                #endif
+                // On iOS the key row, snippets, bell and VoiceOver live in
+                // Settings only; this sheet is just text and colors.
+                #if os(macOS)
                 TerminalFeedbackSections()
+                #endif
             }
                 .formStyle(.grouped)
                 .navigationTitle("Terminal Display")

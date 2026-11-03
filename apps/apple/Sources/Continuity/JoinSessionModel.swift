@@ -60,6 +60,8 @@ final class JoinSessionModel {
                     }
                     (client, grant) = (joining, signed)
                     self.joined = (client, grant)
+                    // Listed under Shared with You, not as a paired device.
+                    SharedTerminals.record(signed.id, until: invitation.expiresAt)
                 }
                 self.phase = .working(String(localized: "Opening the terminal…", bundle: .main))
                 try await RemoteTerminalClient(pairing: client, grantID: grant.id).redeem(invitation)

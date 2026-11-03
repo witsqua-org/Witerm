@@ -63,21 +63,21 @@ The Mac app needs `tmux` (`brew install tmux`). Keychain access needs a normally
 
 | To | Do |
 |---|---|
-| Connect over SSH | Mac: File → Add SSH Host… (⇧⌘N). iOS: the + button in Terminals. Verify each host's fingerprint on first connect. |
+| Connect over SSH | Mac: File → Add SSH Host… (⇧⌘N). iOS: Terminals → SSH Hosts → Add SSH Host…. Verify each host's fingerprint on first connect. |
 | Open a Mac terminal | Start the local service from the main window, then create a session under **This Mac**. |
 | Use the command line | Settings → Command Line → Install, then run `witerm new` in any folder. |
 | Open a terminal on another device | See below. |
-| Share one terminal without pairing | **Open On ▸ Someone Else…**; on iOS, **Add Device** |
+| Share one terminal without pairing | **Open On ▸ Someone Else…**; on iOS, **Add Device** in Devices, after which it's under **Shared with You** in Terminals |
 
 **Open a terminal on another device:**
 
 1. On the Mac, select a terminal and choose **Open On ▸** and a paired device, or **New Device…** (context menu, File or Terminal; **Choose a Device…** is ⌥⌘P). The sheet goes one step at a time and skips steps already done.
 2. **Server:** pick the relay server and turn on remote access if asked. Settings → Devices uses the same server.
 3. **Device:** choose a paired device, or **Pair a New Device** to show a code.
-4. On iOS, choose **Add Device** (first use, or the Devices tab) and scan or paste the code. A new server is added only when you tap Request Access.
+4. On iOS, choose **Add Device** in the Devices tab and scan or paste the code. A new server is added only when you tap Request Access.
 5. On the Mac, compare the code and approve. By default the device can open only this terminal, and can watch and type.
 
-The terminal then opens on the phone. Paired devices and the terminals they may open also appear in the iOS **Terminals** tab. The phone can type while the Mac stays attached. Each app can use up to 8 servers at once.
+The terminal then opens on the phone. Each paired device has its own section in the iOS **Terminals** tab, listing the terminals it may open, with whether the device is online. The phone can type while the Mac stays attached. Each app can use up to 8 servers at once.
 
 ## Development
 

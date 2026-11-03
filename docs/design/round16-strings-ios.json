@@ -1,0 +1,23 @@
+{
+  "add": {
+    "%@ · Until the invitation ends": "%@ · 邀请结束前可用",
+    "Advanced": "高级",
+    "Offline": "离线",
+    "Offline. Its terminals appear here when it’s back online.": "离线。它重新上线后，终端会显示在这里。",
+    "Search Terminals": "搜索终端",
+    "Shared with You": "与你共享",
+    "To open another device’s terminals here, add it in Devices.": "要在这里打开另一台设备的终端，请先在“设备”中添加它。"
+  },
+  "change": {},
+  "remove": [
+    "Bell and VoiceOver",
+    "Bell Off",
+    "Bell On",
+    "Connections",
+    "Opens its terminal in Terminals.",
+    "Paired Devices · %@",
+    "Search Hosts",
+    "Show Terminals",
+    "Shows this device’s terminals."
+  ]
+}

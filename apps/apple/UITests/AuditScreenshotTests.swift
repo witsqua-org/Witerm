@@ -155,20 +155,20 @@ import XCTest
         _ = app.buttons["continueFromDevice"].waitForExistence(timeout: 10)
         shot("05-devices-empty")
         tab(2)
-        _ = app.buttons["settingsServers"].waitForExistence(timeout: 10)
+        _ = app.buttons["settingsAdvanced"].waitForExistence(timeout: 10)
         shot("06-settings")
-        reveal(app.buttons["settingsDisplay"]); shot("07-settings-text-colors")
+        // Text and Colors opens in place.
+        reveal(app.descendants(matching: .any)["settingsDisplay"].firstMatch); shot("07-settings-text-colors")
         app.swipeUp(); shot("07b-settings-text-colors-scrolled")
-        back()
-        reveal(app.buttons["settingsFeedback"]); shot("08-settings-bell"); back()
-        reveal(app.buttons["mobileKeyRowSettings"]); shot("09-settings-keyboard-row"); back()
+        reveal(app.buttons["settingsAdvanced"]); shot("08-settings-advanced")
+        reveal(app.buttons["mobileKeyRowSettings"]); shot("09-settings-keyboard-row"); back(); back()
         reveal(app.buttons["snippetSettings"]); shot("10-settings-snippets")
         if app.buttons["addSnippet"].waitForExistence(timeout: 3) {
             app.buttons["addSnippet"].tap(); shot("10b-snippet-editor")
         }
         launch(v)
-        tab(2)
-        reveal(app.buttons["settingsServers"]); shot("11-relay-servers")
+        tab(1)
+        reveal(app.buttons["settingsAddServer"], tap: false); shot("11-relay-servers")
         let row = app.buttons["settingsServerRow-0"]
         if row.waitForExistence(timeout: 5) {
             row.tap(); RunLoop.current.run(until: Date().addingTimeInterval(2)); shot("12-relay-server-page")

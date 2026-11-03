@@ -28,12 +28,13 @@ final class ConnectionFlowTests: XCTestCase {
         tab.tap()
     }
 
-    /// Settings → Relay Servers, which lists one row per server.
+    /// Devices ▸ Relay Servers, which lists one row per server, after the
+    /// paired devices.
     private func openServers(_ app: XCUIApplication) {
-        openSettings(app)
-        let servers = app.buttons["settingsServers"]
-        XCTAssertTrue(servers.waitForExistence(timeout: 10))
-        servers.tap()
+        openDevices(app)
+        let add = app.buttons.matching(NSPredicate(format: "identifier IN %@", ["settingsAddServer", "settingsEditServer"])).firstMatch
+        XCTAssertTrue(add.waitForExistence(timeout: 10))
+        for _ in 0..<4 where !add.isHittable { app.swipeUp() }
     }
 
     private func openServer(_ app: XCUIApplication, index: Int = 0) {
@@ -122,7 +123,7 @@ final class ConnectionFlowTests: XCTestCase {
         XCUIDevice.shared.appearance = .dark
         defer { XCUIDevice.shared.appearance = originalAppearance }
         let app = launchApp()
-        XCTAssertTrue(app.buttons["firstUseContinue"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["newSSHProfile"].waitForExistence(timeout: 10))
         // The appearance change reaches the app asynchronously; capture only
         // once the rendered screen is actually dark.
         XCTAssertTrue(waitForDarkScreen(app), "The app did not render in dark appearance")
@@ -132,7 +133,7 @@ final class ConnectionFlowTests: XCTestCase {
         XCTAssertTrue(waitForDarkScreen(app))
         capture("07-dark-devices", app: app)
         openSettings(app)
-        XCTAssertTrue(app.buttons["settingsDisplay"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["settingsDisplay"].firstMatch.waitForExistence(timeout: 5))
         XCTAssertTrue(waitForDarkScreen(app))
         capture("07-dark-settings", app: app)
     }

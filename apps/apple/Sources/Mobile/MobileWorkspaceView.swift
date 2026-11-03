@@ -7,14 +7,15 @@ private enum MobileTab: Hashable {
     case terminals, devices, settings
 }
 
-/// Terminals to open, the devices they run on, and Settings. Terminals are
-/// organized by what a person wants to reopen, not by how it is reached.
+/// Terminals to open, the devices they run on, and Settings. Every function
+/// has one place: terminals and SSH hosts in Terminals, devices and relay
+/// servers in Devices, preferences in Settings.
 struct MobileWorkspaceView: View {
     @State private var tab = MobileTab.terminals
     @State private var ssh = SSHWorkspaceModel()
     @State private var sshUI = SSHWorkspaceUI()
     @State private var macs = RemoteModels()
-    /// The server whose selected Mac fills the Terminals tab.
+    /// The server whose paired terminal fills the Terminals tab.
     @State private var activeServerID: ConnectionModel.ID?
     @State private var loaded = false
     @State private var continuing: ContinueFlowRequest?
@@ -22,14 +23,14 @@ struct MobileWorkspaceView: View {
     @State private var touring = false
     @Environment(ServerList.self) private var servers
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.horizontalSizeClass) private var sizeClass
 
-    /// A Mac chosen in Terminals, while its sessions or terminal are shown.
+    /// The relay server whose paired terminal is on screen. Terminals lists
+    /// every device's terminals itself, so the paired workspace shows only
+    /// while a terminal (or its kept last frame) is displayed.
     private var activeMac: RemoteTerminalModel? {
         guard let server = servers.server(id: activeServerID), server.supportsRelay,
-              let model = macs.existing(for: server),
-              model.selectedGrant != nil || model.displayAttachment != nil else { return nil }
+              let model = macs.existing(for: server), model.displayAttachment != nil else { return nil }
         return model
     }
 
@@ -38,6 +39,9 @@ struct MobileWorkspaceView: View {
             if loaded { workspace } else { ProgressView() }
         }
         .task {
+            #if DEBUG
+            RemoteFixture.cleanUpIfAsked()
+            #endif
             await ssh.load()
             guard !Task.isCancelled else { return }
             loaded = true
@@ -46,28 +50,49 @@ struct MobileWorkspaceView: View {
 
     private func continueFromDevice() { continuing = ContinueFlowRequest() }
 
-    /// `openingSole` attaches at once when the device allows one session.
-    private func openMac(_ server: ConnectionModel, _ grant: DeviceGrant, openingSole: Bool = false) {
+    /// After Add Device: attaches at once when the device allows one
+    /// terminal; otherwise its terminals are listed in its section.
+    private func openApproved(_ server: ConnectionModel, _ grant: DeviceGrant) {
         let model = macs.model(for: server)
         // Just approved: a device listing that started meanwhile mustn't keep
-        // the session from opening.
-        if openingSole, model.busy != nil { model.cancelWork() }
-        guard model.busy == nil else { return }
+        // the terminal from opening.
+        if model.busy != nil { model.cancelWork() }
+        leaveOtherServer(than: server)
         sshUI.show(nil)
-        model.select(grant, openingSole: openingSole)
+        model.select(grant, openingSole: true)
         activeServerID = server.id
         tab = .terminals
     }
 
-    private func openHost(_ profile: SSHProfile) {
+    /// Opens one of a device's terminals from the list. Within one relay
+    /// server, the model detaches any open terminal and waits for that ACK
+    /// before attaching.
+    private func openTerminal(_ server: ConnectionModel, _ grant: DeviceGrant, _ session: LocalSessionInfo,
+                              mode: LocalAttachmentMode?) {
+        let model = macs.model(for: server)
+        guard model.busy == nil else { return }
         tab = .terminals
-        activeServerID = nil
-        if ssh.session(for: profile.id) != nil { sshUI.show(profile.id) } else { sshUI.open(profile, model: ssh) }
+        if activeServerID == server.id, model.selectedGrant?.id == grant.id,
+           model.displayAttachment?.session.id == session.id, mode == nil {
+            sshUI.show(nil)
+            return
+        }
+        leaveOtherServer(than: server)
+        sshUI.show(nil)
+        model.open(session, on: grant, mode: mode)
+        activeServerID = server.id
+    }
+
+    /// A paired terminal through another relay server is left (it keeps
+    /// running there) before this one is shown.
+    private func leaveOtherServer(than server: ConnectionModel) {
+        guard let id = activeServerID, id != server.id, let other = servers.server(id: id),
+              let model = macs.existing(for: other), model.displayAttachment != nil else { return }
+        model.showSessions()
     }
 
     private var home: some View {
-        TerminalsHome(ssh: ssh, ui: sshUI, macs: macs, openMac: { openMac($0, $1, openingSole: true) },
-                      continueFromDevice: continueFromDevice)
+        TerminalsHome(ssh: ssh, ui: sshUI, macs: macs, openTerminal: { openTerminal($0, $1, $2, mode: $3) })
     }
 
     /// On iPhone a stack that the terminal replaces; on a regular width the
@@ -91,33 +116,41 @@ struct MobileWorkspaceView: View {
     private var shownSSH: SSHSession? { activeMac == nil ? sshUI.shownID.flatMap(ssh.session(for:)) : nil }
     private var shownMac: RemoteTerminalModel? { activeMac.flatMap { $0.isInteractive ? $0 : nil } }
 
-    /// What ⌘1–⌘9 and ⇧⌘] / ⇧⌘[ step through, in the Terminal menu's order:
-    /// the terminals of the paired device open here, then connected SSH hosts.
+    /// What ⌘1–⌘9 and ⇧⌘] / ⇧⌘[ step through, in the list's order: each
+    /// paired device's terminals, terminals shared with you, then connected
+    /// SSH hosts.
     private enum OpenTerminal: Equatable {
-        case paired(String)
+        case paired(server: ConnectionModel.ID, grant: String, session: String)
         case ssh(UUID)
     }
 
     private var openTerminals: [(terminal: OpenTerminal, name: String)] {
-        let paired = activeMac.map { model in model.sessions.map { (OpenTerminal.paired($0.id), $0.name) } } ?? []
+        let sections = TerminalsHome.sections(servers: servers, macs: macs)
+        let paired = (sections.paired + sections.shared).flatMap { section in
+            section.terminals.map { (OpenTerminal.paired(server: section.server.id, grant: section.grant.id, session: $0.id), $0.name) }
+        }
         let hosts = ssh.orderedProfiles().filter { ssh.session(for: $0.id) != nil }.map { (OpenTerminal.ssh($0.id), $0.name) }
         return paired + hosts
     }
 
     private var currentTerminal: OpenTerminal? {
-        if let model = activeMac { return model.displayAttachment.map { .paired($0.session.id) } }
+        if let model = activeMac, let id = activeServerID, let grant = model.selectedGrant {
+            return model.displayAttachment.map { .paired(server: id, grant: grant.id, session: $0.session.id) }
+        }
         return sshUI.shownID.flatMap { ssh.session(for: $0) != nil ? .ssh($0) : nil }
     }
 
-    /// A paired terminal switches through the same detach-then-attach as the
-    /// title's switcher; an SSH host is shown as it is.
+    /// A paired terminal opens through the same detach-then-attach as any
+    /// switch; an SSH host is shown as it is.
     private func show(_ terminal: OpenTerminal) {
         guard terminal != currentTerminal else { return }
         tab = .terminals
         switch terminal {
-        case .paired(let id):
-            guard let model = activeMac, model.busy == nil, let session = model.sessions.first(where: { $0.id == id }) else { return }
-            model.attach(session)
+        case .paired(let serverID, let grantID, let sessionID):
+            let sections = TerminalsHome.sections(servers: servers, macs: macs)
+            guard let section = (sections.paired + sections.shared).first(where: { $0.server.id == serverID && $0.grant.id == grantID }),
+                  let session = section.terminals.first(where: { $0.id == sessionID }) else { return }
+            openTerminal(section.server, section.grant, session, mode: nil)
         case .ssh(let id):
             activeServerID = nil
             sshUI.requestedSession = id
@@ -129,8 +162,7 @@ struct MobileWorkspaceView: View {
             terminalsTab
             .tabItem { Label(String(localized: "Terminals", bundle: .main), systemImage: WitermSymbols.sshHost) }
             .tag(MobileTab.terminals)
-            DevicesView(ssh: ssh, ui: sshUI, macs: macs, openMac: { openMac($0, $1) }, openHost: openHost,
-                        continueFromDevice: continueFromDevice)
+            DevicesView(macs: macs, continueFromDevice: continueFromDevice)
                 .tabItem { Label(String(localized: "Devices", bundle: .main), systemImage: WitermSymbols.openOn) }
                 .tag(MobileTab.devices)
             MobileSettingsView(showTour: { touring = true })
@@ -143,7 +175,7 @@ struct MobileWorkspaceView: View {
         .modifier(IOSWelcomeTourPresentation(touring: $touring) { tab = .terminals })
         .sheet(item: $continuing) { request in
             ContinueFromDeviceFlow(invitation: request.invitation) { server, grant in
-                openMac(server, grant, openingSole: true)
+                openApproved(server, grant)
             }
         }
         // From a server address that turned out to be an SSH login, or an invitation.
@@ -161,6 +193,7 @@ struct MobileWorkspaceView: View {
             importSSHHosts: { sshUI.importing = true },
             refresh: {
                 servers.servers.forEach { $0.check() }
+                servers.relayServers.forEach { macs.existing(for: $0)?.listTerminals() }
                 Task { await ssh.load() }
             },
             terminalNames: openTerminals.map(\.name),
@@ -190,7 +223,11 @@ struct MobileWorkspaceView: View {
             activeServerID = nil
             tab = .terminals
         }
-        // Paired Macs are listed in both Terminals and Machines.
+        // Back from a paired terminal: its device's list may have changed.
+        .onChange(of: activeMac == nil) { _, none in
+            if none { servers.relayServers.forEach { macs.existing(for: $0)?.listTerminals() } }
+        }
+        // Paired devices are listed in both Terminals and Devices.
         .task(id: servers.relayServers.map(\.id)) { macs.loadNew(servers.relayServers) }
         .onChange(of: servers.servers.map(\.id)) { macs.prune(keeping: servers.servers) }
         // Only the background interrupts a terminal. Control Center, the app
@@ -209,72 +246,36 @@ struct MobileWorkspaceView: View {
     }
 }
 
-/// A short index in three groups: how the terminal looks, how you type, and
-/// where connections go. Details and actions live one tap away.
+/// Frequent preferences first, by category, then Advanced for what is set
+/// once if ever. Relay servers live in Devices.
 private struct MobileSettingsView: View {
     /// Reopens the Welcome Tour.
     let showTour: () -> Void
-    @Environment(ServerList.self) private var servers
     @AppStorage(TerminalFontSize.key) private var fontSize = TerminalFontSize.standard
     @AppStorage(TerminalColorScheme.key) private var palette = TerminalColorScheme.system
-    @AppStorage(MobileKey.key) private var keys = ""
     @AppStorage(CommandSnippets.key) private var snippets = Data()
-    @AppStorage(TerminalBell.key) private var bell = true
+    @State private var textAndColorsShown = false
 
     var body: some View {
         NavigationStack {
             Form {
-                Section(String(localized: "Appearance", bundle: .main)) {
-                    NavigationLink {
-                        Form { TerminalDisplaySections() }
-                            .formStyle(.grouped)
-                            .navigationTitle(String(localized: "Text and Colors", bundle: .main))
+                Section(String(localized: "Terminal", bundle: .main)) {
+                    // Text size and colors together, collapsed to their
+                    // current values until opened.
+                    DisclosureGroup(isExpanded: $textAndColorsShown) {
+                        TerminalTextAndColorsRows()
                     } label: {
+                        // On the label: on the group it would replace the
+                        // rows' own identifiers.
                         LabeledContent(String(localized: "Text and Colors", bundle: .main),
                                        value: String(localized: "\(Int(fontSize)) pt · \(palette.title)", bundle: .main))
+                            .accessibilityIdentifier("settingsDisplay")
                     }
-                    .accessibilityIdentifier("settingsDisplay")
-                    NavigationLink {
-                        Form { TerminalFeedbackSections() }
-                            .formStyle(.grouped)
-                            .navigationTitle(String(localized: "Bell and VoiceOver", bundle: .main))
-                    } label: {
-                        LabeledContent(String(localized: "Bell and VoiceOver", bundle: .main),
-                                       value: bell ? String(localized: "Bell On", bundle: .main) : String(localized: "Bell Off", bundle: .main))
-                    }
-                    .accessibilityIdentifier("settingsFeedback")
-                }
-
-                Section(String(localized: "Keyboard", bundle: .main)) {
-                    NavigationLink { MobileKeyRowSettings() } label: {
-                        LabeledContent(String(localized: "Keyboard Row", bundle: .main),
-                                       value: String(localized: "\(MobileKey.decode(keys).count) keys", bundle: .main))
-                    }
-                    .accessibilityIdentifier("mobileKeyRowSettings")
                     NavigationLink { SnippetSettingsView() } label: {
                         LabeledContent(String(localized: "Snippets", bundle: .main),
                                        value: String(localized: "\(CommandSnippets.decode(snippets).count) saved", bundle: .main))
                     }
                     .accessibilityIdentifier("snippetSettings")
-                }
-
-                Section {
-                    NavigationLink { ServersPage() } label: {
-                        LabeledContent {
-                            if !servers.servers.isEmpty {
-                                StatusBadge(servers.summaryStatus, systemImage: servers.summarySymbol, tone: servers.summaryTone)
-                            }
-                        } label: {
-                            VStack(alignment: .leading, spacing: WitermMetrics.Space.xxs) {
-                                Text(String(localized: "Relay Servers", bundle: .main))
-                                Text(servers.servers.count == 1 ? servers.servers[0].displayName : servers.summaryTitle)
-                                    .font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
-                            }
-                        }
-                    }
-                    .accessibilityIdentifier("settingsServers")
-                } header: {
-                    Text(String(localized: "Connections", bundle: .main))
                 }
 
                 Section(String(localized: "Help", bundle: .main)) {
@@ -283,6 +284,13 @@ private struct MobileSettingsView: View {
                     }
                     .accessibilityIdentifier("settingsWelcomeTour")
                 }
+
+                Section {
+                    NavigationLink { AdvancedSettingsView() } label: {
+                        Text(String(localized: "Advanced", bundle: .main))
+                    }
+                    .accessibilityIdentifier("settingsAdvanced")
+                }
             }
             .formStyle(.grouped)
             .navigationTitle(String(localized: "Settings", bundle: .main))
@@ -290,122 +298,31 @@ private struct MobileSettingsView: View {
     }
 }
 
-/// Every saved server, one row each with its status; each opens its own page.
-private struct ServersPage: View {
-    @Environment(ServerList.self) private var servers
-    @Environment(\.dynamicTypeSize) private var typeSize
-    @State private var editing: ServerEditRequest?
+/// What most people set once, if ever: terminal contrast (which also
+/// follows the system's Increase Contrast), the key row, the bell, and
+/// VoiceOver announcements. Each keeps its own header to stay findable.
+private struct AdvancedSettingsView: View {
+    @AppStorage("witerm.terminalHighContrast") private var highContrast = false
+    @AppStorage(MobileKey.key) private var keys = ""
 
     var body: some View {
         Form {
-            Section {
-                ForEach(Array(servers.servers.enumerated()), id: \.element.id) { index, server in
-                    NavigationLink {
-                        ServerSettingsPage(server: server, edit: { editing = .edit(server) })
-                    } label: {
-                        let badge = StatusBadge(server.statusTitle, systemImage: server.statusSymbol, tone: server.statusTone)
-                        if typeSize.isAccessibilitySize {
-                            // The name, which identifies the server, wraps
-                            // whole; the status goes under it.
-                            VStack(alignment: .leading, spacing: WitermMetrics.Space.xs) {
-                                AddressText(server.displayName, lines: 0, style: .body, monospaced: false,
-                                            color: UIColor(named: "Ink") ?? .label)
-                                badge
-                            }
-                        } else {
-                            LabeledContent {
-                                badge
-                            } label: {
-                                Text(server.displayName).lineLimit(1).truncationMode(.middle)
-                            }
-                        }
-                    }
-                    .accessibilityIdentifier("settingsServerRow-\(index)")
-                }
-                Button { editing = .add } label: {
-                    ContentActionLabel(String(localized: "Add Relay Server", bundle: .main), systemImage: "plus")
-                }
-                    .disabled(servers.isFull)
-                    .accessibilityIdentifier(servers.servers.isEmpty ? "settingsEditServer" : "settingsAddServer")
-            } footer: {
-                if servers.isFull { Text(ServerList.Failure.full.message) }
+            Section(String(localized: "Appearance", bundle: .main)) {
+                Toggle(String(localized: "Increase Terminal Contrast", bundle: .main), isOn: $highContrast).witermSwitchTint()
+                    .accessibilityIdentifier("terminalHighContrast")
             }
+            Section(String(localized: "Keyboard", bundle: .main)) {
+                NavigationLink { MobileKeyRowSettings() } label: {
+                    LabeledContent(String(localized: "Keyboard Row", bundle: .main),
+                                   value: String(localized: "\(MobileKey.decode(keys).count) keys", bundle: .main))
+                }
+                .accessibilityIdentifier("mobileKeyRowSettings")
+            }
+            TerminalFeedbackSections()
         }
         .formStyle(.grouped)
-        .navigationTitle(String(localized: "Relay Servers", bundle: .main))
+        .navigationTitle(String(localized: "Advanced", bundle: .main))
         .navigationBarTitleDisplayMode(.inline)
-        .serverEditor($editing)
-    }
-}
-
-/// One server's status and actions. Confirms its own removal, since an alert
-/// can only come from the page on screen, and leaves once the server is gone.
-private struct ServerSettingsPage: View {
-    let server: ConnectionModel
-    let edit: () -> Void
-    @State private var confirmingRemoval = false
-    @Environment(ServerList.self) private var servers
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        Form { ServerSettingsSection(server: server, edit: edit, remove: { confirmingRemoval = true }) }
-            .formStyle(.grouped)
-            .alert(String(localized: "Remove Relay Server?", bundle: .main), isPresented: $confirmingRemoval) {
-                Button(String(localized: "Cancel", bundle: .main), role: .cancel) {}
-                Button(String(localized: "Remove", bundle: .main), role: .destructive) { servers.remove(server) }
-            } message: {
-                Text(String(localized: "Devices paired through this relay server stop appearing here. They stay paired.", bundle: .main))
-            }
-            .navigationTitle(server.displayName)
-            .navigationBarTitleDisplayMode(.inline)
-            .onChange(of: servers.servers.map(\.id)) { _, ids in
-                if !ids.contains(server.id) { dismiss() }
-            }
-    }
-}
-
-/// One saved server: where it is, whether it answers, and its actions.
-/// The status is stated once, by the feedback row; removal sits apart.
-private struct ServerSettingsSection: View {
-    let server: ConnectionModel
-    let edit: () -> Void
-    let remove: () -> Void
-
-    var body: some View {
-        Section {
-            LabeledContent(String(localized: "Address", bundle: .main)) {
-                Text(server.address)
-                    .font(WitermType.code)
-                    .foregroundStyle(WitermTheme.secondary)
-                    .textSelection(.enabled)
-                    .multilineTextAlignment(.trailing)
-            }
-            ConnectionFeedback(server: server)
-                .accessibilityIdentifier("settingsConnectionFeedback")
-            if server.phase.isChecking {
-                Button(action: server.cancel) {
-                    ContentActionLabel(String(localized: "Cancel Check", bundle: .main), systemImage: "xmark")
-                }
-                .accessibilityIdentifier("cancelConnection")
-            } else {
-                Button(action: server.check) {
-                    ContentActionLabel(String(localized: "Check Connection", bundle: .main), systemImage: "arrow.clockwise")
-                }
-                .accessibilityIdentifier("settingsCheckConnection")
-            }
-        }
-        Section {
-            Button(action: edit) {
-                ContentActionLabel(String(localized: "Edit Address", bundle: .main), systemImage: "pencil")
-            }
-            .accessibilityIdentifier("settingsEditServer")
-        }
-        Section {
-            Button(role: .destructive, action: remove) {
-                Label(String(localized: "Remove Relay Server…", bundle: .main), systemImage: "trash").fontWeight(.semibold)
-            }
-            .accessibilityIdentifier("settingsRemoveServer")
-        }
     }
 }
 #endif

@@ -112,6 +112,12 @@ enum RemoteTerminalConnectionState: Equatable {
     case browsing, connecting, connected, switching, disconnected, ended
 }
 
+/// Whether a device answered when its terminals were last listed.
+enum TerminalListing: Equatable {
+    case listing, online, offline
+    case failed(title: String, recovery: String)
+}
+
 @MainActor @Observable
 final class RemoteTerminalModel {
     let serverAddress: String
@@ -120,6 +126,26 @@ final class RemoteTerminalModel {
     /// the one that can type if any can, then the newest. Lists show these;
     /// Unpair ends every pairing with the device.
     var devices: [DeviceGrant] { Self.devices(in: grants) }
+    /// Devices this one is paired with: `devices` without the grants that
+    /// came from a one-terminal invitation (see `SharedTerminals`).
+    var pairedDevices: [DeviceGrant] {
+        let shared = SharedTerminals.ids()
+        return Self.devices(in: grants.filter { !shared.contains($0.id) })
+    }
+    /// Grants from a one-terminal invitation, for Terminals ▸ Shared with
+    /// You. A device that is also paired is listed once, as paired.
+    var sharedGrants: [DeviceGrant] {
+        let shared = SharedTerminals.ids()
+        let paired = Set(pairedDevices.map(\.host.id))
+        return grants.filter { shared.contains($0.id) && !paired.contains($0.host.id) }
+    }
+    /// Each listed grant's terminals, as last listed, so Terminals can show
+    /// every device's terminals without opening one. In memory only.
+    private(set) var terminals: [String: [LocalSessionInfo]] = [:]
+    /// Whether each grant's device answered the last listing.
+    private(set) var listing: [String: TerminalListing] = [:]
+    @ObservationIgnored private var listings: [String: Task<Void, Never>] = [:]
+    @ObservationIgnored private var listingGeneration = 0
     private(set) var selectedGrant: DeviceGrant?
     private(set) var sessions: [LocalSessionInfo] = []
     private(set) var selectedSession: LocalSessionInfo?
@@ -183,6 +209,15 @@ final class RemoteTerminalModel {
         grants = []
         loaded = false
         connectionState = .browsing
+        cancelListings()
+        #if DEBUG
+        if RemoteFixture.isActive {
+            grants = RemoteFixture.grants
+            loaded = true
+            listTerminals()
+            return
+        }
+        #endif
         do {
             let pairing = try pairingClient()
             let token = generation
@@ -207,6 +242,8 @@ final class RemoteTerminalModel {
                     self.loaded = true
                     self.busy = nil
                     self.work = nil
+                    SharedTerminals.prune(keeping: Set(verified.map(\.id)))
+                    self.listTerminals()
                 } catch { self?.failed(error, token: token) }
             }
         } catch { issue = RemoteTerminalIssue(error) }
@@ -246,6 +283,8 @@ final class RemoteTerminalModel {
                     let sessions = try await RemoteTerminalClient(pairing: pairing, grantID: grant.id).sessions()
                     guard let self, self.generation == token, !Task.isCancelled else { return }
                     self.sessions = sessions
+                    self.terminals[grant.id] = sessions
+                    self.listing[grant.id] = .online
                     self.loaded = true
                     self.busy = nil
                     self.work = nil
@@ -264,6 +303,91 @@ final class RemoteTerminalModel {
 
     func attach(_ session: LocalSessionInfo, mode requestedMode: LocalAttachmentMode? = nil) {
         attach(session, mode: requestedMode, automatic: false)
+    }
+
+    /// Opens a terminal listed in Terminals, from any of this server's
+    /// devices. Another terminal open here is detached first, and the new
+    /// one attaches only after that ACK (`attach` does both).
+    func open(_ session: LocalSessionInfo, on grant: DeviceGrant, mode requestedMode: LocalAttachmentMode? = nil) {
+        guard busy == nil else { return }
+        if selectedGrant?.id != grant.id {
+            unpairedName = nil
+            selectedGrant = grant
+            selectedSession = nil
+            if !grants.contains(where: { $0.id == grant.id }) { grants.append(grant) }
+            sessions = terminals[grant.id] ?? []
+        }
+        if !sessions.contains(where: { $0.id == session.id }) { sessions.append(session) }
+        attach(session, mode: requestedMode)
+    }
+
+    /// What `grant`'s device lets this one do in `session`, as listed.
+    static func access(for session: LocalSessionInfo, on grant: DeviceGrant) -> LocalAttachmentMode {
+        grant.permission == .control ? session.access ?? .control : .view
+    }
+
+    // MARK: Listing every device's terminals
+
+    /// Lists the terminals of every device on this server, each on its own,
+    /// so one offline device never hides another's terminals. Read-only: it
+    /// never touches an open terminal or the selection.
+    func listTerminals() {
+        for grant in pairedDevices + sharedGrants { listTerminals(on: grant) }
+    }
+
+    private func listTerminals(on grant: DeviceGrant) {
+        guard listings[grant.id] == nil else { return }
+        if listing[grant.id] == nil { listing[grant.id] = .listing }
+        #if DEBUG
+        if RemoteFixture.isActive {
+            terminals[grant.id] = RemoteFixture.sessions[grant.id] ?? []
+            listing[grant.id] = RemoteFixture.offline.contains(grant.id) ? .offline : .online
+            return
+        }
+        #endif
+        let pairing: PairingClient
+        do { pairing = try pairingClient() } catch { return }
+        let token = listingGeneration
+        listings[grant.id] = Task { [weak self] in
+            var result: Result<[LocalSessionInfo], Error>
+            do {
+                let current = try await pairing.grants()
+                guard current.contains(where: { $0.id == grant.id }) else { throw RelayError.revoked }
+                _ = try await pairing.trustedRelayGrant(id: grant.id)
+                result = .success(try await RemoteTerminalClient(pairing: pairing, grantID: grant.id).sessions())
+            } catch {
+                result = .failure(error)
+            }
+            guard let self, self.listingGeneration == token, !Task.isCancelled else { return }
+            self.listings[grant.id] = nil
+            switch result {
+            case .success(let sessions):
+                self.terminals[grant.id] = sessions
+                self.listing[grant.id] = .online
+            case .failure(let error):
+                if Self.isTrustFailure(error), self.selectedGrant?.id != grant.id {
+                    // Ended on the other side: it leaves the lists, as a
+                    // device listing would drop it.
+                    self.grants.removeAll { $0.id == grant.id }
+                    self.terminals[grant.id] = nil
+                    self.listing[grant.id] = nil
+                    SharedTerminals.forget(grant.id)
+                } else if (error as? RelayError) == .offline {
+                    self.listing[grant.id] = .offline
+                } else {
+                    let issue = RemoteTerminalIssue(error)
+                    self.listing[grant.id] = .failed(title: issue.title, recovery: issue.recovery)
+                }
+            }
+        }
+    }
+
+    private func cancelListings() {
+        listingGeneration += 1
+        listings.values.forEach { $0.cancel() }
+        listings = [:]
+        terminals = [:]
+        listing = [:]
     }
 
     private func attach(_ session: LocalSessionInfo, mode requestedMode: LocalAttachmentMode?, automatic: Bool) {
@@ -429,6 +553,7 @@ final class RemoteTerminalModel {
         resumeIfNeeded()
         // A list may have changed while away.
         if displayAttachment == nil, selectedGrant != nil, busy == nil { refreshSessions() }
+        listTerminals()
     }
 
     private func detachForBackground() {
@@ -532,7 +657,11 @@ final class RemoteTerminalModel {
         guard unpairingID == nil else { return }
         unpairingID = grant.id
         defer { unpairingID = nil }
-        let pairing = try pairingClient()
+        #if DEBUG
+        let pairing: PairingClient? = RemoteFixture.isActive ? nil : try pairingClient()
+        #else
+        let pairing: PairingClient? = try pairingClient()
+        #endif
         // Every pairing with that device ends, so it leaves the lists: an
         // earlier one that was never cleaned up would otherwise keep it there.
         let ending = Self.pairings(endedBy: grant, in: grants)
@@ -553,8 +682,11 @@ final class RemoteTerminalModel {
             connectionState = .browsing
         }
         for pairingToEnd in ending {
-            try await pairing.revoke(grantID: pairingToEnd.id, pairingID: pairingToEnd.pairingID)
+            try await pairing?.revoke(grantID: pairingToEnd.id, pairingID: pairingToEnd.pairingID)
             grants.removeAll { $0.id == pairingToEnd.id }
+            terminals[pairingToEnd.id] = nil
+            listing[pairingToEnd.id] = nil
+            SharedTerminals.forget(pairingToEnd.id)
         }
         if unpairedName == grant.host.name { unpairedName = nil }
         UIAccessibility.post(notification: .announcement,
@@ -696,7 +828,12 @@ final class RemoteTerminalModel {
         }
         let previous = deactivate()
         if let previous { Task { await previous.abort() } }
-        if let id = selectedGrant?.id { grants.removeAll { $0.id == id } }
+        if let id = selectedGrant?.id {
+            grants.removeAll { $0.id == id }
+            terminals[id] = nil
+            listing[id] = nil
+            SharedTerminals.forget(id)
+        }
         selectedGrant = nil
         selectedSession = nil
         sessions = []

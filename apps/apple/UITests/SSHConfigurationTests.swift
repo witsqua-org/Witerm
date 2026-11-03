@@ -49,7 +49,7 @@ import XCTest
             await MainActor.run {
                 if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
                 let search = app.searchFields.firstMatch
-                if search.exists, let text = search.value as? String, !text.isEmpty, text != "Search Hosts" {
+                if search.exists, let text = search.value as? String, !text.isEmpty, text != "Search Terminals" {
                     search.tap(); search.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: text.count))
                 }
                 guard menu.exists else { return }

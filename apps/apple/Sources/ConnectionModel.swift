@@ -169,6 +169,14 @@ final class ConnectionModel: Identifiable {
         cancel()
         guard hasAddress else { return }
         let requestedAddress = address
+        #if os(iOS) && DEBUG
+        if RemoteFixture.isActive, address == RemoteFixture.serverAddress {
+            capabilities = ["device_identity_v1", "device_pairing_v1", "encrypted_relay_v1"]
+            phase = .available(.now)
+            successCount += 1
+            return
+        }
+        #endif
         phase = .checking
         task = Task { [weak self, client] in
             do {

@@ -209,7 +209,8 @@ final class MacContinuityFlowTests: XCTestCase {
         shot("10-selection")
         app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.6)).tap()
 
-        // An edge swipe goes back to the device's sessions.
+        // An edge swipe goes back to Terminals, where the Mac's own section
+        // still lists the terminal (no tap into the device).
         app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.5))
             .press(forDuration: 0.05, thenDragTo: app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)))
         let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "remoteSession-")).firstMatch

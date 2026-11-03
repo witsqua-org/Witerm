@@ -42,4 +42,35 @@ import XCTest
         let listed = RemoteTerminalModel.devices(in: grants)[0]
         XCTAssertEqual(Set(RemoteTerminalModel.pairings(endedBy: listed, in: grants).map(\.id)), ["1", "2"])
     }
+
+    /// Terminals lists a device's terminals with what this device may do
+    /// there: a watch-only pairing watches everything, otherwise the Mac's
+    /// per-terminal access applies.
+    func testListedAccessFollowsThePairingThenTheTerminal() {
+        let mac = device("mac", "Studio")
+        let session = { (access: LocalAttachmentMode?) in
+            LocalSessionInfo(id: "s", name: "Terminal 1", createdAt: Date(), columns: 80, rows: 24, access: access)
+        }
+        let control = grant("c", host: mac, permission: .control, at: 1), view = grant("v", host: mac, permission: .view, at: 1)
+        XCTAssertEqual(RemoteTerminalModel.access(for: session(nil), on: control), .control)
+        XCTAssertEqual(RemoteTerminalModel.access(for: session(.view), on: control), .view)
+        XCTAssertEqual(RemoteTerminalModel.access(for: session(.control), on: view), .view)
+    }
+
+    /// Grants from an invitation are remembered by ID until the relay
+    /// server stops listing them or their access is long over.
+    func testSharedTerminalsAreRememberedUntilTheyEnd() {
+        let saved = UserDefaults.standard.object(forKey: SharedTerminals.key)
+        defer { UserDefaults.standard.set(saved, forKey: SharedTerminals.key) }
+        UserDefaults.standard.removeObject(forKey: SharedTerminals.key)
+        let now = Date()
+        SharedTerminals.record("live", until: now.addingTimeInterval(3600))
+        SharedTerminals.record("unlisted", until: now.addingTimeInterval(3600))
+        SharedTerminals.record("old", until: now.addingTimeInterval(-3 * 86_400))
+        XCTAssertEqual(SharedTerminals.ids(), ["live", "unlisted", "old"])
+        SharedTerminals.prune(keeping: ["live", "old"], now: now)
+        XCTAssertEqual(SharedTerminals.ids(), ["live"])
+        SharedTerminals.forget("live")
+        XCTAssertTrue(SharedTerminals.ids().isEmpty)
+    }
 }
