@@ -119,7 +119,7 @@ struct RemoteTerminalWorkspace: View {
 
     /// Other sessions this device may open, for switching from the title.
     /// Switching goes through `attach`, which waits for the detach ACK.
-    private func otherSessions(than attachment: RemoteTerminalAttachment) -> [LocalSessionInfo] {
+    private func otherSessions(than attachment: any PairedTerminalLink) -> [LocalSessionInfo] {
         model.sessions.filter { $0.id != attachment.session.id }
     }
 
@@ -127,7 +127,7 @@ struct RemoteTerminalWorkspace: View {
     /// (or what is happening instead) and the device it runs on. The state
     /// comes first, so a long device name never truncates it. With other
     /// terminals available, a chevron beside it switches to one.
-    private func compactTitle(_ attachment: RemoteTerminalAttachment) -> some View {
+    private func compactTitle(_ attachment: any PairedTerminalLink) -> some View {
         let others = otherSessions(than: attachment)
         return HStack(spacing: WitermMetrics.Space.xxs) {
             compactTitleText(attachment)
@@ -138,7 +138,7 @@ struct RemoteTerminalWorkspace: View {
         }
     }
 
-    private func compactTitleText(_ attachment: RemoteTerminalAttachment) -> some View {
+    private func compactTitleText(_ attachment: any PairedTerminalLink) -> some View {
         VStack(spacing: 0) {
             Text(attachment.session.name)
                 .font(WitermType.cardTitle)
@@ -169,7 +169,7 @@ struct RemoteTerminalWorkspace: View {
                                palette: terminalPalette)
     }
 
-    private func terminal(_ attachment: RemoteTerminalAttachment) -> some View {
+    private func terminal(_ attachment: any PairedTerminalLink) -> some View {
         let id = model.attachmentID
         return VStack(spacing: 0) {
             if compactTerminal {

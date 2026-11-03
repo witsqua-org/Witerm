@@ -149,9 +149,9 @@ final class RemoteTerminalModel {
     private(set) var selectedGrant: DeviceGrant?
     private(set) var sessions: [LocalSessionInfo] = []
     private(set) var selectedSession: LocalSessionInfo?
-    private(set) var attachment: RemoteTerminalAttachment?
+    private(set) var attachment: (any PairedTerminalLink)?
     // The renderer retains only its in-memory last frame after a disconnect.
-    private(set) var displayAttachment: RemoteTerminalAttachment?
+    private(set) var displayAttachment: (any PairedTerminalLink)?
     private(set) var attachmentID = UUID()
     private(set) var mode: LocalAttachmentMode = .view
     private(set) var reconnectMode: LocalAttachmentMode = .view
@@ -270,6 +270,16 @@ final class RemoteTerminalModel {
         guard busy == nil, let grant = selectedGrant, attachment == nil else { return }
         cancelWork()
         loaded = false
+        #if DEBUG
+        if RemoteFixture.isActive {
+            sessions = FixtureMac.shared.sessions(for: grant.id)
+            terminals[grant.id] = sessions
+            loaded = true
+            if opensSoleSession, sessions.count == 1 { attach(sessions[0]) }
+            opensSoleSession = false
+            return
+        }
+        #endif
         do {
             let pairing = try pairingClient()
             let token = generation
@@ -344,7 +354,7 @@ final class RemoteTerminalModel {
         if listing[grant.id] == nil { listing[grant.id] = .listing }
         #if DEBUG
         if RemoteFixture.isActive {
-            terminals[grant.id] = RemoteFixture.sessions[grant.id] ?? []
+            terminals[grant.id] = FixtureMac.shared.sessions(for: grant.id)
             listing[grant.id] = RemoteFixture.offline.contains(grant.id) ? .offline : .online
             return
         }
@@ -420,7 +430,7 @@ final class RemoteTerminalModel {
         busy = changingMode ? (targetMode == .view ? String(localized: "Hiding Keyboard…", bundle: .main) : String(localized: "Showing Keyboard…", bundle: .main)) : String(localized: "Opening terminal…", bundle: .main)
         issue = nil
         do {
-            let pairing = try pairingClient()
+            let open = try linkOpener(for: grant)
             let token = generation
             work = Task { [weak self] in
                 do {
@@ -428,11 +438,8 @@ final class RemoteTerminalModel {
                     // A failed release never silently proceeds to a new controller.
                     if let previous { try await previous.detach() }
                     try Task.checkCancellation()
-                    _ = try await pairing.trustedRelayGrant(id: grant.id)
-                    let next = try await RemoteTerminalClient(pairing: pairing, grantID: grant.id).attach(
-                        sessionID: session.id, columns: session.columns, rows: session.rows, mode: targetMode,
-                        // Earlier output fills the renderer's scrollback, so a drag scrolls back through it.
-                        history: true)
+                    // Earlier output fills the renderer's scrollback, so a drag scrolls back through it.
+                    let next = try await open(session.id, session.columns, session.rows, targetMode)
                     guard let self, self.generation == token, !Task.isCancelled else {
                         await next.abort()
                         return
@@ -639,9 +646,18 @@ final class RemoteTerminalModel {
     @discardableResult
     func refreshWriters() async -> Bool {
         guard isInteractive, mode == .view, canRequestControl, let grant = selectedGrant,
-              let id = selectedSession?.id, let pairing else { return false }
+              let id = selectedSession?.id else { return false }
         let token = generation
-        guard let listed = try? await RemoteTerminalClient(pairing: pairing, grantID: grant.id).sessions() else { return false }
+        let listed: [LocalSessionInfo]
+        #if DEBUG
+        if RemoteFixture.isActive { listed = FixtureMac.shared.sessions(for: grant.id) } else {
+            guard let pairing, let fresh = try? await RemoteTerminalClient(pairing: pairing, grantID: grant.id).sessions() else { return false }
+            listed = fresh
+        }
+        #else
+        guard let pairing, let fresh = try? await RemoteTerminalClient(pairing: pairing, grantID: grant.id).sessions() else { return false }
+        listed = fresh
+        #endif
         guard generation == token, selectedGrant?.id == grant.id, selectedSession?.id == id else { return false }
         sessions = sessions.map { session in
             guard let fresh = listed.first(where: { $0.id == session.id }) else { return session }
@@ -773,7 +789,7 @@ final class RemoteTerminalModel {
         }
     }
 
-    private func deactivate() -> RemoteTerminalAttachment? {
+    private func deactivate() -> (any PairedTerminalLink)? {
         let previous = attachment
         attachment = nil
         activeID = nil
@@ -844,6 +860,25 @@ final class RemoteTerminalModel {
         loaded = true
         busy = nil
         issue = RemoteTerminalIssue(RelayError.revoked)
+    }
+
+    /// Opens a link to one of `grant`'s terminals: through the relay
+    /// server, after checking the grant again, or (DEBUG) to the fixture's Mac.
+    private func linkOpener(for grant: DeviceGrant) throws
+        -> @Sendable (String, Int, Int, LocalAttachmentMode) async throws -> any PairedTerminalLink {
+        #if DEBUG
+        if RemoteFixture.isActive {
+            return { id, columns, rows, mode in
+                try await FixtureMac.shared.attach(grant: grant, sessionID: id, columns: columns, rows: rows, mode: mode, history: true)
+            }
+        }
+        #endif
+        let pairing = try pairingClient()
+        return { id, columns, rows, mode in
+            _ = try await pairing.trustedRelayGrant(id: grant.id)
+            return try await RemoteTerminalClient(pairing: pairing, grantID: grant.id).attach(
+                sessionID: id, columns: columns, rows: rows, mode: mode, history: true)
+        }
     }
 
     private func pairingClient() throws -> PairingClient {

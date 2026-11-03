@@ -68,7 +68,7 @@ enum TerminalKeyboardOverlap {
 }
 
 struct RemoteNativeTerminalView: UIViewRepresentable {
-    let attachment: RemoteTerminalAttachment
+    let attachment: any PairedTerminalLink
     let mode: LocalAttachmentMode
     let keyboardRequest: Int
     var isInteractive: Bool = true
@@ -830,6 +830,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
                     + " gridlog=" + probeGridLog.joined(separator: ">")
                     + probeSelection()
                     + (terminal.isUsingMetalRenderer ? " renderer=metal" : " renderer=coretext")
+                    + probeGridFit()
             }
             #endif
         }
@@ -852,6 +853,16 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             guard let knobs = terminal.selectionKnobs() else { return " sel=\(selected) knobs=none" }
             let start = terminal.convert(knobs.start, to: nil), end = terminal.convert(knobs.end, to: nil)
             return " sel=\(selected)" + String(format: " knobs=%.1f,%.1f,%.1f,%.1f", start.x, start.y, end.x, end.y)
+        }
+
+        /// Whether the grid fills the text area: the rows that fit it, and
+        /// the blank height under the grid (or the part of it below the area).
+        private func probeGridFit() -> String {
+            let shown = scroll.bounds.height, grid = terminal.frame.height
+            var line = String(format: " mode=%@ fitRows=%d gap=%.1f overflow=%.1f", mode == .view ? "view" : "control",
+                              fitGrid.rows, max(0, shown - grid), max(0, grid - shown))
+            if RemoteFixture.isActive { line += " links=\(FixtureMac.shared.opened)" }
+            return line
         }
 
         /// The keyboard's space and where the key row is, in screen points.
@@ -1099,6 +1110,13 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             // Text from the key row's system Paste control (no paste prompt).
             pasteConfiguration = UIPasteConfiguration(acceptableTypeIdentifiers: [UTType.utf8PlainText.identifier, UTType.plainText.identifier])
             inputAccessoryView = MobileTerminalAccessory(terminal: self)
+            #if DEBUG
+            // UI tests on a simulator with a hardware keyboard: a plain view
+            // the software keyboard's size takes its place, so the keyboard's
+            // space, its notifications and the key row on top behave as on
+            // a phone (`-witerm.debug.softwareKeyboard YES`).
+            if Self.standInKeyboard { inputView = StandInKeyboard() }
+            #endif
             // SwiftTerm leaves the scroll delegate unset; ours only finishes
             // a scroll that comes to rest just short of the bottom.
             delegate = self
@@ -1611,6 +1629,9 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             set { }
         }
         override var canBecomeFirstResponder: Bool { mode == .control && inputEnabled }
+        #if DEBUG
+        static let standInKeyboard = UserDefaults.standard.bool(forKey: "witerm.debug.softwareKeyboard")
+        #endif
 
         /// Brings up the keyboard the first time this terminal is on screen
         /// while it accepts typing, so a new connection is ready to type into.
@@ -1999,6 +2020,23 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         #endif
     }
 
+    #if DEBUG
+    /// The software keyboard's stand-in for UI tests (see `standInKeyboard`):
+    /// as tall as the iPhone's English keyboard with its suggestions bar.
+    final class StandInKeyboard: UIInputView {
+        init() {
+            super.init(frame: CGRect(x: 0, y: 0, width: 402, height: 336), inputViewStyle: .keyboard)
+            allowsSelfSizing = true
+            isAccessibilityElement = false
+            accessibilityIdentifier = "standInKeyboard"
+        }
+        required init?(coder: NSCoder) { nil }
+        override var intrinsicContentSize: CGSize {
+            CGSize(width: UIView.noIntrinsicMetric, height: traitCollection.verticalSizeClass == .compact ? 209 : 336)
+        }
+    }
+    #endif
+
     #if DEBUG || WITERM_RENDERER_TRIAL
     /// Which renderer draws iOS terminals, for measuring only, never in
     /// product UI: launching with `-witerm.debug.renderer metal` selects
@@ -2054,7 +2092,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         private var keyboardGeneration: UInt64 = 0
         private weak var terminal: TerminalInputView?
         private var isInteractive: Bool
-        private let attachment: RemoteTerminalAttachment
+        private var attachment: any PairedTerminalLink
         private let mode: LocalAttachmentMode
         private let onFailure: (Error) -> Void
         private let onEnded: () -> Void
@@ -2071,7 +2109,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         private var stopped = false
         private var serverGrid: (Int, Int)
 
-        init(attachment: RemoteTerminalAttachment, mode: LocalAttachmentMode, keyboardRequest: Int,
+        init(attachment: any PairedTerminalLink, mode: LocalAttachmentMode, keyboardRequest: Int,
              isInteractive: Bool,
              onFailure: @escaping (Error) -> Void, onEnded: @escaping () -> Void) {
             self.attachment = attachment
