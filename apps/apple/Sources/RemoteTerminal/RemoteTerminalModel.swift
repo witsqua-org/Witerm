@@ -718,7 +718,8 @@ final class RemoteTerminalModel {
 /// The name this device pairs under, which the other device shows (in its
 /// Open On menu, for one).
 enum PairingDeviceName {
-    static var current: String {
+    /// Read on the main actor, where `UIDevice` lives; every caller is UI.
+    @MainActor static var current: String {
         let clean = UIDevice.current.name.components(separatedBy: .controlCharacters).joined()
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return String(String.UnicodeScalarView((clean.isEmpty ? String(localized: "My iPhone", bundle: .main) : clean).unicodeScalars.prefix(64)))

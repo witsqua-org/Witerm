@@ -93,11 +93,12 @@ private final class SSHFilesModel {
         task = Task {
             // One latest-value slot and one sampler keep a fast transfer from
             // creating a MainActor task for every network chunk.
-            let sampler = Task { [weak self] in
+            // Captures `self` like the transfer task around it; the sampler
+            // ends with that task (`defer` below), so it never outlives it.
+            let sampler = Task {
                 while !Task.isCancelled {
-                    guard let self else { return }
-                    let value = self.progress.snapshot()
-                    self.transferred = value.0; self.total = value.1
+                    let value = progress.snapshot()
+                    transferred = value.0; total = value.1
                     do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
                 }
             }
