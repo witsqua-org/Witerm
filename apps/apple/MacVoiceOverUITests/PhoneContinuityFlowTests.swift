@@ -11,7 +11,8 @@ import XCTest
 /// alongside it, then ends the session and revokes that pairing. Nothing
 /// else is touched; remote access through the server must already be on. The
 /// sandboxed runner reads the phone's files from WITERM_E2E_DIR and writes
-/// its own to `witerm-e2e` in its temporary folder.
+/// its own to `witerm-e2e` in its temporary folder. With WITERM_E2E_BURST=1
+/// (set for both runs) it prints a million lines while the phone is attached.
 @MainActor
 final class PhoneContinuityFlowTests: XCTestCase {
     private var folder: URL?
@@ -196,6 +197,20 @@ final class PhoneContinuityFlowTests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Terminals on This Mac Need an Update"].exists, "The Mac rejected the renamed terminal's geometry")
         shot("05-together")
         signal("mac-typed")
+
+        // Opt-in: a million lines while the phone is attached; the phone
+        // checks it stays attached and shows the marker echoed afterwards.
+        if environment["WITERM_E2E_BURST"] == "1" {
+            XCTAssertNotNil(awaitSignal("phone-ready-for-burst", timeout: 240), "The phone never got ready for the burst")
+            if (terminal.value(forKey: "hasKeyboardFocus") as? Bool) != true { terminal.click() }
+            // The marker is computed, so the typed command never contains it.
+            app.typeText("seq -f '%.0f' 1 1000000; echo BURST_$((6*7))_DONE\n")
+            signal("mac-burst-started")
+            XCTAssertNotNil(awaitSignal("phone-burst-ok", timeout: 360), "The phone didn't stay attached through the burst")
+            XCTAssertTrue(terminal.exists, "The Mac window lost the terminal during the burst")
+            XCTAssertTrue(pause.exists, "The Mac no longer shows the phone attached")
+            shot("05b-burst")
+        }
         XCTAssertNotNil(awaitSignal("phone-done", timeout: 300), "The phone didn't finish")
         shot("06-after")
 

@@ -36,13 +36,13 @@ The Mac background service (`witerm-agent`) hosts shells in a private tmux serve
 - 16 sessions and 32 connections.
 - Input up to 16 KiB, JSON lines up to 64 KiB, output chunks up to 8 KiB.
 - 256 KiB of pending output per connection. While a connection's queue is that full, the service stops reading the session's PTY for it, so tmux holds the output and coalesces the screen for that client; nothing is dropped and nothing is reordered. A client that takes nothing for 45 seconds is closed with `backpressure` and must reattach to get a redraw.
-- Clients read the same way: past 1 MiB of unread output they stop reading the socket until their consumer catches up, and they give up (`backpressure`) only after 30 seconds without progress. Terminal bytes, commands, environment, and clipboard are never logged.
+- Clients read the same way: past 1 MiB of unread output they stop reading the socket until their consumer catches up, and they give up (`backpressure`) only after 30 seconds without progress. The Mac's relay endpoint waits 60 seconds on an attachment it paces for a device (see [relay-v1](relay-v1.md#flow-control)), so the device's own 45-second limit decides. Terminal bytes, commands, environment, and clipboard are never logged.
 
 ## Wire format
 
 One UTF-8 JSON object per line, `version` 1. Byte fields are standard Base64, dates are RFC 3339 UTC, and IDs are lowercase UUIDs. Unknown versions, unknown operations, missing fields, and oversized lines are rejected.
 
-**Requests** have `version`, `id` (a UUID echoed in the response), `operation`, and optionally `session_id`, `name`, `columns`, `rows`, `mode`, `data`, `cwd`, `shared`, `keep_private`, `remote_typing`, `access`, `guest`, `pairing_id`, `proof`, `history`, and `peer`.
+**Requests** have `version`, `id` (a UUID echoed in the response), `operation`, and optionally `session_id`, `name`, `columns`, `rows`, `mode`, `data`, `cwd`, `shared`, `keep_private`, `remote_typing`, `access`, `guest`, `pairing_id`, `proof`, `history`, and `peer`. Two more fields exist only inside the relay and never reach this service: `flow` on `attach` and `consumed` on `ack` ([relay-v1](relay-v1.md#flow-control)).
 
 | Operation | Fields | Reply |
 |---|---|---|
@@ -59,10 +59,11 @@ One UTF-8 JSON object per line, `version` 1. Byte fields are standard Base64, da
 | `input` | `data`, optional `automatic` (on an attached connection, writers only) | ok |
 | `resize` | `columns`, `rows` (writers only) | ok, once the shell sees the new size; from a writer that doesn't own the grid, ok after recording it, preceded by a `geometry` frame with the grid in use when that differs |
 | `detach` | | ok, after control is released; the connection then closes |
+| `ack` | relay only | always `invalid_request` here; the relay endpoint handles it and never forwards it |
 
 **Detach.** Once the `detach` acknowledgement arrives, another client can take control immediately. Late requests on the old connection can never regain it.
 
-**Frames** have `version`, `kind` (`response`, `geometry`, `output`, or `closed`), and optionally `id`, `ok`, `error`, `status`, `sessions`, `session`, `mode`, and `data`.
+**Frames** have `version`, `kind` (`response`, `geometry`, `output`, or `closed`), and optionally `id`, `ok`, `error`, `status`, `sessions`, `session`, `mode`, and `data`. A relayed attach response may also carry `flow`, added by the Mac's relay endpoint, never by this service.
 
 - `status` is `{version, tmux_available, relays}`. `relays` has one `{server, state}` per server with remote access on, where `state` is `connecting` or `ready` (the server accepted this Mac); it is empty when remote access is off. Without tmux, `status` still answers and everything else returns `dependency_missing`.
 - `session` is `{id, name, created_at, columns, rows}`. Local `list`, `create`, `share`, and `rename` replies add `sharing`: `{shared, keep_private, remote_typing, attachments: [{mode, device}]}`, where `device` is `{device_id, name}` for a paired device and absent for this Mac. Several attachments may have mode `control`. A `list` for a `peer` adds `access` (`view` or `control`) instead: the most that device may do there. A `list` for a paired device (not an invitation's guest) also adds `writers`: the others who can type in that session now, each `{name}` with the other paired device's name, or `{}` for this Mac (its app, another window, or the `witerm` command); never their keys or pairings. Older services omit it, and clients then say only that another device is typing.

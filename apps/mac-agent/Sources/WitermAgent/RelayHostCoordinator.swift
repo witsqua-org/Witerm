@@ -241,7 +241,13 @@ enum RelayTerminalPolicy {
                   let columns = request.columns, let rows = request.rows,
                   validDimensions(columns: columns, rows: rows), let mode = request.mode else { throw AgentFailure(.invalidRequest) }
             guard permission == .control || mode == .view else { throw AgentFailure(.readOnly) }
-            allowed = ["version", "id", "operation", "session_id", "columns", "rows", "mode", "history"]
+            // Any version from 1 up gets version 1's flow control.
+            guard (request.flow ?? 1) >= 1 else { throw AgentFailure(.invalidRequest) }
+            allowed = ["version", "id", "operation", "session_id", "columns", "rows", "mode", "history", "flow"]
+        case .ack:
+            // Flow control, not input: watching devices acknowledge too.
+            guard attached, let consumed = request.consumed, consumed >= 0 else { throw AgentFailure(.invalidRequest) }
+            allowed = ["version", "id", "operation", "consumed"]
         case .input:
             guard attached, let bytes = request.data, bytes.count <= 16_384 else { throw AgentFailure(.invalidRequest) }
             guard permission == .control else { throw AgentFailure(.readOnly) }
@@ -267,16 +273,27 @@ enum RelayTerminalPolicy {
 private enum RelayBridgeWorkResult: Sendable, Equatable { case outputEnded, outputDetached, readerEnded, deadline }
 
 actor RelayTerminalBridge {
+    /// How long a flow-controlled attachment's local stream waits for this
+    /// bridge. Longer than the device's own stall limit, so a device that
+    /// stops acknowledging is told `backpressure` by the bridge.
+    static let flowLocalStall: Duration = .seconds(RelayFlowControl.stallSeconds + 15)
+
     private let channel: RelaySecureChannel
     private let pairing: PairingClient
     private let local: LocalAgentClient
     private let traceID: String
+    private let flowLimits: RelayOutputWindow.Limits
+    private let flowObserver: (@Sendable (LocalTerminalEvent) -> Void)?
     private var attachment: LocalTerminalAttachment?
     private var closed = false
     private var detaching = false
+    /// The flow-controlled attachment's window, for tests.
+    private(set) var window: RelayOutputWindow?
 
-    init(channel: RelaySecureChannel, pairing: PairingClient, local: LocalAgentClient, traceID: String = "") {
+    init(channel: RelaySecureChannel, pairing: PairingClient, local: LocalAgentClient, traceID: String = "",
+         flowLimits: RelayOutputWindow.Limits = .init(), flowObserver: (@Sendable (LocalTerminalEvent) -> Void)? = nil) {
         self.channel = channel; self.pairing = pairing; self.local = local; self.traceID = traceID
+        self.flowLimits = flowLimits; self.flowObserver = flowObserver
     }
 
     func close() async {
@@ -332,14 +349,21 @@ actor RelayTerminalBridge {
                     try await reply(request, sessions: sessions); await awaitPeerClose(); return
                 case .attach:
                     trace("local-attach-start")
+                    // A device that acknowledges its output gets a window
+                    // sized for the relay's queues. Others get output as before.
+                    let flow = request.flow != nil
                     let connection = try await local.attach(sessionID: request.sessionID!, columns: request.columns!, rows: request.rows!,
-                                                            mode: request.mode!, history: request.history == true, peer: peer(grant))
+                                                            mode: request.mode!, history: request.history == true, peer: peer(grant),
+                                                            outputStall: flow ? Self.flowLocalStall : .seconds(30))
                     guard !closed else { await connection.disconnect(); return }
                     attachment = connection
+                    let window = flow ? RelayOutputWindow(limits: flowLimits, observe: flowObserver) : nil
+                    self.window = window
                     trace("local-attach-ready")
-                    try await reply(request, session: connection.session, mode: request.mode)
+                    try await reply(request, session: connection.session, mode: request.mode,
+                                    flow: flow ? RelayFlowControl.version : nil)
                     trace("attach-ack-sent")
-                    try await attachedRequestsAndOutput(connection, grant: grant)
+                    try await attachedRequestsAndOutput(connection, grant: grant, window: window)
                     return
                 default: throw AgentFailure(.invalidRequest)
                 }
@@ -373,9 +397,11 @@ actor RelayTerminalBridge {
         }
     }
 
-    private func attachedRequestsAndOutput(_ connection: LocalTerminalAttachment, grant: DeviceGrant) async throws {
+    private func attachedRequestsAndOutput(_ connection: LocalTerminalAttachment, grant: DeviceGrant,
+                                           window: RelayOutputWindow?) async throws {
         try await withThrowingTaskGroup(of: RelayBridgeWorkResult.self) { group in
             group.addTask {
+                if let window { return try await self.flowOutput(connection, window: window) }
                 do {
                     for try await event in connection.events {
                         try Task.checkCancellation()
@@ -395,7 +421,7 @@ actor RelayTerminalBridge {
                 }
             }
             group.addTask {
-                try await self.attachedRequests(connection, grant: grant)
+                try await self.attachedRequests(connection, grant: grant, window: window)
                 return .readerEnded
             }
             do {
@@ -413,12 +439,57 @@ actor RelayTerminalBridge {
                     }
                     _ = try await group.next()
                 }
-            } catch { await close(); group.cancelAll(); throw error }
-            await close(); group.cancelAll()
+            } catch { await window?.close(); await close(); group.cancelAll(); throw error }
+            await window?.close(); await close(); group.cancelAll()
         }
     }
 
-    private func attachedRequests(_ connection: LocalTerminalAttachment, grant: DeviceGrant) async throws {
+    /// Output to a device that acknowledges it: the local events go into the
+    /// window, which sends them as room opens. Ends when the local events end
+    /// and everything waiting was sent, or, after a detach, once the local
+    /// detach is done. A device that acknowledges nothing for the stall
+    /// limit while output is unacknowledged gets `closed` with `backpressure`.
+    private func flowOutput(_ connection: LocalTerminalAttachment, window: RelayOutputWindow) async throws
+        -> RelayBridgeWorkResult {
+        do {
+            try await window.run(connection.events) { try await self.sendEncoded($0) }
+        } catch {
+            if detaching { return .outputDetached }
+            let backpressure: Bool
+            if case RelayOutputWindow.Failure.stalled = error { backpressure = true }
+            else if case LocalAgentClientError.backpressure = error { backpressure = true }
+            else { backpressure = false }
+            guard backpressure else {
+                trace("local-output-error", error: error)
+                throw error
+            }
+            trace("flow-stalled")
+            await window.close()
+            try await send(LocalAgentFrame(kind: .closed, error: .backpressure))
+            return .outputEnded
+        }
+        if detaching { return .outputDetached }
+        trace("local-output-ended")
+        try await send(LocalAgentFrame(kind: .closed))
+        return .outputEnded
+    }
+
+    /// Runs a local request. Its reply waits behind the output the local
+    /// service queued before it, so the window lets the reader catch up.
+    private func local<T: Sendable>(_ window: RelayOutputWindow?, _ operation: () async throws -> T) async throws -> T {
+        await window?.beginLocalRequest()
+        do {
+            let result = try await operation()
+            await window?.endLocalRequest()
+            return result
+        } catch {
+            await window?.endLocalRequest()
+            throw error
+        }
+    }
+
+    private func attachedRequests(_ connection: LocalTerminalAttachment, grant: DeviceGrant,
+                                  window: RelayOutputWindow?) async throws {
         while !Task.isCancelled, !closed {
             let bytes = try await channel.receive()
             let current = try await pairing.trustedRelayGrant(id: grant.id)
@@ -428,10 +499,20 @@ actor RelayTerminalBridge {
                 request = try RelayTerminalPolicy.request(bytes, attached: true, permission: grant.permission)
                 guard let request else { throw AgentFailure(.invalidRequest) }
                 switch request.operation {
-                case .input: try await connection.send(request.data!, automatic: request.automatic == true)
-                case .resize: try await connection.resize(columns: request.columns!, rows: request.rows!)
+                case .ack:
+                    // Only on an attachment that confirmed flow control, and never answered.
+                    guard let window else { throw AgentFailure(.invalidRequest) }
+                    try await window.acknowledge(request.consumed!)
+                    continue
+                case .input:
+                    try await local(window) { try await connection.send(request.data!, automatic: request.automatic == true) }
+                case .resize:
+                    try await local(window) { try await connection.resize(columns: request.columns!, rows: request.rows!) }
                 case .detach:
                     detaching = true
+                    // Nothing more is sent: the device renders nothing after
+                    // the reply, and its next attach redraws.
+                    await window?.discard()
                     do {
                         try await connection.detach()
                         attachment = nil
@@ -453,7 +534,9 @@ actor RelayTerminalBridge {
     private func awaitPeerClose() async {
         let channel = channel
         await withTaskGroup(of: Void.self) { group in
-            group.addTask { _ = try? await channel.receive() }
+            // An acknowledgement sent before the device's last request isn't
+            // the device closing.
+            group.addTask { while let bytes = try? await channel.receive(), Self.isAcknowledgement(bytes) {} }
             group.addTask { try? await Task.sleep(for: .seconds(5)) }
             _ = await group.next()
             group.cancelAll()
@@ -474,11 +557,22 @@ actor RelayTerminalBridge {
         #endif
     }
 
+    private static func isAcknowledgement(_ bytes: Data) -> Bool {
+        guard bytes.count <= 1024, let object = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any] else { return false }
+        return object["operation"] as? String == LocalAgentOperation.ack.rawValue
+    }
+
     private func reply(_ request: LocalAgentRequest, session: LocalSessionInfo? = nil,
                        sessions: [LocalSessionInfo]? = nil, status: LocalAgentStatus? = nil,
-                       mode: LocalAttachmentMode? = nil) async throws {
+                       mode: LocalAttachmentMode? = nil, flow: Int? = nil) async throws {
         try await send(LocalAgentFrame(id: request.id, kind: .response, ok: true, status: status,
-                                       sessions: sessions, session: session, mode: mode))
+                                       sessions: sessions, session: session, mode: mode, flow: flow))
+    }
+
+    /// A record the window already encoded.
+    private func sendEncoded(_ record: Data) async throws {
+        guard !closed else { throw AgentFailure(.unavailable) }
+        try await channel.send(record)
     }
 
     private func errorReply(id: String?, error: Error) async throws {

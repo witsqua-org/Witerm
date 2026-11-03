@@ -1370,3 +1370,270 @@ private final class RelayTestURLProtocol: URLProtocol, @unchecked Sendable {
   }
   override func stopLoading() {}
 }
+
+/// What a Mac from before flow control did with each tunnel: the remote
+/// policy refused unknown fields, and an attachment had no `ack` operation.
+private actor OlderMacLog {
+  private(set) var opens = 0
+  private(set) var attachKeys: [Set<String>] = []
+  private(set) var acknowledgements = 0
+  func opened() { opens += 1 }
+  func attach(_ keys: Set<String>) { attachKeys.append(keys) }
+  func acknowledged() { acknowledgements += 1 }
+}
+
+private let flowSession = LocalSessionInfo(
+  id: "77777777-7777-4777-8777-777777777777", name: "Shell",
+  createdAt: Date(timeIntervalSince1970: 1_700_000_000), columns: 80, rows: 24)
+
+private func flowDecode(_ data: Data) throws -> LocalAgentRequest {
+  try RemoteWire.decoder().decode(LocalAgentRequest.self, from: data)
+}
+private func flowEncode(_ frame: LocalAgentFrame) throws -> Data { try RemoteWire.encoder().encode(frame) }
+
+final class RelayFlowControlTests: XCTestCase {
+  private func eventually(
+    _ seconds: Double = 3, _ condition: @escaping @Sendable () async -> Bool
+  ) async throws {
+    try await relayDeadline(seconds) {
+      while !(await condition()) { try await Task.sleep(for: .milliseconds(5)) }
+    }
+  }
+
+  func testStreamsCountWhatTheConsumerTook() async throws {
+    let streams = LocalTerminalStreams(conflictError: RelayError.invalidMessage)
+    let calls = RelayTestCounters()
+    streams.onConsumption { calls.bump("consumed") }
+    for byte in 0..<3 { _ = streams.yield(.output(Data([UInt8(byte)]))) }
+    XCTAssertEqual(streams.consumed, 0, "Queued isn't consumed")
+    var iterator = streams.events().makeAsyncIterator()
+    _ = try await iterator.next()
+    _ = try await iterator.next()
+    XCTAssertEqual(streams.consumed, 2)
+    _ = try await iterator.next()
+    // Handed straight to a waiting consumer.
+    let late = Task {
+      try await Task.sleep(for: .milliseconds(30))
+      _ = streams.yield(.geometry(flowSession))
+    }
+    _ = try await iterator.next()
+    try await late.value
+    XCTAssertEqual(streams.consumed, 4)
+    XCTAssertEqual(calls.count("consumed"), 4)
+
+    // Output-only consumers never need geometry: it counts as taken.
+    let legacy = LocalTerminalStreams(conflictError: RelayError.invalidMessage)
+    _ = legacy.yield(.geometry(flowSession))
+    _ = legacy.yield(.output(Data("a".utf8)))
+    var output = legacy.output().makeAsyncIterator()
+    _ = try await output.next()
+    _ = legacy.yield(.geometry(flowSession))
+    try await eventually { legacy.consumed == 3 }
+  }
+
+  /// The phone acknowledges each frame its renderer takes, larger flow
+  /// records are accepted, and the detach request is the last thing it sends.
+  func testFlowAcknowledgesWhatTheRendererTookAndNothingAfterDetach() async throws {
+    let p = try RelayTestPeers()
+    let (client, host, _, _) = try await p.channels()
+    let rpc = RemoteRPCConnection(channel: client)
+    await rpc.start()
+    let acknowledged = RelayTestCounters()
+    let server = Task { () throws -> [LocalAgentRequest] in
+      let attach = try flowDecode(await host.receive())
+      XCTAssertEqual(attach.flow, 1)
+      try await host.send(
+        flowEncode(LocalAgentFrame(id: attach.id, kind: .response, ok: true, session: flowSession, mode: .view, flow: 1)))
+      try await host.send(flowEncode(LocalAgentFrame(kind: .output, data: Data(repeating: 0xff, count: 16_384))))
+      try await host.send(flowEncode(LocalAgentFrame(kind: .geometry, session: flowSession)))
+      try await host.send(flowEncode(LocalAgentFrame(kind: .output, data: Data("tail".utf8))))
+      var seen: [LocalAgentRequest] = []
+      while true {
+        let request = try flowDecode(await host.receive())
+        seen.append(request)
+        if request.operation == .ack, request.consumed == 3 { acknowledged.bump("all") }
+        if request.operation == .detach {
+          try await host.send(flowEncode(LocalAgentFrame(id: request.id, kind: .response, ok: true)))
+          return seen
+        }
+      }
+    }
+    _ = try await rpc.request(
+      LocalAgentRequest(operation: .attach, sessionID: flowSession.id, columns: 80, rows: 24, mode: .view, flow: 1))
+    let confirmed = await rpc.flowControlled
+    XCTAssertTrue(confirmed)
+    var iterator = rpc.events.makeAsyncIterator()
+    let first = try await iterator.next()
+    XCTAssertEqual(first, .output(Data(repeating: 0xff, count: 16_384)))
+    _ = try await iterator.next()
+    _ = try await iterator.next()
+    try await eventually { acknowledged.count("all") == 1 }
+    try await rpc.detach()
+    let seen = try await server.value
+    XCTAssertEqual(seen.last?.operation, .detach)
+    let acks = seen.dropLast()
+    XCTAssertFalse(acks.isEmpty)
+    XCTAssertTrue(acks.allSatisfy { $0.operation == .ack })
+    let counts = acks.compactMap(\.consumed)
+    XCTAssertEqual(counts, counts.sorted())
+    XCTAssertEqual(counts.last, 3, "Every frame the renderer took was acknowledged before leaving")
+    withExtendedLifetime(iterator) {}
+    await host.close()
+  }
+
+  /// Without the Mac's confirmation nothing is acknowledged and output
+  /// frames keep the 8 KiB limit.
+  func testWithoutConfirmationNothingIsAcknowledged() async throws {
+    let p = try RelayTestPeers()
+    let (client, host, _, _) = try await p.channels()
+    let rpc = RemoteRPCConnection(channel: client)
+    await rpc.start()
+    let server = Task { () throws -> [LocalAgentRequest] in
+      let attach = try flowDecode(await host.receive())
+      try await host.send(
+        flowEncode(LocalAgentFrame(id: attach.id, kind: .response, ok: true, session: flowSession, mode: .view)))
+      try await host.send(flowEncode(LocalAgentFrame(kind: .output, data: Data(repeating: 1, count: 8192))))
+      try await Task.sleep(for: .milliseconds(200))
+      try await host.send(flowEncode(LocalAgentFrame(kind: .output, data: Data(repeating: 1, count: 8193))))
+      var seen: [LocalAgentRequest] = []
+      while let bytes = try? await host.receive() { seen.append(try flowDecode(bytes)) }
+      return seen
+    }
+    _ = try await rpc.request(
+      LocalAgentRequest(operation: .attach, sessionID: flowSession.id, columns: 80, rows: 24, mode: .view, flow: 1))
+    let confirmed = await rpc.flowControlled
+    XCTAssertFalse(confirmed)
+    var received = 0
+    do {
+      for try await _ in rpc.events { received += 1 }
+      XCTFail("An oversized legacy frame must fail closed")
+    } catch { XCTAssertEqual(error as? RelayError, .invalidMessage) }
+    XCTAssertEqual(received, 1)
+    let seen = try await server.value
+    XCTAssertTrue(seen.isEmpty, "Nothing may be acknowledged to a Mac that didn't confirm")
+  }
+
+  func testAConfirmationNobodyAskedForFailsClosed() async throws {
+    let p = try RelayTestPeers()
+    let (client, host, _, _) = try await p.channels()
+    let rpc = RemoteRPCConnection(channel: client)
+    await rpc.start()
+    let server = Task {
+      let attach = try flowDecode(await host.receive())
+      try await host.send(
+        flowEncode(LocalAgentFrame(id: attach.id, kind: .response, ok: true, session: flowSession, mode: .view, flow: 1)))
+    }
+    do {
+      _ = try await rpc.request(
+        LocalAgentRequest(operation: .attach, sessionID: flowSession.id, columns: 80, rows: 24, mode: .view))
+      XCTFail("An unrequested flow confirmation must be refused")
+    } catch { XCTAssertEqual(error as? RelayError, .invalidMessage) }
+    _ = await server.result
+    await host.close()
+  }
+
+  /// A newer phone and an older Mac: the Mac refuses the `flow` field, the
+  /// phone attaches again without it on a fresh tunnel, never acknowledges,
+  /// and goes straight to the older attach next time.
+  func testANewerPhoneFallsBackOnAnOlderMac() async throws {
+    let p = try RelayTestPeers()
+    let log = OlderMacLog()
+    let key = UUID().uuidString
+    defer { RemoteFlowSupport.forget(key) }
+    let olderAttachKeys: Set<String> = ["version", "id", "operation", "session_id", "columns", "rows", "mode", "history"]
+    let open: @Sendable () async throws -> RelaySecureChannel = {
+      let (client, host, _, _) = try await p.channels()
+      await log.opened()
+      _ = Task {
+        let bytes = try await host.receive()
+        let keys = Set((try JSONSerialization.jsonObject(with: bytes) as? [String: Any])?.keys.map { $0 } ?? [])
+        let request = try flowDecode(bytes)
+        await log.attach(keys)
+        guard keys.isSubset(of: olderAttachKeys) else {
+          try await host.send(flowEncode(LocalAgentFrame(id: request.id, kind: .response, ok: false, error: .invalidRequest)))
+          _ = try? await host.receive()
+          return
+        }
+        try await host.send(
+          flowEncode(LocalAgentFrame(id: request.id, kind: .response, ok: true, session: flowSession, mode: .control)))
+        for index in 0..<20 {
+          try await host.send(flowEncode(LocalAgentFrame(kind: .output, data: Data(repeating: UInt8(index), count: 4096))))
+        }
+        while let bytes = try? await host.receive() {
+          guard let object = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+            let operation = object["operation"] as? String
+          else { continue }
+          // An older Mac couldn't even decode the operation.
+          if operation == "ack" {
+            await log.acknowledged()
+            continue
+          }
+          let next = try flowDecode(bytes)
+          try await host.send(flowEncode(LocalAgentFrame(id: next.id, kind: .response, ok: true)))
+          if next.operation == .detach { return }
+        }
+      }
+      return client
+    }
+    let attachment = try await RemoteTerminalClient.attach(
+      open: open, flowKey: key, sessionID: flowSession.id, columns: 80, rows: 24, mode: .control, history: true)
+    let flowControlled = await attachment.flowControlled
+    XCTAssertFalse(flowControlled)
+    var iterator = attachment.events.makeAsyncIterator()
+    for index in 0..<20 {
+      let event = try await iterator.next()
+      XCTAssertEqual(event, .output(Data(repeating: UInt8(index), count: 4096)))
+    }
+    try await attachment.send(Data("x".utf8))
+    try await attachment.detach()
+    var opens = await log.opens
+    XCTAssertEqual(opens, 2, "One refused attach, then one without flow control")
+    let keys = await log.attachKeys
+    XCTAssertEqual(keys.first?.contains("flow"), true)
+    XCTAssertEqual(keys.last?.contains("flow"), false)
+    let acknowledgements = await log.acknowledgements
+    XCTAssertEqual(acknowledgements, 0)
+    XCTAssertTrue(RemoteFlowSupport.knownOlder(key))
+
+    let again = try await RemoteTerminalClient.attach(
+      open: open, flowKey: key, sessionID: flowSession.id, columns: 80, rows: 24, mode: .control, history: false)
+    opens = await log.opens
+    XCTAssertEqual(opens, 3, "A Mac known to be older is asked without flow control")
+    try await again.detach()
+    withExtendedLifetime(iterator) {}
+  }
+
+  func testSharedFlowFixture() throws {
+    var root = URL(fileURLWithPath: #filePath)
+    for _ in 0..<5 { root.deleteLastPathComponent() }
+    let data = try Data(contentsOf: root.appendingPathComponent("protocol/fixtures/relay-flow-v1.json"))
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    func part(_ name: String) throws -> Data {
+      try JSONSerialization.data(withJSONObject: try XCTUnwrap(object[name]))
+    }
+    let limits = try XCTUnwrap(object["limits"] as? [String: Int])
+    XCTAssertEqual(limits["version"], RelayFlowControl.version)
+    XCTAssertEqual(limits["window_records"], RelayFlowControl.windowRecords)
+    XCTAssertEqual(limits["window_bytes"], RelayFlowControl.windowBytes)
+    XCTAssertEqual(limits["record_data_bytes"], RelayFlowControl.recordData)
+    XCTAssertEqual(limits["stall_seconds"], RelayFlowControl.stallSeconds)
+    let attach = try RemoteWire.decoder().decode(LocalAgentRequest.self, from: part("attach_request"))
+    XCTAssertEqual(attach.operation, .attach)
+    XCTAssertEqual(attach.flow, 1)
+    let response = try RemoteWire.decoder().decode(LocalAgentFrame.self, from: part("attach_response"))
+    XCTAssertEqual(response.id, attach.id)
+    XCTAssertEqual(response.flow, 1)
+    try RemoteWire.validate(try XCTUnwrap(response.session))
+    let ack = try RemoteWire.decoder().decode(LocalAgentRequest.self, from: part("ack_request"))
+    XCTAssertEqual(ack.operation, .ack)
+    XCTAssertEqual(ack.consumed, 3)
+    let refusal = try RemoteWire.decoder().decode(LocalAgentFrame.self, from: part("older_mac_refusal"))
+    XCTAssertEqual(refusal.error, .invalidRequest)
+    XCTAssertNil(refusal.flow)
+    // What this side sends carries exactly those fields.
+    let encoded = try XCTUnwrap(
+      JSONSerialization.jsonObject(
+        with: RemoteWire.encoder().encode(LocalAgentRequest(operation: .ack, consumed: 3))) as? [String: Any])
+    XCTAssertEqual(Set(encoded.keys), ["version", "id", "operation", "consumed"])
+  }
+}

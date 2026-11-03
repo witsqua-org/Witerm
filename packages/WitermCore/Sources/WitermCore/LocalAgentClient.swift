@@ -167,16 +167,19 @@
     /// Attaches to a session. Only the relay endpoint passes `peer`, which
     /// limits the attach to what this Mac lets that device reach. `history`
     /// is for renderers with their own scrollback, never a real terminal.
+    /// `outputStall` is how long the attachment waits while its consumer
+    /// takes nothing before giving up; the relay endpoint, which applies its
+    /// own limit to the device, passes a longer one.
     public func attach(
       sessionID: String, columns: Int = 80, rows: Int = 24, mode: LocalAttachmentMode = .control,
-      history: Bool = false, peer: LocalRemotePeer? = nil
+      history: Bool = false, peer: LocalRemotePeer? = nil, outputStall: Duration = .seconds(30)
     ) async throws -> LocalTerminalAttachment {
       try LocalWire.validateID(sessionID)
       try peer.map(LocalWire.validatePeer)
       guard LocalWire.validSize(columns: columns, rows: rows) else {
         throw LocalAgentClientError.rejected(.invalidRequest)
       }
-      let connection = try await LocalSocketConnection.open(socketURL: socketURL)
+      let connection = try await LocalSocketConnection.open(socketURL: socketURL, outputStall: outputStall)
       do {
         let request = LocalAgentRequest(
           operation: .attach, sessionID: sessionID, columns: columns, rows: rows, mode: mode,
@@ -336,8 +339,7 @@
       let timeout: DispatchWorkItem
     }
 
-    private let terminal = LocalTerminalStreams(
-      conflictError: LocalAgentClientError.invalidResponse)
+    private let terminal: LocalTerminalStreams
     var output: AsyncThrowingStream<Data, Error> { terminal.output() }
     var events: AsyncThrowingStream<LocalTerminalEvent, Error> { terminal.events() }
     private let lock = NSLock()
@@ -348,8 +350,10 @@
     private var attachedSession: LocalSessionInfo?
     private var pending: [String: Pending] = [:]
 
-    private init(descriptor: Int32, readDescriptor: Int32) {
+    private init(descriptor: Int32, readDescriptor: Int32, outputStall: Duration) {
       self.descriptor = descriptor
+      terminal = LocalTerminalStreams(
+        conflictError: LocalAgentClientError.invalidResponse, stallLimit: outputStall)
       terminal.onTermination { [weak self] in self?.finish(throwing: nil) }
       DispatchQueue(label: "com.witerm.local.read", qos: .userInitiated).async { [self] in
         defer { Darwin.close(readDescriptor) }
@@ -357,18 +361,22 @@
       }
     }
 
-    static func open(socketURL: URL) async throws -> LocalSocketConnection {
+    static func open(socketURL: URL, outputStall: Duration = .seconds(30)) async throws
+      -> LocalSocketConnection
+    {
       let operation = LocalSocketOpenOperation()
       return try await withTaskCancellationHandler {
         try await withCheckedThrowingContinuation { continuation in
-          operation.start(socketURL: socketURL, continuation: continuation)
+          operation.start(socketURL: socketURL, outputStall: outputStall, continuation: continuation)
         }
       } onCancel: {
         operation.cancel()
       }
     }
 
-    fileprivate static func connect(socketURL: URL) throws -> LocalSocketConnection {
+    fileprivate static func connect(socketURL: URL, outputStall: Duration) throws
+      -> LocalSocketConnection
+    {
       guard socketURL.isFileURL, socketURL.path.hasPrefix("/"), !socketURL.path.utf8.contains(0)
       else {
         throw LocalAgentClientError.unsafeSocket
@@ -454,7 +462,8 @@
       let readDescriptor = dup(descriptor)
       guard readDescriptor >= 0 else { throw LocalAgentClientError.unavailable }
       _ = fcntl(readDescriptor, F_SETFD, FD_CLOEXEC)
-      let connection = LocalSocketConnection(descriptor: descriptor, readDescriptor: readDescriptor)
+      let connection = LocalSocketConnection(
+        descriptor: descriptor, readDescriptor: readDescriptor, outputStall: outputStall)
       transferred = true
       return connection
     }
@@ -659,7 +668,10 @@
     private var cancelled = false
     private var callback: CheckedContinuation<LocalSocketConnection, Error>?
 
-    func start(socketURL: URL, continuation: CheckedContinuation<LocalSocketConnection, Error>) {
+    func start(
+      socketURL: URL, outputStall: Duration,
+      continuation: CheckedContinuation<LocalSocketConnection, Error>
+    ) {
       lock.lock()
       if cancelled {
         lock.unlock()
@@ -669,7 +681,9 @@
       callback = continuation
       lock.unlock()
       DispatchQueue.global(qos: .userInitiated).async { [self] in
-        let result = Result { try LocalSocketConnection.connect(socketURL: socketURL) }
+        let result = Result {
+          try LocalSocketConnection.connect(socketURL: socketURL, outputStall: outputStall)
+        }
         lock.lock()
         let callback = self.callback
         self.callback = nil

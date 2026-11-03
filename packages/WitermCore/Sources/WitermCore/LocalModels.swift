@@ -6,6 +6,30 @@ public enum LocalAgentOperation: String, Codable, Sendable {
   case guest
   /// From the relay endpoint: a recipient proving it holds an invitation's key.
   case redeem
+  /// Relay only, never sent to the local service: a paired device
+  /// acknowledging terminal frames on a flow-controlled attachment. Never
+  /// answered.
+  case ack
+}
+
+/// End-to-end flow control on relayed attachments (relay-v1 `flow`). The
+/// device acknowledges the terminal frames it has handed to its renderer, and
+/// the Mac keeps what is unacknowledged within a window that fits the relay's
+/// per-leg queue, so a slow device slows its output instead of overflowing
+/// the relay.
+public enum RelayFlowControl {
+  /// The version a device advertises in `attach` and the Mac confirms.
+  public static let version = 1
+  /// Unacknowledged terminal frames (output and geometry) the Mac may have
+  /// sent. The relay queues 16 messages per leg; the rest is room for replies.
+  public static let windowRecords = 8
+  /// Their encrypted WebSocket message bytes. The relay queues 256 KiB per leg.
+  public static let windowBytes = 128 * 1024
+  /// Output bytes in one coalesced record (8 KiB without flow control).
+  /// Base64 and JSON keep it near 22 KB, under the 49,152-byte record limit.
+  public static let recordData = 16 * 1024
+  /// How long the Mac waits for an acknowledgement while output is unacknowledged.
+  public static let stallSeconds = 45
 }
 
 public enum LocalAttachmentMode: String, Codable, Sendable { case control, view }
@@ -335,6 +359,12 @@ public struct LocalAgentRequest: Codable, Sendable, Equatable {
   public let history: Bool?
   /// `list` and `attach` from the Mac's relay endpoint only.
   public let peer: LocalRemotePeer?
+  /// Relay `attach` only: the flow-control version this device speaks
+  /// (`RelayFlowControl.version`). Never forwarded to the local service.
+  public let flow: Int?
+  /// Relay `ack` only: how many terminal frames (output and geometry) after
+  /// the attach response this device has handed to its renderer, in total.
+  public let consumed: Int?
 
   public init(
     version: Int = 1, id: String = UUID().uuidString.lowercased(), operation: LocalAgentOperation,
@@ -342,7 +372,8 @@ public struct LocalAgentRequest: Codable, Sendable, Equatable {
     mode: LocalAttachmentMode? = nil, data: Data? = nil, cwd: String? = nil,
     shared: Bool? = nil, keepPrivate: Bool? = nil, remoteTyping: Bool? = nil,
     access: LocalDeviceAccess? = nil, guest: LocalGuestInvite? = nil, pairingID: String? = nil,
-    proof: Data? = nil, automatic: Bool? = nil, history: Bool? = nil, peer: LocalRemotePeer? = nil
+    proof: Data? = nil, automatic: Bool? = nil, history: Bool? = nil, peer: LocalRemotePeer? = nil,
+    flow: Int? = nil, consumed: Int? = nil
   ) {
     self.version = version
     self.id = id
@@ -364,11 +395,13 @@ public struct LocalAgentRequest: Codable, Sendable, Equatable {
     self.automatic = automatic
     self.history = history
     self.peer = peer
+    self.flow = flow
+    self.consumed = consumed
   }
 
   enum CodingKeys: String, CodingKey {
     case version, id, operation, name, columns, rows, mode, data, cwd, shared, access, guest, proof,
-      automatic, history, peer
+      automatic, history, peer, flow, consumed
     case pairingID = "pairing_id"
     case sessionID = "session_id"
     case keepPrivate = "keep_private"
@@ -391,13 +424,17 @@ public struct LocalAgentFrame: Codable, Sendable, Equatable {
   public let accesses: [LocalDeviceAccess]?
   /// `guest` replies: every invitation, without keys.
   public let guests: [LocalGuestInvite]?
+  /// Relay `attach` replies only: the flow-control version the Mac enforces
+  /// on this attachment. Absent when it doesn't (an older Mac, or a device
+  /// that didn't ask).
+  public let flow: Int?
 
   public init(
     version: Int = 1, id: String? = nil, kind: LocalFrameKind, ok: Bool? = nil,
     error: LocalAgentErrorCode? = nil, status: LocalAgentStatus? = nil,
     sessions: [LocalSessionInfo]? = nil, session: LocalSessionInfo? = nil,
     mode: LocalAttachmentMode? = nil, data: Data? = nil, accesses: [LocalDeviceAccess]? = nil,
-    guests: [LocalGuestInvite]? = nil
+    guests: [LocalGuestInvite]? = nil, flow: Int? = nil
   ) {
     self.version = version
     self.id = id
@@ -411,6 +448,7 @@ public struct LocalAgentFrame: Codable, Sendable, Equatable {
     self.data = data
     self.accesses = accesses
     self.guests = guests
+    self.flow = flow
   }
 }
 
@@ -454,6 +492,10 @@ final class LocalTerminalStreams: @unchecked Sendable {
   /// The iterator taking events; a second one is refused.
   private var activeConsumer: UUID?
   private var termination: (@Sendable () -> Void)?
+  /// Events handed to the consumer (or, on the output route, geometry it
+  /// never needed), in total. A relayed attachment acknowledges these.
+  private var consumedEvents = 0
+  private var consumption: (@Sendable () -> Void)?
 
   init(conflictError: Error, byteLimit: Int = 1 << 20, stallLimit: Duration = .seconds(30)) {
     self.conflictError = conflictError
@@ -464,6 +506,21 @@ final class LocalTerminalStreams: @unchecked Sendable {
 
   func onTermination(_ callback: @escaping @Sendable () -> Void) {
     condition.withLock { termination = callback }
+  }
+
+  /// Called (outside the lock) each time `consumed` grows.
+  func onConsumption(_ callback: @escaping @Sendable () -> Void) {
+    condition.withLock { consumption = callback }
+  }
+
+  /// How many yielded events the consumer has taken, or no longer needs.
+  var consumed: Int { condition.withLock { consumedEvents } }
+
+  /// Must hold the lock. Returns the callback to run once it's released.
+  private func consume(_ count: Int) -> (@Sendable () -> Void)? {
+    guard count > 0 else { return nil }
+    consumedEvents += count
+    return consumption
   }
 
   /// What an event costs against the limits: its bytes plus framing.
@@ -499,13 +556,17 @@ final class LocalTerminalStreams: @unchecked Sendable {
     condition.lock()
     defer { condition.unlock() }
     if route == .events { return AsyncThrowingStream { $0.finish(throwing: conflictError) } }
+    var skipped: (@Sendable () -> Void)?
     if route == .undecided {
       route = .output
       // Geometry waiting from before the choice isn't output.
+      let waiting = queue.count - head
       queue = queue[head...].filter { if case .output = $0 { true } else { false } }
       head = 0
       queuedBytes = queue.reduce(0) { $0 + Self.cost($1) }
+      skipped = consume(waiting - queue.count)
     }
+    defer { if let skipped { DispatchQueue.global().async(execute: skipped) } }
     let token = ConsumerToken(self)
     return AsyncThrowingStream<Data, Error>(unfolding: { [token] in
       guard let streams = token.streams else { return nil }
@@ -528,15 +589,19 @@ final class LocalTerminalStreams: @unchecked Sendable {
       return .terminated
     }
     if route == .output, case .geometry = event {
+      let consumed = consume(1)
       condition.unlock()
+      consumed?()
       return .enqueued
     }
     if let waiter {
       // Nothing is queued while a consumer waits.
       self.waiter = nil
       lastProgress = .now
+      let consumed = consume(1)
       condition.unlock()
       waiter.resume(returning: event)
+      consumed?()
       return .enqueued
     }
     let cost = Self.cost(event)
@@ -621,10 +686,12 @@ final class LocalTerminalStreams: @unchecked Sendable {
           }
           lastProgress = .now
           let released = queuedBytes <= byteLimit ? takeRoomWaiters() : []
+          let consumed = consume(1)
           condition.broadcast()
           condition.unlock()
           released.forEach { $0.resume(returning: true) }
           continuation.resume(returning: event)
+          consumed?()
           return
         }
         if completed {

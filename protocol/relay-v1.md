@@ -82,7 +82,7 @@ Each side builds the prologue from its own locally verified grant, never from se
 Encrypted records carry the [local-agent-v1](local-agent-v1.md) JSON requests and frames.
 
 **Operations.**
-- Only `status`, `list`, `attach` (with optional `history`), `input` (with optional `automatic`), `resize`, `detach`, and `redeem` (with `proof`) are accepted remotely.
+- Only `status`, `list`, `attach` (with optional `history` and `flow`), `input` (with optional `automatic`), `resize`, `detach`, `redeem` (with `proof`), and, on a flow-controlled attachment, `ack` (with `consumed`) are accepted remotely.
 - The Mac answers `list` and `attach` only for sessions its policy lets that device (or that invitation) reach, and each listed session carries `access`, limited to the grant. Others don't appear and attach as `not_found` (`sessionUnavailable` in the Swift client). Narrowing access closes the device's attachment the same way.
 - A remote `status` reports only whether tmux is available, never the Mac's servers.
 - The Mac rejects input, resize, and control attaches for `view` grants, even if the server is malicious.
@@ -101,6 +101,26 @@ Encrypted records carry the [local-agent-v1](local-agent-v1.md) JSON requests an
 **Liveness.** Clients ping every 5 seconds with a 3-second deadline. These are per-leg health checks; they don't guarantee every network failure is noticed within that time.
 
 **Resizes.** `geometry` frames arrive in order inside the encrypted channel, each before the redraw at its size. The server never learns grid sizes.
+
+## Flow control
+
+The server closes a tunnel when a leg's queue passes 16 messages or 256 KiB. It can't slow a sender down instead: coder/websocket handles pongs only while reading, and pings queue behind blocked writes, so not reading one side (or blocking on the other) would fail a heartbeat and close the tunnel anyway. So the two devices pace output between themselves, inside the encrypted channel, and the server stays a bounded forwarder of opaque records. Shared limits and examples: `fixtures/relay-flow-v1.json`.
+
+**Negotiation.**
+- A device that acknowledges output adds `"flow": 1` to `attach` (any integer from 1; the Mac speaks version 1).
+- A Mac that paces output answers with `"flow": 1` in the attach response. The device acknowledges only then; a confirmation it didn't ask for, or of another version, fails closed.
+- A device without `flow` gets the attachment as before: output frames of at most 8 KiB, sent as fast as the relay accepts them, and no `ack`.
+- A Mac from before flow control refuses the unknown field with `invalid_request` before attaching anything. The device then attaches once more without `flow`, on a fresh tunnel, and remembers that Mac (by grant, in memory only, for 10 minutes). It never sends `ack` to it.
+
+**Acknowledgements.** `{"version":1,"id":<uuid>,"operation":"ack","consumed":<n>}`, where `n` counts every terminal frame (`output` and `geometry`) after the attach response that the device has handed to its renderer, in total. Geometry an output-only consumer doesn't need counts as handed over. `consumed` never decreases and never exceeds what the Mac sent; anything else ends the attachment. An `ack` is never answered. Watching devices acknowledge too. The device sends one acknowledgement at a time, carrying whatever its renderer took meanwhile, and none once it has started to detach, so the detach request is its last request.
+
+**The Mac's window.**
+- At most 8 unacknowledged terminal frames, totalling at most 128 KiB of encrypted WebSocket messages (plaintext plus the 16-byte tag), are in flight to the device. That leaves the server's leg at least 8 messages and 128 KiB for replies.
+- While it waits for room, the Mac merges consecutive output into one `output` frame of up to 16 KiB (8 KiB without flow control). Base64 and JSON, without escaped slashes, keep such a record under 22 KB: inside the 49,152-byte record and 65,536-byte message limits. Geometry is its own frame and keeps its place among the output bytes. Nothing is dropped, duplicated, or reordered.
+- Once 64 KiB is waiting, the Mac stops taking that attachment's events from its local service, which stops reading the pane for it, so tmux coalesces the screen meanwhile (as for a slow window on the Mac). While an `input`, `resize`, or `detach` waits for the local service's reply (which comes behind output queued before it), the Mac keeps taking events, at most what that service had queued; past 4 MiB waiting the attachment ends.
+- If the device acknowledges nothing for 45 seconds while output is unacknowledged, the Mac sends `closed` with `backpressure`; the session keeps running and a new attach redraws it.
+- Once a `detach` arrives the Mac sends no more output: the device renders nothing after the reply, and its next attach redraws. The reply itself, like every response and `closed`, is outside the window. An `ack` that arrives while the Mac waits for the device to close after a reply is not taken as the close.
+- Revocation checks (every 250 ms), detach acknowledgements, and never resending input work as without flow control.
 
 **Reconnects** run a full handshake and grant check every time. The iOS client reconnects on its own after backgrounding (once its 15-second grace ends) and after a network drop while active, with backoff and at most four tries; never after leaving, revocation, or the session ending. Input is never resent.
 

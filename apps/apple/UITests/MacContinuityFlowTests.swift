@@ -5,7 +5,8 @@ import XCTest
 /// `scripts/e2e-signal-server.py` when WITERM_E2E_SIGNALS names it, otherwise
 /// through files; screenshots go to WITERM_E2E_DIR. Continues the Mac's fresh session here (the session opens
 /// as soon as the Mac approves), types alongside the Mac, and exercises the
-/// terminal's touch gestures.
+/// terminal's touch gestures. With WITERM_E2E_BURST=1 it also stays attached
+/// through a million lines the Mac prints (set it for both runs).
 @MainActor
 final class MacContinuityFlowTests: XCTestCase {
     private var folder: URL!
@@ -155,6 +156,48 @@ final class MacContinuityFlowTests: XCTestCase {
         XCTAssertNotNil(awaitSignal("mac-typed", timeout: 240), "The Mac never typed")
         RunLoop.current.run(until: Date().addingTimeInterval(1.5))
         shot("09-together")
+
+        // Opt-in: a million lines on the Mac while this phone is attached.
+        // The relay used to close the tunnel mid-burst; now the phone must
+        // stay attached and typing, never show a disconnect, and show the
+        // marker the Mac echoes afterwards.
+        if environment["WITERM_E2E_BURST"] == "1" {
+            signal("phone-ready-for-burst")
+            XCTAssertNotNil(awaitSignal("mac-burst-started", timeout: 120), "The Mac never started the burst")
+            let marker = "BURST_42_DONE"
+            let surface = any("remoteTerminalSurface")
+            let deadline = Date().addingTimeInterval(300)
+            var seen = false
+            while Date() < deadline {
+                XCTAssertFalse(any("remoteDisconnectedStatus").exists, "The phone disconnected during the burst")
+                XCTAssertFalse(any("reconnectRemoteTerminal").exists, "The phone offered Reconnect during the burst")
+                let label = status.label
+                XCTAssertTrue(label.hasPrefix("Typing,") || label.contains(", Typing,"),
+                              "The phone stopped typing during the burst: \(label)")
+                if (surface.value as? String ?? "").contains(marker) { seen = true; break }
+                RunLoop.current.run(until: Date().addingTimeInterval(1))
+            }
+            if !seen {
+                // The marker may be outside the visible part of the Mac's
+                // grid; Find searches the whole terminal.
+                app.buttons["terminalActionsMenu"].tap()
+                let find = app.buttons["terminalFind"]
+                XCTAssertTrue(find.waitForExistence(timeout: 5))
+                find.tap()
+                let field = app.textFields["terminalFindField"]
+                XCTAssertTrue(field.waitForExistence(timeout: 5))
+                field.typeText(marker)
+                let count = app.staticTexts["terminalFindCount"]
+                let found = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label != %@", "No Matches"), object: count)
+                seen = XCTWaiter.wait(for: [found], timeout: 10) == .completed && count.exists
+                shot("09f-burst-find")
+                app.buttons["terminalFindDone"].tap()
+            }
+            XCTAssertTrue(seen, "The phone never showed the marker after the burst")
+            XCTAssertFalse(any("remoteDisconnectedStatus").exists, "The phone disconnected after the burst")
+            shot("09e-burst")
+            signal("phone-burst-ok")
+        }
 
         app.buttons["remoteKeyboard"].tap()
         // Hiding the keyboard resizes the grid; let that settle first.

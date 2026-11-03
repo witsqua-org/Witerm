@@ -79,6 +79,8 @@ That's the whole surface. Creating or ending sessions, file transfer, and clipbo
 - 49,152 bytes of plaintext per encrypted record.
 - If a limit is exceeded or something times out, the connection closes. Data is never dropped silently.
 
+**Heavy output.** A phone is usually slower than the Mac producing output (`seq 1 1000000`, a build log), and the server closes a tunnel whose leg passes 16 messages or 256 KiB. So the phone acknowledges, inside the encrypted channel, the output its renderer has taken, and the Mac keeps at most 8 records and 128 KiB unacknowledged, merging output into records of up to 16 KiB while it waits. Beyond that the Mac stops reading that attachment from its service and tmux coalesces the screen, as it does for a slow window on the Mac. The phone stays attached and ends on the latest screen; lines tmux skipped stay in tmux's scrollback. A phone that takes nothing for 45 seconds is told `backpressure` and reconnects to a redraw. Older phones and older Macs work as before: neither side paces unless both do. Details: [relay-v1](../protocol/relay-v1.md#flow-control).
+
 **What the server can see.** It forwards handshakes and records as opaque bytes, and never parses, stores, or logs them. It can still see:
 - devices, their keys and names
 - pairings and permissions
@@ -139,5 +141,7 @@ The live tests pair throwaway in-memory identities against the real server, usin
 - reconnect redraws and an unchanged shell PID
 - local revocation closing live tunnels while the server grant is still valid
 - weak-network recovery without resending input
+
+`RelayFlowTests` (mac-agent, no server needed) models the server's per-leg limits in process (16 messages plus the one being written, 256 KiB, a 5-second write timeout, close on overflow) with a phone link of about 2 MB/s and a renderer of 1.5 MB/s, and runs bursts through a real private tmux server, the bridge, and the encrypted channel.
 
 For diagnostics, a DEBUG build with `WITERM_RELAY_TRACE=1` logs stage names and error categories only, never terminal bytes or keys.

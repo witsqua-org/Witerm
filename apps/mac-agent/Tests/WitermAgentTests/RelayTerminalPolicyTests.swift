@@ -34,4 +34,19 @@ final class RelayTerminalPolicyTests: XCTestCase {
         XCTAssertThrowsError(try RelayTerminalPolicy.request(JSONSerialization.data(withJSONObject: raw), attached: false, permission: .control))
         XCTAssertThrowsError(try RelayTerminalPolicy.request(Data(repeating: 32, count: 49_153), attached: false, permission: .control))
     }
+
+    /// Flow control: `flow` only on attach, `ack` only while attached and
+    /// for watching devices too, and neither carries anything else.
+    func testFlowFieldsAreNarrow() throws {
+        let id = UUID().uuidString.lowercased()
+        let encoder = JSONEncoder()
+        XCTAssertNoThrow(try RelayTerminalPolicy.request(encoder.encode(LocalAgentRequest(operation: .attach, sessionID: id, columns: 80, rows: 24, mode: .view, flow: 1)), attached: false, permission: .view))
+        XCTAssertThrowsError(try RelayTerminalPolicy.request(encoder.encode(LocalAgentRequest(operation: .attach, sessionID: id, columns: 80, rows: 24, mode: .view, flow: 0)), attached: false, permission: .view))
+        XCTAssertThrowsError(try RelayTerminalPolicy.request(encoder.encode(LocalAgentRequest(operation: .input, data: Data("x".utf8), flow: 1)), attached: true, permission: .control))
+        XCTAssertNoThrow(try RelayTerminalPolicy.request(encoder.encode(LocalAgentRequest(operation: .ack, consumed: 4)), attached: true, permission: .view))
+        XCTAssertThrowsError(try RelayTerminalPolicy.request(encoder.encode(LocalAgentRequest(operation: .ack, consumed: 4)), attached: false, permission: .control))
+        XCTAssertThrowsError(try RelayTerminalPolicy.request(encoder.encode(LocalAgentRequest(operation: .ack)), attached: true, permission: .control))
+        XCTAssertThrowsError(try RelayTerminalPolicy.request(encoder.encode(LocalAgentRequest(operation: .ack, consumed: -1)), attached: true, permission: .control))
+        XCTAssertThrowsError(try RelayTerminalPolicy.request(encoder.encode(LocalAgentRequest(operation: .ack, data: Data("x".utf8), consumed: 1)), attached: true, permission: .control))
+    }
 }

@@ -51,7 +51,42 @@ public actor RemoteTerminalClient {
     }
     let grant = try await pairing.trustedRelayGrant(id: grantID)
     guard grant.permission == .control || mode == .view else { throw RelayError.readOnly }
-    let channel = try await RelaySecureChannel.client(pairing: pairing, grantID: grantID)
+    let pairing = pairing
+    let grantID = grantID
+    return try await Self.attach(
+      open: { try await RelaySecureChannel.client(pairing: pairing, grantID: grantID) },
+      flowKey: grantID, sessionID: sessionID, columns: columns, rows: rows, mode: mode,
+      history: history)
+  }
+
+  /// Attaches over a channel from `open`, advertising flow control. A Mac
+  /// from before flow control rejects the unknown `flow` field with
+  /// `invalid_request` before anything is attached; then this attaches once
+  /// more without it, on a fresh channel, and remembers that Mac (by
+  /// `flowKey`, in memory only) for a while.
+  static func attach(
+    open: @escaping @Sendable () async throws -> RelaySecureChannel, flowKey: String,
+    sessionID: String, columns: Int, rows: Int, mode: LocalAttachmentMode, history: Bool,
+    advertiseFlow: Bool = true
+  ) async throws -> RemoteTerminalAttachment {
+    let flow = advertiseFlow && !RemoteFlowSupport.knownOlder(flowKey)
+    do {
+      return try await attachOnce(
+        open: open, sessionID: sessionID, columns: columns, rows: rows, mode: mode,
+        history: history, flow: flow)
+    } catch RemoteFlowRefusal.olderMac {
+      RemoteFlowSupport.markOlder(flowKey)
+      return try await attachOnce(
+        open: open, sessionID: sessionID, columns: columns, rows: rows, mode: mode,
+        history: history, flow: false)
+    }
+  }
+
+  private static func attachOnce(
+    open: @Sendable () async throws -> RelaySecureChannel,
+    sessionID: String, columns: Int, rows: Int, mode: LocalAttachmentMode, history: Bool, flow: Bool
+  ) async throws -> RemoteTerminalAttachment {
+    let channel = try await open()
     let rpc = RemoteRPCConnection(channel: channel)
     await rpc.start()
     do {
@@ -59,14 +94,47 @@ public actor RemoteTerminalClient {
         LocalAgentRequest(
           operation: .attach,
           sessionID: sessionID, columns: columns, rows: rows, mode: mode,
-          history: history ? true : nil))
+          history: history ? true : nil, flow: flow ? RelayFlowControl.version : nil))
       guard let session = frame.session else { throw RelayError.invalidMessage }
       return RemoteTerminalAttachment(connection: rpc, session: session, mode: mode)
     } catch {
+      let refused = await rpc.rejection == .invalidRequest
       await rpc.close()
+      if flow && refused { throw RemoteFlowRefusal.olderMac }
       throw RelayContext.map(error)
     }
   }
+}
+
+private enum RemoteFlowRefusal: Error { case olderMac }
+
+/// Macs that refused flow control recently, by grant, in memory only. They
+/// are asked again after a while, in case they were updated.
+enum RemoteFlowSupport {
+  private final class Box: @unchecked Sendable {
+    let lock = NSLock()
+    var older: [String: Date] = [:]
+  }
+  private static let box = Box()
+  static let retryAfter: TimeInterval = 600
+
+  static func knownOlder(_ key: String) -> Bool {
+    box.lock.withLock {
+      guard let since = box.older[key] else { return false }
+      if Date().timeIntervalSince(since) < retryAfter { return true }
+      box.older.removeValue(forKey: key)
+      return false
+    }
+  }
+
+  static func markOlder(_ key: String) {
+    box.lock.withLock {
+      if box.older.count >= 64 { box.older.removeAll() }
+      box.older[key] = Date()
+    }
+  }
+
+  static func forget(_ key: String) { _ = box.lock.withLock { box.older.removeValue(forKey: key) } }
 }
 
 public final class RemoteTerminalAttachment: Sendable {
@@ -108,6 +176,9 @@ public final class RemoteTerminalAttachment: Sendable {
 
   public func detach() async throws { try await connection.detach() }
   public func abort() async { await connection.abort() }
+
+  /// Whether the Mac confirmed flow control for this attachment.
+  var flowControlled: Bool { get async { await connection.flowControlled } }
 }
 
 enum RemoteWire {
@@ -165,6 +236,13 @@ actor RemoteRPCConnection {
     let timer: Task<Void, Never>
   }
   private var pending: [String: Pending] = [:]
+  /// The last error code the Mac answered a request with.
+  private(set) var rejection: LocalAgentErrorCode?
+  /// The Mac confirmed flow control on attach: this side acknowledges what
+  /// its renderer has taken, and output records may be larger.
+  private(set) var flowControlled = false
+  private var acknowledged = 0
+  private var acking: Task<Void, Never>?
 
   init(channel: RelaySecureChannel) {
     self.channel = channel
@@ -172,7 +250,34 @@ actor RemoteRPCConnection {
   func start() {
     guard reader == nil else { return }
     terminal.onTermination { [weak self] in Task { await self?.consumerEnded() } }
+    terminal.onConsumption { [weak self] in Task { await self?.consumptionAdvanced() } }
     reader = Task { await self.readLoop() }
+  }
+
+  /// Acknowledges what the renderer has taken, one acknowledgement at a time:
+  /// whatever it takes while one is being sent goes in the next. None is sent
+  /// once detaching has begun, so the detach request is the last request.
+  private func consumptionAdvanced() {
+    guard flowControlled, !closed, !detaching, acking == nil, terminal.consumed > acknowledged
+    else { return }
+    acking = Task { await self.sendAcknowledgements() }
+  }
+
+  private func sendAcknowledgements() async {
+    while flowControlled, !closed, !detaching {
+      let consumed = terminal.consumed
+      guard consumed > acknowledged else { break }
+      acknowledged = consumed
+      do {
+        try await channel.send(
+          RemoteWire.encoder().encode(LocalAgentRequest(operation: .ack, consumed: consumed)))
+      } catch {
+        acking = nil
+        await finish(RelayContext.map(error))
+        return
+      }
+    }
+    acking = nil
   }
 
   func request(_ request: LocalAgentRequest) async throws -> LocalAgentFrame {
@@ -221,10 +326,11 @@ actor RemoteRPCConnection {
           guard let id = frame.id, let item = pending[id], let ok = frame.ok, frame.data == nil
           else { throw RelayError.invalidMessage }
           if !ok {
+            rejection = frame.error
             RelayTrace.event(
               channel.traceID, "rpc-reply-error", error: RemoteWire.error(frame.error))
             guard frame.error != nil, frame.status == nil, frame.sessions == nil,
-              frame.session == nil, frame.mode == nil
+              frame.session == nil, frame.mode == nil, frame.flow == nil
             else { throw RelayError.invalidMessage }
             pending.removeValue(forKey: id)
             notifyDrained()
@@ -238,6 +344,7 @@ actor RemoteRPCConnection {
           if item.request.operation == .attach {
             attached = true
             attachedSession = frame.session
+            flowControlled = frame.flow != nil
           }
           pending.removeValue(forKey: id)
           notifyDrained()
@@ -250,7 +357,8 @@ actor RemoteRPCConnection {
         case .output:
           guard attached, frame.id == nil, frame.ok == nil, frame.error == nil,
             frame.status == nil, frame.sessions == nil, frame.session == nil, frame.mode == nil,
-            let bytes = frame.data, !bytes.isEmpty, bytes.count <= 8192
+            let bytes = frame.data, !bytes.isEmpty,
+            bytes.count <= (flowControlled ? RelayFlowControl.recordData : 8192)
           else { throw RelayError.invalidMessage }
           if !(try await emit(.output(bytes))) { return }
         case .geometry:
@@ -303,13 +411,16 @@ actor RemoteRPCConnection {
       else { throw RelayError.invalidMessage }
       try sessions.forEach(RemoteWire.validate)
     case .attach:
+      // The Mac confirms only the version this device asked for.
       guard let session = frame.session, session.id == request.sessionID,
         frame.mode == request.mode,
-        frame.status == nil, frame.sessions == nil
+        frame.status == nil, frame.sessions == nil,
+        frame.flow == nil || (request.flow != nil && frame.flow == RelayFlowControl.version)
       else { throw RelayError.invalidMessage }
       try RemoteWire.validate(session)
     default:
-      guard frame.status == nil, frame.sessions == nil, frame.session == nil, frame.mode == nil
+      guard frame.status == nil, frame.sessions == nil, frame.session == nil, frame.mode == nil,
+        frame.flow == nil
       else { throw RelayError.invalidMessage }
     }
   }
@@ -320,6 +431,7 @@ actor RemoteRPCConnection {
     terminalError = error
     RelayTrace.event(channel.traceID, "rpc-finish", error: error)
     reader?.cancel()
+    acking?.cancel()
     for sender in senders.values { sender.cancel() }
     terminal.finish(throwing: error)
     for item in pending.values {
@@ -343,6 +455,8 @@ actor RemoteRPCConnection {
     for waiter in waiters { waiter.resume() }
   }
 
+  private func acknowledgementsSent() async { await acking?.value }
+
   private func waitForPending() async throws {
     guard !closed else { throw terminalError ?? RelayError.transport }
     if pending.isEmpty { return }
@@ -360,6 +474,8 @@ actor RemoteRPCConnection {
     let task = Task {
       do {
         _ = try await relayDeadline(min(5, max(0, timeout))) {
+          // An acknowledgement already being sent goes first; none follows.
+          await self.acknowledgementsSent()
           try await self.waitForPending()
           return try await self.request(LocalAgentRequest(operation: .detach))
         }
