@@ -31,6 +31,9 @@ enum WitermTheme {
     /// A selected card or choice: fill and border (`WitermMetrics.selectedBorder`).
     static let selectedFill = Color("AccentColor").opacity(0.10)
     static let selectedBorder = Color("AccentColor")
+    /// The outline of a card, field or choice: none normally (the fill
+    /// carries the shape), a visible line with Increase Contrast.
+    static func outline(increasedContrast: Bool) -> Color { increasedContrast ? Color.primary.opacity(0.45) : .clear }
     /// Pointer hover on rows and custom controls (Mac). Never on a selected item.
     static func hoverFill(increasedContrast: Bool) -> Color { Color.primary.opacity(increasedContrast ? 0.12 : 0.06) }
 }
