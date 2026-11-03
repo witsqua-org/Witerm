@@ -557,6 +557,23 @@
         }
       }
     },
+    "A device with this name is already paired, probably this one before it was set up again" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A device with this name is already paired, probably this one before it was set up again"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已有同名设备配对，可能是这台设备重新设置之前的配对"
+          }
+        }
+      }
+    },
     "A new shell on this Mac. It keeps running after you close it or quit Witerm." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -744,19 +761,19 @@
         }
       }
     },
-    "Add %@" : {
+    "Add" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Add %@"
+            "value" : "Add"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "添加%@"
+            "value" : "添加"
           }
         }
       }
@@ -791,23 +808,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "添加设备"
-          }
-        }
-      }
-    },
-    "Add Host" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Add Host"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "添加主机"
           }
         }
       }
@@ -1084,23 +1084,6 @@
         }
       }
     },
-    "Add to Favorites" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Add to Favorites"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "收藏"
-          }
-        }
-      }
-    },
     "Address" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1131,6 +1114,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "地址不能包含空格。"
+          }
+        }
+      }
+    },
+    "Adds it to the key row." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adds it to the key row."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将它加入按键行。"
           }
         }
       }
@@ -1186,23 +1186,6 @@
         }
       }
     },
-    "Allow Remote Access" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Allow Remote Access"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "允许远程连接"
-          }
-        }
-      }
-    },
     "Allow Witerm to Run in the Background" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1233,6 +1216,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "请在“设置”中允许访问相机以便扫描，或在下方粘贴邀请。"
+          }
+        }
+      }
+    },
+    "Allow remote access" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow remote access"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允许远程访问"
           }
         }
       }
@@ -1284,6 +1284,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已保存"
+          }
+        }
+      }
+    },
+    "Also unpair the older “%@”" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Also unpair the older “%@”"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同时取消与较早的“%@”的配对"
+          }
+        }
+      }
+    },
+    "Announce New Output" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Announce New Output"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播报新输出"
           }
         }
       }
@@ -1607,6 +1641,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "响铃与旁白"
+          }
+        }
+      }
+    },
+    "Browse and transfer files on %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Browse and transfer files on %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "浏览和传输 %@ 上的文件"
           }
         }
       }
@@ -2631,23 +2682,6 @@
         }
       }
     },
-    "Code" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Code"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "验证码"
-          }
-        }
-      }
-    },
     "Collapsed" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2661,6 +2695,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已收起"
+          }
+        }
+      }
+    },
+    "Color Scheme" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Color Scheme"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "配色方案"
           }
         }
       }
@@ -2831,23 +2882,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "请连接 Wi-Fi 或蜂窝网络，然后重试。"
-          }
-        }
-      }
-    },
-    "Connect to an SSH Host" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Connect to an SSH Host"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "连接 SSH 主机"
           }
         }
       }
@@ -3090,23 +3124,6 @@
         }
       }
     },
-    "Continuing adds this server. Continue only if you trust the device that showed the code." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Continuing adds this server. Continue only if you trust the device that showed the code."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "继续会添加此服务器。请仅在信任显示该验证码的设备时继续。"
-          }
-        }
-      }
-    },
     "Control for Next Key" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3188,23 +3205,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "拷贝邀请"
-          }
-        }
-      }
-    },
-    "Copy Link" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copy Link"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "拷贝链接"
           }
         }
       }
@@ -3481,19 +3481,19 @@
         }
       }
     },
-    "Details for %@" : {
+    "Delete…" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Details for %@"
+            "value" : "Delete…"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ 的详情"
+            "value" : "删除…"
           }
         }
       }
@@ -3528,23 +3528,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "设备验证码"
-          }
-        }
-      }
-    },
-    "Device Details" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Device Details"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "设备详情"
           }
         }
       }
@@ -3702,6 +3685,23 @@
         }
       }
     },
+    "Disconnect from “%@”?" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disconnect from “%@”?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要断开与“%@”的连接吗？"
+          }
+        }
+      }
+    },
     "Disconnect; the remote shell ends" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3770,23 +3770,6 @@
         }
       }
     },
-    "Dismiss Message" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dismiss Message"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "关闭提示"
-          }
-        }
-      }
-    },
     "Done" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3834,23 +3817,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "下载"
-          }
-        }
-      }
-    },
-    "Drag to reorder. The row scrolls sideways when it's wider than the screen." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Drag to reorder. The row scrolls sideways when it's wider than the screen."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "拖移以重新排序。按键行宽于屏幕时可横向滚动。"
           }
         }
       }
@@ -4025,6 +3991,23 @@
         }
       }
     },
+    "Enclosing Folder" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enclosing Folder"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上层文件夹"
+          }
+        }
+      }
+    },
     "End" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4140,6 +4123,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在结束终端…"
+          }
+        }
+      }
+    },
+    "Enter Password" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter Password"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "输入密码"
           }
         }
       }
@@ -4416,6 +4416,23 @@
         }
       }
     },
+    "Face ID protects them." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Face ID protects them."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由面容 ID 保护。"
+          }
+        }
+      }
+    },
     "Favorite" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4603,6 +4620,23 @@
         }
       }
     },
+    "Font Size" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Font Size"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "字号"
+          }
+        }
+      }
+    },
     "Font preview, %lld pt" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4633,6 +4667,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "字号"
+          }
+        }
+      }
+    },
+    "Forward a port through %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forward a port through %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通过 %@ 转发端口"
           }
         }
       }
@@ -4820,6 +4871,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "隐藏私钥"
+          }
+        }
+      }
+    },
+    "Hides it from the key row." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hides it from the key row."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从按键行中隐藏。"
           }
         }
       }
@@ -5091,6 +5159,23 @@
         }
       }
     },
+    "Increase Terminal Contrast" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Increase Terminal Contrast"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "增强终端对比度"
+          }
+        }
+      }
+    },
     "Increase Text Size" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5329,23 +5414,6 @@
         }
       }
     },
-    "Invitation Copied" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Invitation Copied"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已复制邀请"
-          }
-        }
-      }
-    },
     "Invitation From Another Server" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5465,6 +5533,23 @@
         }
       }
     },
+    "Its earlier access ended, but the new pairing wasn’t approved. Show a new QR code to pair it again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Its earlier access ended, but the new pairing wasn’t approved. Show a new QR code to pair it again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它之前的访问已结束，但新的配对未获批准。请显示新的二维码重新配对。"
+          }
+        }
+      }
+    },
     "Its shell and the programs in it stop, here and on every device. Unsaved work in them is lost." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5580,6 +5665,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "经 %@ 台跳板机"
+          }
+        }
+      }
+    },
+    "Jump to Latest" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jump to Latest"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跳到最新"
           }
         }
       }
@@ -5771,23 +5873,6 @@
         }
       }
     },
-    "Link Copied" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Link Copied"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已拷贝链接"
-          }
-        }
-      }
-    },
     "List terminals and who has them open" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5924,36 +6009,36 @@
         }
       }
     },
-    "Making a code…" : {
+    "Making a QR code…" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Making a code…"
+            "value" : "Making a QR code…"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在生成验证码…"
+            "value" : "正在生成二维码…"
           }
         }
       }
     },
-    "Manage Servers…" : {
+    "Manage Relay Servers…" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Manage Servers…"
+            "value" : "Manage Relay Servers…"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "管理服务器…"
+            "value" : "管理中继服务器…"
           }
         }
       }
@@ -6247,6 +6332,23 @@
         }
       }
     },
+    "New Server" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Server"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新服务器"
+          }
+        }
+      }
+    },
     "New Snippet" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6277,6 +6379,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "新建终端"
+          }
+        }
+      }
+    },
+    "New output" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New output"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有新输出"
           }
         }
       }
@@ -6740,23 +6859,6 @@
         }
       }
     },
-    "Not Selected" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Not Selected"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未选择"
-          }
-        }
-      }
-    },
     "Not Set Up" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6995,13 +7097,13 @@
         }
       }
     },
-    "On the other device, choose Open On ▸ New Device, then scan its code." : {
+    "On the other device, choose Open On ▸ New Device, then scan its QR code." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "On the other device, choose Open On ▸ New Device, then scan its code."
+            "value" : "On the other device, choose Open On ▸ New Device, then scan its QR code."
           }
         },
         "zh-Hans" : {
@@ -7284,6 +7386,23 @@
         }
       }
     },
+    "Open “%@” on a paired device or a new one" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open “%@” on a paired device or a new one"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在已配对设备或新设备上打开“%@”"
+          }
+        }
+      }
+    },
     "OpenSSH Private Key" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7386,6 +7505,23 @@
         }
       }
     },
+    "Optic ID protects them." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Optic ID protects them."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由 Optic ID 保护。"
+          }
+        }
+      }
+    },
     "Other Device’s Code" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7399,6 +7535,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "另一台设备的验证码"
+          }
+        }
+      }
+    },
+    "Page" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Page"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "页面"
           }
         }
       }
@@ -7450,23 +7603,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "向上翻页"
-          }
-        }
-      }
-    },
-    "Pair a Device" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pair a Device"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "配对设备"
           }
         }
       }
@@ -7637,6 +7773,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "配对已确认"
+          }
+        }
+      }
+    },
+    "Pairing Not Replaced" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pairing Not Replaced"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未能替换配对"
           }
         }
       }
@@ -7896,19 +8049,19 @@
         }
       }
     },
-    "Point at the code on the other device" : {
+    "Point at the QR code on the other device" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Point at the code on the other device"
+            "value" : "Point at the QR code on the other device"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "对准另一台设备上的验证码"
+            "value" : "对准另一台设备上的二维码"
           }
         }
       }
@@ -8096,6 +8249,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "私密：任何已配对设备都无法打开它"
+          }
+        }
+      }
+    },
+    "QR Code" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QR Code"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "二维码"
           }
         }
       }
@@ -8542,6 +8712,23 @@
         }
       }
     },
+    "Remote access on · Can’t reach the relay server" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remote access on · Can’t reach the relay server"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "远程访问已开启 · 无法连接中继服务器"
+          }
+        }
+      }
+    },
     "Remote access on · Connecting…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8554,7 +8741,24 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "远程连接已开启 · 正在连接…"
+            "value" : "远程访问已开启 · 正在连接…"
+          }
+        }
+      }
+    },
+    "Remote access on · Offline" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remote access on · Offline"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "远程访问已开启 · 离线"
           }
         }
       }
@@ -8571,7 +8775,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "远程连接已开启 · 在线"
+            "value" : "远程访问已开启 · 在线"
           }
         }
       }
@@ -8588,7 +8792,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "远程连接已开启 · 终端已关闭"
+            "value" : "远程访问已开启 · 终端已关闭"
           }
         }
       }
@@ -8605,7 +8809,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无法更新远程连接设置，请重试。"
+            "value" : "无法更新远程访问设置，请重试。"
           }
         }
       }
@@ -8678,36 +8882,36 @@
         }
       }
     },
-    "Remove Server" : {
+    "Remove Relay Server?" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Remove Server"
+            "value" : "Remove Relay Server?"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "移除服务器"
+            "value" : "要移除中继服务器吗？"
           }
         }
       }
     },
-    "Remove Server?" : {
+    "Remove Relay Server…" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Remove Server?"
+            "value" : "Remove Relay Server…"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "移除服务器？"
+            "value" : "移除中继服务器…"
           }
         }
       }
@@ -8742,23 +8946,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "移除信任"
-          }
-        }
-      }
-    },
-    "Remove from Favorites" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Remove from Favorites"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "取消收藏"
           }
         }
       }
@@ -8895,6 +9082,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "请求访问"
+          }
+        }
+      }
+    },
+    "Requesting access adds this relay server. Only continue if you trust the device that showed the code." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Requesting access adds this relay server. Only continue if you trust the device that showed the code."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请求访问会添加此中继服务器。请仅在信任显示该验证码的设备时继续。"
           }
         }
       }
@@ -9082,23 +9286,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "SFTP 文件"
-          }
-        }
-      }
-    },
-    "SSH Disconnected" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SSH Disconnected"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SSH 已断开"
           }
         }
       }
@@ -9307,36 +9494,36 @@
         }
       }
     },
-    "Scan a Code Instead" : {
+    "Scan a QR Code Instead" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Scan a Code Instead"
+            "value" : "Scan a QR Code Instead"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "改为扫描验证码"
+            "value" : "改为扫描二维码"
           }
         }
       }
     },
-    "Scan a new code to try again." : {
+    "Scan a new QR code to try again." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Scan a new code to try again."
+            "value" : "Scan a new QR code to try again."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请扫描新的验证码后重试。"
+            "value" : "请扫描新的二维码后重试。"
           }
         }
       }
@@ -9528,23 +9715,6 @@
         }
       }
     },
-    "Selected" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Selected"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已选择"
-          }
-        }
-      }
-    },
     "Send Text" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9575,23 +9745,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在发送请求…"
-          }
-        }
-      }
-    },
-    "Server" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Server"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "服务器"
           }
         }
       }
@@ -9660,6 +9813,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "服务器暂不可用"
+          }
+        }
+      }
+    },
+    "Set a device passcode to save them." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set a device passcode to save them."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置设备密码后才能保存。"
+          }
+        }
+      }
+    },
+    "Set a login password to save them." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set a login password to save them."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置登录密码后才能保存。"
           }
         }
       }
@@ -9761,7 +9948,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已共享 · 远程连接已关闭"
+            "value" : "已共享 · 远程访问已关闭"
           }
         }
       }
@@ -9834,23 +10021,6 @@
         }
       }
     },
-    "Show Code" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Show Code"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "显示验证码"
-          }
-        }
-      }
-    },
     "Show Keyboard" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9868,19 +10038,19 @@
         }
       }
     },
-    "Show New Code" : {
+    "Show New QR Code" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Show New Code"
+            "value" : "Show New QR Code"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "显示新的验证码"
+            "value" : "显示新的二维码"
           }
         }
       }
@@ -9919,6 +10089,40 @@
         }
       }
     },
+    "Show QR Code" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show QR Code"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示二维码"
+          }
+        }
+      }
+    },
+    "Show Terminals" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Terminals"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示终端"
+          }
+        }
+      }
+    },
     "Shown" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9949,23 +10153,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "显示已连接的终端。"
-          }
-        }
-      }
-    },
-    "Shows this device’s terminals in Terminals." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Shows this device’s terminals in Terminals."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在“终端”中显示此设备的终端。"
           }
         }
       }
@@ -10051,6 +10238,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "通过 SSH 登录另一台电脑"
+          }
+        }
+      }
+    },
+    "Sign in to “%@”" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in to “%@”"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登录“%@”"
+          }
+        }
+      }
+    },
+    "Size" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Size"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "大小"
           }
         }
       }
@@ -10514,19 +10735,19 @@
         }
       }
     },
-    "Tap to type, long-press to copy, pinch to zoom." : {
+    "Tap to type, touch and hold to select, pinch to zoom." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tap to type, long-press to copy, pinch to zoom."
+            "value" : "Tap to type, touch and hold to select, pinch to zoom."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "轻点输入，长按拷贝，双指捏合缩放。"
+            "value" : "轻点输入，按住选择，双指捏合缩放。"
           }
         }
       }
@@ -10616,6 +10837,23 @@
         }
       }
     },
+    "Terminal Bell" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terminal Bell"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "终端响铃"
+          }
+        }
+      }
+    },
     "Terminal Cannot Receive Input" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10680,23 +10918,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "终端光标"
-          }
-        }
-      }
-    },
-    "Terminal Disconnected" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Terminal Disconnected"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "终端已断开"
           }
         }
       }
@@ -10939,23 +11160,6 @@
         }
       }
     },
-    "Terminal text also adjusts to the system text size." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Terminal text also adjusts to the system text size."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "终端文字也会随系统文字大小调整。"
-          }
-        }
-      }
-    },
     "Terminal, Watching" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11177,6 +11381,23 @@
         }
       }
     },
+    "The QR code expired before a device used it." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The QR code expired before a device used it."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "二维码在设备使用前已过期。"
+          }
+        }
+      }
+    },
     "The SSH session has ended." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11190,23 +11411,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "SSH 会话已结束。"
-          }
-        }
-      }
-    },
-    "The code expired before a device used it." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The code expired before a device used it."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "验证码在设备使用前已过期。"
           }
         }
       }
@@ -11496,6 +11700,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "另一台设备拒绝了请求。"
+          }
+        }
+      }
+    },
+    "The program running there stops, with the remote shell." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The program running there stops, with the remote shell."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在那里运行的程序会随远程 shell 一起停止。"
           }
         }
       }
@@ -11818,7 +12039,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "这台 Mac 将不再通过此服务器接受远程连接。已配对设备会保持配对。"
+            "value" : "这台 Mac 将不再通过此服务器接受远程访问。已配对设备会保持配对。"
           }
         }
       }
@@ -12061,6 +12282,23 @@
         }
       }
     },
+    "This relay server can’t open terminals." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This relay server can’t open terminals."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此中继服务器无法打开终端。"
+          }
+        }
+      }
+    },
     "This relay server can’t pair devices." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -12074,23 +12312,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此中继服务器无法配对设备。"
-          }
-        }
-      }
-    },
-    "This server doesn’t offer remote terminals." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This server doesn’t offer remote terminals."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此服务器不支持远程终端。"
           }
         }
       }
@@ -12142,6 +12363,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "操作过于频繁"
+          }
+        }
+      }
+    },
+    "Touch ID protects them." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Touch ID protects them."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由触控 ID 保护。"
+          }
+        }
+      }
+    },
+    "Transferring…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Transferring…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在传输…"
           }
         }
       }
@@ -12294,7 +12549,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "开启远程连接"
+            "value" : "开启远程访问"
           }
         }
       }
@@ -12328,7 +12583,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请先关闭此服务器的远程连接，再修改其地址。"
+            "value" : "请先关闭此服务器的远程访问，再修改其地址。"
           }
         }
       }
@@ -12418,13 +12673,13 @@
         }
       }
     },
-    "Type at the Same Time as This Mac" : {
+    "Type at the same time as this Mac" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Type at the Same Time as This Mac"
+            "value" : "Type at the same time as this Mac"
           }
         },
         "zh-Hans" : {
@@ -12605,19 +12860,19 @@
         }
       }
     },
-    "Unable to Remove Server" : {
+    "Unable to Remove Relay Server" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Unable to Remove Server"
+            "value" : "Unable to Remove Relay Server"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无法移除服务器"
+            "value" : "无法移除中继服务器"
           }
         }
       }
@@ -12770,7 +13025,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无法读取远程连接设置，请重试。"
+            "value" : "无法读取远程访问设置，请重试。"
           }
         }
       }
@@ -12889,7 +13144,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无法关闭远程连接，请重试。"
+            "value" : "无法关闭远程访问，请重试。"
           }
         }
       }
@@ -12906,7 +13161,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无法开启远程连接。请检查中继服务器的地址，并在“设置”→“通用”中确认终端已开启。"
+            "value" : "无法开启远程访问。请检查中继服务器的地址，并在“设置”→“通用”中确认终端已开启。"
           }
         }
       }
@@ -12975,6 +13230,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "撤销"
+          }
+        }
+      }
+    },
+    "Unfavorite" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unfavorite"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消收藏"
           }
         }
       }
@@ -13196,23 +13468,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "上方向键"
-          }
-        }
-      }
-    },
-    "Up to 8. Your devices use all of them at once. New pairings use the one chosen in Devices." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Up to 8. Your devices use all of them at once. New pairings use the one chosen in Devices."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最多 8 个，你的设备会同时使用它们。新的配对使用在“设备”中选择的服务器。"
           }
         }
       }
@@ -13829,6 +14084,23 @@
         }
       }
     },
+    "Watching adds this relay server. Only continue if you trust the device that showed the code." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watching adds this relay server. Only continue if you trust the device that showed the code."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "观看会添加此中继服务器。请仅在信任显示该验证码的设备时继续。"
+          }
+        }
+      }
+    },
     "Watching on %@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -14016,6 +14288,40 @@
         }
       }
     },
+    "Your login password protects them." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your login password protects them."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由登录密码保护。"
+          }
+        }
+      }
+    },
+    "Your passcode protects them." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your passcode protects them."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由设备密码保护。"
+          }
+        }
+      }
+    },
     "Your terminals keep running, but you can’t open them here or from other devices until you turn this back on." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -14046,6 +14352,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "刚刚"
+          }
+        }
+      }
+    },
+    "step.open" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "step.open"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开"
           }
         }
       }

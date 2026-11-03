@@ -591,9 +591,15 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         override func paste(itemProviders: [NSItemProvider]) {
             guard acceptsInput,
                   let provider = itemProviders.first(where: { $0.canLoadObject(ofClass: NSString.self) }) else { return }
-            _ = provider.loadObject(ofClass: NSString.self) { [weak self] object, _ in
-                guard let text = (object as? NSString).map(String.init) else { return }
-                Task { @MainActor in self?.reviewOrPaste(text) }
+            // Load off the view, then come back to the main actor with the
+            // text only, so the view itself never crosses isolation.
+            Task { @MainActor [weak self] in
+                let text: String? = await withCheckedContinuation { continuation in
+                    _ = provider.loadObject(ofClass: NSString.self) { object, _ in
+                        continuation.resume(returning: (object as? NSString).map(String.init))
+                    }
+                }
+                if let text { self?.reviewOrPaste(text) }
             }
         }
 
