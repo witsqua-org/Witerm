@@ -585,7 +585,9 @@ struct SSHWorkspaceView<Home: View>: View {
                         .accessibilityIdentifier("sshReconnect")
                 }
             } else if sizeClass == .regular {
-                ContentUnavailableView(String(localized: "Choose a Terminal", bundle: .main), systemImage: "terminal")
+                // Honest before anything is saved: nothing to choose yet.
+                ContentUnavailableView(model.profiles.isEmpty ? String(localized: "No Terminal Open", bundle: .main)
+                                       : String(localized: "Choose a Terminal", bundle: .main), systemImage: "terminal")
             } else {
                 home
             }

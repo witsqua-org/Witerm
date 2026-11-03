@@ -100,6 +100,30 @@ import XCTest
         return parts.string!
     }
 
+    // MARK: Orientations (iPad)
+
+    /// Every orientation on iPad, for multitasking and Stage Manager: the
+    /// window fills the screen the right way round and each tab is reachable.
+    func testAuditOrientations() throws {
+        guard UIDevice.current.userInterfaceIdiom == .pad else { throw XCTSkip("iPad only") }
+        folder = root.appendingPathComponent(prefix + "orientations")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        launch(variants[0])
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let orientations: [(UIDeviceOrientation, String)] = [(.portrait, "portrait"), (.landscapeLeft, "landscape-left"),
+                                                             (.portraitUpsideDown, "portrait-upside-down"), (.landscapeRight, "landscape-right")]
+        for (orientation, name) in orientations {
+            XCUIDevice.shared.orientation = orientation
+            RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+            let window = app.windows.firstMatch.frame
+            XCTAssertEqual(window.width > window.height, orientation.isLandscape, "\(name): the window must follow the device")
+            for (index, tabName) in ["terminals", "devices", "settings"].enumerated() {
+                tab(index)
+                shot("\(name)-\(tabName)")
+            }
+        }
+    }
+
     // MARK: Screens without a network
 
     func testAuditScreens() throws {

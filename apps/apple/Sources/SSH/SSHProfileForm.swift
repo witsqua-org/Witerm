@@ -68,6 +68,8 @@ struct SSHProfileForm: View {
     @State private var protection = SSHUnlock.method
     /// Face ID (or Touch ID) this device has but Witerm may not use.
     @State private var biometryOff = SSHUnlock.biometryOffForApp
+    /// The pinned Connect bar's height, which the form scrolls past (iOS).
+    @State private var barHeight: CGFloat = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(profile: SSHProfile?, credentials: [UUID: SSHCredential], purpose: SSHFormPurpose, address: String? = nil,
@@ -186,8 +188,19 @@ struct SSHProfileForm: View {
             // Mac, one footer with Cancel beside them. At iOS accessibility
             // sizes they end the form instead.
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if !actionsInForm { actions }
+                if !actionsInForm {
+                    #if os(iOS)
+                    actions.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { barHeight = $0 }
+                    #else
+                    actions
+                    #endif
+                }
             }
+            #if os(iOS)
+            // With the keyboard up the form's scroll range left out the bar,
+            // so the last rows (Name, Add Jump Host) stayed under Connect.
+            .contentMargins(.bottom, actionsInForm ? 0 : barHeight, for: .scrollContent)
+            #endif
             .fileImporter(isPresented: $importingKey, allowedContentTypes: [.data, .plainText]) { result in
                 defer { importingKeyHost = nil }
                 do {

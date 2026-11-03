@@ -110,6 +110,25 @@ import XCTest
         RunLoop.current.run(until: Date().addingTimeInterval(0.5))
     }
 
+    /// Opt-in recovery after an interrupted run: removes only hosts named
+    /// "Perf SSH …" and only pins that show the fixture's fingerprint.
+    func testRemoveLeftoverPerformanceHosts() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["WITERM_PERF_CLEANUP"] == "1", let fingerprint = environment["WITERM_SSH_UI_FINGERPRINT"] else {
+            throw XCTSkip("Explicit leftover cleanup only")
+        }
+        let app = XCUIApplication()
+        self.app = app
+        app.launchArguments = ["-witerm.onboarding.completedVersion", "1", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        addTeardownBlock { await MainActor.run { app.terminate() } }
+        app.launch()
+        app.tabBars.buttons.element(boundBy: 0).tap()
+        let leftovers = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "sshProfileRow-", "Perf SSH "))
+        _ = leftovers.firstMatch.waitForExistence(timeout: 5)
+        for _ in 0..<5 where leftovers.firstMatch.exists { removeHost(leftovers.firstMatch, fingerprint: fingerprint) }
+        XCTAssertFalse(leftovers.firstMatch.exists)
+    }
+
     func testTimeToTypeLongOutputScrollKeyboardAndRotation() throws {
         continueAfterFailure = false
         executionTimeAllowance = 600
