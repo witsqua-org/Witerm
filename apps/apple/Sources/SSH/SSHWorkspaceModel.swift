@@ -1,6 +1,9 @@
 import Foundation
 import Observation
 import WitermSSH
+#if os(iOS)
+import UIKit
+#endif
 
 struct SSHTrustPrompt: Identifiable {
     let id = UUID()
@@ -422,11 +425,68 @@ final class SSHWorkspaceModel {
         sessions = []
         for session in open {
             disconnected[session.id] = forBackground
-                ? String(localized: "SSH stopped when Witerm went to the background. Reconnecting opens a new shell.", bundle: .main)
+                ? String(localized: "Disconnected after 3 minutes in the background. Reconnecting opens a new shell.", bundle: .main)
                 : String(localized: "Reconnecting opens a new shell.", bundle: .main)
         }
         open.forEach { $0.close() }
     }
+
+    #if os(iOS)
+    // MARK: Background (iOS)
+
+    /// How long SSH connections are kept in the background, as for paired
+    /// terminals: returning within it continues the same connection and
+    /// shell if it's still alive; past it they're closed.
+    static let backgroundWindow: TimeInterval = 180
+    @ObservationIgnored private var backgroundedAt: Date?
+    @ObservationIgnored private var backgroundTask = UIBackgroundTaskIdentifier.invalid
+    @ObservationIgnored private var backgroundExpiry: Task<Void, Never>?
+
+    /// The app went to the background: connections stay open, and iOS lets
+    /// the app run for a while (about 30 seconds, not guaranteed; no
+    /// background modes). Once it's suspended nothing answers the host, so
+    /// a host with SSH keepalives (ClientAliveInterval) may close the
+    /// connection meanwhile; one without keeps it. An attempt still
+    /// connecting is cancelled: it can't finish while suspended.
+    func enterBackground() {
+        cancelConnecting()
+        guard !sessions.isEmpty, backgroundedAt == nil else { return }
+        backgroundedAt = Date()
+        endBackgroundTask()
+        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Witerm SSH") { [weak self] in
+            MainActor.assumeIsolated { self?.endBackgroundTask() }
+        }
+        backgroundExpiry = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(Self.backgroundWindow)) } catch { return }
+            self?.closeAfterBackgroundWindow()
+        }
+    }
+
+    /// Back in the foreground: within the window every live connection just
+    /// carries on (one that died meanwhile ends with its reason and
+    /// Reconnect, which opens a new shell). Past it, they're closed now,
+    /// since the app couldn't run to close them on time.
+    func enterForeground() {
+        backgroundExpiry?.cancel(); backgroundExpiry = nil
+        defer { backgroundedAt = nil; endBackgroundTask() }
+        if let since = backgroundedAt, Date().timeIntervalSince(since) > Self.backgroundWindow {
+            disconnectAll(forBackground: true)
+        }
+    }
+
+    private func closeAfterBackgroundWindow() {
+        backgroundExpiry = nil
+        guard backgroundedAt != nil else { return }
+        disconnectAll(forBackground: true)
+        endBackgroundTask()
+    }
+
+    private func endBackgroundTask() {
+        guard backgroundTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundTask)
+        backgroundTask = .invalid
+    }
+    #endif
 
     private func ended(_ error: Error?, token: UUID) {
         guard let session = sessions.first(where: { $0.token == token }) else { return }

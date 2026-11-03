@@ -18,6 +18,17 @@ struct TerminalsHome: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var search = ""
     @State private var favoritesOnly = false
+    @Environment(NetworkStatus.self) private var network: NetworkStatus?
+    /// A Shared with You terminal whose End Invitation… was chosen, while
+    /// its confirmation shows.
+    @State private var endingInvitation: EndingInvitation?
+    @State private var endInvitationFailure: String?
+
+    struct EndingInvitation: Identifiable {
+        let section: DeviceSection
+        let name: String
+        var id: String { section.id }
+    }
 
     /// Search appears once the list is long enough to need it, and covers
     /// every section.
@@ -133,10 +144,23 @@ struct TerminalsHome: View {
             }
             ForEach(pairedSections) { section in deviceSection(section) }
             if !sharedSections.isEmpty {
-                Section(String(localized: "Shared with You", bundle: .main)) {
+                Section {
                     ForEach(sharedSections) { section in
                         sectionStatus(section)
-                        ForEach(matching(section)) { session in terminalRow(session, in: section, shared: true) }
+                        ForEach(matching(section)) { session in
+                            terminalRow(session, in: section, shared: true)
+                                .modifier(EndInvitationActions(ending: section.model.unpairingID == section.grant.id,
+                                                               offline: network?.online == false) {
+                                    endingInvitation = EndingInvitation(section: section, name: session.name)
+                                })
+                        }
+                    }
+                } header: {
+                    Text(String(localized: "Shared with You", bundle: .main))
+                } footer: {
+                    if let endInvitationFailure {
+                        Text(endInvitationFailure).foregroundStyle(WitermTheme.warning)
+                            .accessibilityIdentifier("endInvitationFailure")
                     }
                 }
             }
@@ -167,6 +191,31 @@ struct TerminalsHome: View {
             }
         }
         .overlay(alignment: .bottom) { SSHUndoRemovalBar(model: ssh) }
+        // Ending an invitation can't be undone, so it always asks first.
+        .alert(String(localized: "End Invitation to “\(endingInvitation?.name ?? "")”?", bundle: .main),
+               isPresented: Binding(get: { endingInvitation != nil }, set: { if !$0 { endingInvitation = nil } }),
+               presenting: endingInvitation) { ending in
+            Button(String(localized: "End Invitation", bundle: .main), role: .destructive) { endInvitation(ending) }
+            Button(String(localized: "Cancel", bundle: .main), role: .cancel) {}
+        } message: { ending in
+            Text(String(localized: "\(thisDevice) can no longer open it. This can’t be undone: to open it again, \(ending.section.grant.host.name) must invite you again.", bundle: .main))
+        }
+    }
+
+    /// Names the device the app runs on, as the vocabulary allows.
+    private var thisDevice: String {
+        UIDevice.current.userInterfaceIdiom == .pad ? String(localized: "This iPad", bundle: .main)
+            : String(localized: "This iPhone", bundle: .main)
+    }
+
+    private func endInvitation(_ ending: EndingInvitation) {
+        endInvitationFailure = nil
+        Task {
+            do { try await ending.section.model.endInvitation(ending.section.grant) } catch {
+                let failure = PairingIssue(error)
+                endInvitationFailure = String(localized: "\(failure.title). The invitation is still in effect. Try again.", bundle: .main)
+            }
+        }
     }
 
     private func listAll() {
@@ -298,8 +347,8 @@ struct TerminalsHome: View {
         .accessibilityAddTraits(shown ? [.isButton, .isSelected] : .isButton)
         .accessibilityIdentifier("remoteSession-\(session.id)")
         .listRowBackground(sizeClass == .regular && shown ? WitermTheme.tint(grant.host.identityHue) : nil)
-        // No swipe: there's no watching mode to pick (the keyboard decides)
-        // and no delete (ending a terminal is the other device's decision).
+        // No delete swipe: ending a terminal is the other device's decision
+        // (a Shared with You row gets End Invitation…, which ends access).
     }
 
     private func note(_ text: String) -> some View {
@@ -394,6 +443,29 @@ struct TerminalsHome: View {
         if ended { value += String(localized: ", disconnected", bundle: .main) }
         if ssh.isFavorite(profile) { value += String(localized: ", favorite", bundle: .main) }
         return value
+    }
+}
+
+/// End Invitation… on a Shared with You terminal: a trailing swipe (never
+/// a full swipe: it can't be undone) and the long-press menu, both asking
+/// first; not offered offline, when the relay server can't be told.
+private struct EndInvitationActions: ViewModifier {
+    let ending: Bool
+    let offline: Bool
+    let confirm: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                if !offline, !ending {
+                    Button(String(localized: "End Invitation…", bundle: .main), systemImage: "xmark.circle", action: confirm)
+                        .tint(.red)
+                }
+            }
+            .contextMenu {
+                Button(String(localized: "End Invitation…", bundle: .main), systemImage: "xmark.circle", role: .destructive, action: confirm)
+                    .disabled(offline || ending)
+            }
     }
 }
 

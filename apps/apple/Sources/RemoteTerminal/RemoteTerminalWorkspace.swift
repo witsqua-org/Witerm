@@ -222,6 +222,10 @@ struct RemoteTerminalWorkspace: View {
                     inputDestination: model.selectedGrant.map { $0.host.name + " · " + attachment.session.name },
                     barActions: typingBarHidden ? keyRowActions : nil,
                     keyboardButton: startTyping,
+                    tapToType: startTyping.map { _ in { typeOnTap() } },
+                    isParked: { model.parked },
+                    onLinkLost: { model.linkLost($0, id: id) },
+                    onGrid: { model.noteGrid(columns: $0, rows: $1, id: id) },
                     onFailure: { model.attachmentFailed($0, id: id) },
                     onEnded: { model.attachmentEnded(id: id) }
                 )
@@ -311,7 +315,7 @@ struct RemoteTerminalWorkspace: View {
     /// Text and Colors first (the most frequent), then Find, and Leave last.
     /// Typing follows the keyboard, so there's no switch here.
     @ViewBuilder private var terminalSecondaryActions: some View {
-        TerminalTextAndColorsMenu()
+        TerminalTextAndColorsItems()
         Button(String(localized: "Find in Terminal", bundle: .main), systemImage: "magnifyingglass") { finding = true }
             .accessibilityIdentifier("terminalFind")
         if model.isInteractive {
@@ -336,6 +340,21 @@ struct RemoteTerminalWorkspace: View {
         return { model.switchMode() }
     }
 
+    /// A tap on a watched terminal starts typing, as on an SSH terminal,
+    /// when nobody else types there; then it asks the Mac (after the detach
+    /// ACK of the watching connection), which still refuses if someone
+    /// started meanwhile, and this keeps watching and says who. When the
+    /// latest list says someone else types, the tap keeps watching and says
+    /// so, without asking: it never takes typing from anyone.
+    private func typeOnTap() {
+        if let elsewhere = typingWhileWatching {
+            UIAccessibility.post(notification: .announcement, argument: elsewhere)
+            UINotificationFeedbackGenerator().notificationOccurred(.warning)
+            return
+        }
+        model.switchMode()
+    }
+
     /// The keyboard went down (Hide Keyboard, a swipe on the keyboard, or
     /// the find bar closing without it): stop typing, after a moment in
     /// which focus may come straight back. Not while finding, while a sheet
@@ -347,7 +366,10 @@ struct RemoteTerminalWorkspace: View {
             guard model.attachmentID == id, model.isInteractive, model.mode == .control, !finding,
                   scenePhase == .active, finder.terminal?.isFirstResponder == false,
                   finder.terminal?.window?.rootViewController?.presentedViewController == nil else { return }
-            model.switchMode()
+            // The Mac gets the keyboard-hidden size first, so the watched
+            // grid fills the screen (it kept the rows above the keyboard).
+            let fit = (finder.terminal as? RemoteNativeTerminalView.TerminalInputView)?.watchingFit?()
+            model.stopTyping(fitting: fit)
         }
     }
 

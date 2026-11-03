@@ -93,10 +93,13 @@ struct TerminalDisplaySections: View {
     }
 }
 
-/// The bell and VoiceOver output announcements.
+/// The bell and VoiceOver output announcements. On iOS, Announce New Output
+/// moves to Settings' main list while VoiceOver runs (`includesAnnounce`
+/// false here then), so it's where a VoiceOver user looks first.
 struct TerminalFeedbackSections: View {
-    @AppStorage("witerm.terminalAnnounceOutput") private var announceOutput = false
+    @AppStorage(TerminalAnnounceOutput.key) private var announceOutput = false
     @AppStorage(TerminalBell.key) private var bell = true
+    var includesAnnounce = true
 
     var body: some View {
         Section {
@@ -116,20 +119,39 @@ struct TerminalFeedbackSections: View {
             Text("The system alert sound plays, and the Dock icon bounces once if Witerm is in the background.")
             #endif
         }
-        Section {
-            #if os(iOS)
-            Toggle(String(localized: "Announce New Output", bundle: .main), isOn: $announceOutput).witermSwitchTint()
-                .accessibilityIdentifier("terminalAnnounceOutput")
-            #else
-            Toggle("Announce output updates", isOn: $announceOutput).witermSwitchTint()
-                .accessibilityIdentifier("terminalAnnounceOutput")
-            #endif
-        } header: {
-            Text("VoiceOver")
-        } footer: {
-            Text("VoiceOver announces when the terminal has new output.")
+        if includesAnnounce {
+            Section {
+                #if os(iOS)
+                Toggle(String(localized: "Announce New Output", bundle: .main), isOn: $announceOutput).witermSwitchTint()
+                    .accessibilityIdentifier("terminalAnnounceOutput")
+                #else
+                Toggle("Announce output updates", isOn: $announceOutput).witermSwitchTint()
+                    .accessibilityIdentifier("terminalAnnounceOutput")
+                #endif
+            } header: {
+                Text("VoiceOver")
+            } footer: {
+                Text("VoiceOver announces when the terminal has new output.")
+            }
         }
     }
+}
+
+/// Announce New Output: one setting, one storage key, wherever it's shown.
+enum TerminalAnnounceOutput {
+    static let key = "witerm.terminalAnnounceOutput"
+
+    #if os(iOS)
+    /// Whether it belongs in Settings' main list: while VoiceOver runs
+    /// (DEBUG builds can say so with `-witerm.debug.voiceOverRunning YES`,
+    /// for UI tests); otherwise it stays in Advanced.
+    static func inMainList(voiceOver: Bool) -> Bool {
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "witerm.debug.voiceOverRunning") { return true }
+        #endif
+        return voiceOver
+    }
+    #endif
 }
 
 #if os(iOS)

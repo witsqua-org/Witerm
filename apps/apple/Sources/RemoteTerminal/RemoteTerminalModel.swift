@@ -1,6 +1,7 @@
 #if os(iOS)
 import Foundation
 import Observation
+import os
 import UIKit
 import WitermCore
 
@@ -179,6 +180,19 @@ final class RemoteTerminalModel {
     @ObservationIgnored private var retry: Task<Void, Never>?
     @ObservationIgnored private var grace: Task<Void, Never>?
     @ObservationIgnored private var backgroundTask = UIBackgroundTaskIdentifier.invalid
+    @ObservationIgnored private var backgroundedAt: Date?
+    @ObservationIgnored private var returnedAt: Date?
+    /// The link was let go (or lost) in the background, and the terminal
+    /// stays on screen as it was until `resumeSilently` hands its renderer a
+    /// new one. It counts as connected meanwhile: nothing about it changes
+    /// on screen.
+    private(set) var parked = false
+    /// Resumes in place so far, for the layout probe and tests.
+    private(set) var resumes = 0
+    @ObservationIgnored private var liveGrid: (columns: Int, rows: Int)?
+    /// A parked link's detach is still waiting for the Mac's ACK; resuming
+    /// waits for it, so the Mac has let go before the new link asks to type.
+    @ObservationIgnored private var releasing = false
     @ObservationIgnored private var activeID: UUID?
     @ObservationIgnored private var pairing: PairingClient?
     @ObservationIgnored private var work: Task<Void, Never>?
@@ -187,7 +201,7 @@ final class RemoteTerminalModel {
 
     init(serverAddress: String) { self.serverAddress = serverAddress }
 
-    var isInteractive: Bool { attachment != nil && connectionState == .connected && busy == nil }
+    var isInteractive: Bool { (attachment != nil || parked) && connectionState == .connected && busy == nil }
     var canReconnect: Bool {
         selectedGrant != nil && selectedSession != nil && busy == nil && connectionState != .ended
     }
@@ -404,7 +418,11 @@ final class RemoteTerminalModel {
         listing = [:]
     }
 
-    private func attach(_ session: LocalSessionInfo, mode requestedMode: LocalAttachmentMode?, automatic: Bool) {
+    /// `releaseGrid`: when typing stops, the size this device watches at,
+    /// sent before the detach so the Mac's grid (which this device set while
+    /// typing, with the keyboard up) fits the screen it's watched on.
+    private func attach(_ session: LocalSessionInfo, mode requestedMode: LocalAttachmentMode?, automatic: Bool,
+                        releaseGrid: (columns: Int, rows: Int)? = nil) {
         guard busy == nil, let grant = selectedGrant else { return }
         let allowed = access(for: session)
         if !automatic {
@@ -412,6 +430,7 @@ final class RemoteTerminalModel {
             notice = false
         }
         resumeWhenActive = false
+        parked = false
         retry?.cancel(); retry = nil
         let targetMode = requestedMode ?? allowed
         guard allowed == .control || targetMode == .view else {
@@ -436,7 +455,16 @@ final class RemoteTerminalModel {
                 do {
                     // A detach ACK confirms the host released the old controller.
                     // A failed release never silently proceeds to a new controller.
-                    if let previous { try await previous.detach() }
+                    if let previous {
+                        if let grid = releaseGrid, changingMode, targetMode == .view {
+                            #if DEBUG
+                            Self.layoutLog.notice("stopTyping releaseGrid=\(grid.columns, privacy: .public)x\(grid.rows, privacy: .public)")
+                            #endif
+                            // Best effort: another writer may own the grid, and the detach decides.
+                            try? await previous.resize(columns: grid.columns, rows: grid.rows)
+                        }
+                        try await previous.detach()
+                    }
                     try Task.checkCancellation()
                     // Earlier output fills the renderer's scrollback, so a drag scrolls back through it.
                     let next = try await open(session.id, session.columns, session.rows, targetMode)
@@ -455,6 +483,7 @@ final class RemoteTerminalModel {
                     self.mode = targetMode
                     self.attachmentID = UUID()
                     self.activeID = self.attachmentID
+                    self.liveGrid = (live.columns, live.rows)
                     self.displayAttachment = next
                     self.attachment = next
                     self.connectionState = .connected
@@ -480,6 +509,17 @@ final class RemoteTerminalModel {
             failed(error, token: generation)
         }
     }
+
+    /// The keyboard went down: watch, with the Mac's grid set to `grid`
+    /// first (the watching view's size) when this device was the one typing.
+    func stopTyping(fitting grid: (columns: Int, rows: Int)?) {
+        guard isInteractive, mode == .control, let session = selectedSession else { return }
+        attach(session, mode: .view, automatic: true, releaseGrid: grid)
+    }
+
+    #if DEBUG
+    static let layoutLog = Logger(subsystem: "com.witerm", category: "terminal-layout")
+    #endif
 
     func switchMode() {
         guard isInteractive, canRequestControl, let session = selectedSession else { return }
@@ -514,20 +554,35 @@ final class RemoteTerminalModel {
 
     // MARK: Background and return
 
-    /// How long a live terminal stays connected in the background, so a quick
-    /// app switch costs nothing. It stays well inside the time iOS allows a
-    /// background task, leaving room for the bounded detach that follows.
-    static let backgroundGrace: Duration = .seconds(15)
+    /// How long a terminal left in the background is kept: returning within
+    /// it continues the same terminal on screen without a reconnect; after
+    /// it, the terminal is let go (detach ACK) and returning reconnects as
+    /// before. Replaces Round 16's 15-second grace (protocol/relay-v1.md).
+    static let backgroundWindow: Duration = .seconds(180)
+    /// iOS gives a background task about 30 seconds, not guaranteed. The
+    /// connection is let go this long before that runs out, while there's
+    /// still time for the Mac's ACK; a suspended app answers no pings and
+    /// the relay server would close the tunnel 15 to 20 seconds later anyway.
+    static let releaseMargin: TimeInterval = 5
+    /// After returning, a link found dead this soon is resumed without a
+    /// word (the relay server closed it while the app was suspended).
+    static let returnMargin: TimeInterval = 10
 
-    /// The app moved to the background. A live terminal keeps its connection
-    /// for a short grace period, then detaches cleanly so another device can
-    /// take control, and reconnects when the app returns.
+    /// The app moved to the background. A live terminal keeps its
+    /// connection while iOS lets the app run (`beginBackgroundTask`, no
+    /// background modes). Just before that time runs out the link is let go
+    /// with an ACK but the screen, its scrollback and the keyboard stay as
+    /// they were (`parked`), so returning within `backgroundWindow` resumes
+    /// the same terminal in place. Past the window it detaches as before.
     func enterBackground() {
         appActive = false
+        backgroundedAt = Date()
+        returnedAt = nil
         retry?.cancel(); retry = nil
         guard attachment != nil, busy == nil else {
             // Interrupted mid-connect, or already disconnected by accident:
-            // pick it up again on return.
+            // pick it up again on return. A parked terminal stays parked.
+            if parked { return }
             if displayAttachment != nil, connectionState != .ended, busy != nil || resumeWhenActive { resumeWhenActive = true }
             suspend()
             return
@@ -535,29 +590,57 @@ final class RemoteTerminalModel {
         resumeWhenActive = true
         endBackgroundTask()
         backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Witerm terminal") { [weak self] in
-            // iOS is about to suspend the app: there is no time left for an
-            // acknowledged detach, so close at once. The Mac releases control
-            // when the connection closes.
+            // iOS is about to suspend the app: no time left for an
+            // acknowledged detach, so close at once (the Mac releases
+            // control when the connection closes); the screen stays.
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.grace?.cancel(); self.grace = nil
-                let resume = self.resumeWhenActive
-                self.suspend()
-                self.resumeWhenActive = resume
+                if self.attachment != nil, !self.appActive { self.park(acknowledged: false) }
                 self.endBackgroundTask()
             }
         }
+        // `backgroundTimeRemaining` is very large until iOS has decided.
+        let remaining = UIApplication.shared.backgroundTimeRemaining
+        let allowed = remaining.isFinite && remaining < 600 ? remaining : 30
+        let window = Double(Self.backgroundWindow.components.seconds)
+        let release = min(window, max(1, allowed - Self.releaseMargin))
+        #if DEBUG
+        Self.layoutLog.notice("background remaining=\(allowed, privacy: .public)s release=\(release, privacy: .public)s")
+        #endif
         grace = Task { [weak self] in
-            do { try await Task.sleep(for: Self.backgroundGrace) } catch { return }
-            self?.detachForBackground()
+            do { try await Task.sleep(for: .seconds(release)) } catch { return }
+            guard let self, !self.appActive else { return }
+            self.grace = nil
+            if self.backgroundedFor >= window { self.detachForBackground() } else { self.park(acknowledged: true) }
         }
     }
 
-    /// The app is active again: finish any background work and reconnect a
-    /// terminal that was interrupted.
+    /// The app is active again. A terminal still connected simply carries
+    /// on; one parked within the window resumes in place; one past it
+    /// reconnects as before.
     func enterForeground() {
         appActive = true
+        returnedAt = Date()
+        let away = backgroundedFor
+        backgroundedAt = nil
         grace?.cancel(); grace = nil
+        #if DEBUG
+        Self.layoutLog.notice("foreground away=\(away, privacy: .public)s parked=\(self.parked, privacy: .public) releasing=\(self.releasing, privacy: .public) busy=\(self.busy != nil, privacy: .public) linked=\(self.attachment != nil, privacy: .public)")
+        #endif
+        if parked {
+            if away <= Double(Self.backgroundWindow.components.seconds), busy == nil {
+                // In place, not through the visible reconnect; after the
+                // release's ACK when it's still under way.
+                resumeWhenActive = false
+                if !releasing { resumeSilently() }
+            } else {
+                // Past the window: let go for good, and reconnect as before.
+                parked = false
+                connectionState = .disconnected
+                resumeWhenActive = true
+            }
+        }
         endBackgroundTask()
         resumeIfNeeded()
         // A list may have changed while away.
@@ -565,8 +648,122 @@ final class RemoteTerminalModel {
         listTerminals()
     }
 
+    /// Seconds since the app went to the background (0 while active).
+    private var backgroundedFor: TimeInterval { backgroundedAt.map { Date().timeIntervalSince($0) } ?? 0 }
+
+    /// Lets the link go but keeps the terminal on screen as it is, renderer,
+    /// scrollback and keyboard included, for `resumeSilently`. Nothing typed
+    /// meanwhile is kept or resent.
+    private func park(acknowledged: Bool) {
+        guard let previous = deactivate() else { return }
+        parked = true
+        cancelWork()
+        #if DEBUG
+        Self.layoutLog.notice("park acknowledged=\(acknowledged, privacy: .public) after=\(self.backgroundedFor, privacy: .public)s")
+        #endif
+        guard acknowledged else {
+            Task { await previous.abort() }
+            return
+        }
+        let token = generation
+        releasing = true
+        work = Task { [weak self] in
+            // A failed release leaves nothing to resend; the Mac also
+            // releases control when this connection closes.
+            do { try await previous.detach() } catch { await previous.abort() }
+            guard let self else { return }
+            self.releasing = false
+            guard self.generation == token else { return }
+            self.work = nil
+            self.endBackgroundTask()
+            if self.appActive, self.parked { self.resumeSilently() }
+        }
+    }
+
+    /// The renderer's link ended or failed. Within the background window, or
+    /// just after returning (the relay server closed the tunnel while the
+    /// app was suspended), a network failure parks the terminal and resumes
+    /// it in place; true means the renderer keeps its screen and waits for
+    /// the new link. Anything else goes the usual way.
+    func linkLost(_ error: Error, id: UUID) -> Bool {
+        guard id == activeID, Self.isTransient(error), busy == nil, displayAttachment != nil else { return false }
+        let returnedRecently = returnedAt.map { Date().timeIntervalSince($0) <= Self.returnMargin } ?? false
+        guard !appActive || returnedRecently else { return false }
+        _ = deactivate()
+        parked = true
+        cancelWork()
+        #if DEBUG
+        Self.layoutLog.notice("linkLost resuming in place active=\(self.appActive, privacy: .public)")
+        #endif
+        if appActive { resumeSilently() }
+        return true
+    }
+
+    /// Opens a new link to the parked terminal, in the same mode, and hands
+    /// it to the same renderer, which keeps the old screen up until the
+    /// Mac's redraw has arrived (no blank frame, no Reconnecting). If
+    /// someone else types there now, it watches instead and says so; if it
+    /// can't connect, the usual Disconnected and Reconnect show.
+    private func resumeSilently() {
+        guard parked, let grant = selectedGrant, let session = selectedSession else { parked = false; return }
+        let resumeMode = mode
+        let grid = liveGrid ?? (session.columns, session.rows)
+        let started = Date()
+        do {
+            let open = try linkOpener(for: grant)
+            let token = generation
+            work = Task { [weak self] in
+                do {
+                    let next = try await open(session.id, grid.columns, grid.rows, resumeMode)
+                    guard let self, self.generation == token, !Task.isCancelled, self.parked else {
+                        await next.abort()
+                        return
+                    }
+                    self.parked = false
+                    self.resumeWhenActive = false
+                    self.work = nil
+                    // The same renderer (same identity) takes the new link.
+                    self.activeID = self.attachmentID
+                    self.displayAttachment = next
+                    self.attachment = next
+                    self.resumes += 1
+                    #if DEBUG
+                    Self.layoutLog.notice("resumed in place in \(Date().timeIntervalSince(started), privacy: .public)s")
+                    #endif
+                } catch {
+                    #if DEBUG
+                    Self.layoutLog.notice("resume failed: \(String(describing: error), privacy: .public)")
+                    #endif
+                    guard let self, self.generation == token, !Task.isCancelled else { return }
+                    self.parked = false
+                    self.work = nil
+                    if resumeMode == .control, Self.isBusy(error) {
+                        // Someone else types there now: watch, and say who.
+                        self.notice = true
+                        self.connectionState = .disconnected
+                        self.attach(session, mode: .view, automatic: true)
+                        return
+                    }
+                    self.connectionState = .disconnected
+                    self.failed(error, token: token, automatic: true)
+                }
+            }
+        } catch {
+            parked = false
+            connectionState = .disconnected
+            failed(error, token: generation)
+        }
+    }
+
+    /// The grid the Mac last told the open terminal, for resuming at it.
+    func noteGrid(columns: Int, rows: Int, id: UUID) {
+        guard id == attachmentID else { return }
+        liveGrid = (columns, rows)
+    }
+
     private func detachForBackground() {
         grace = nil
+        parked = false
         guard !appActive, busy == nil, let previous = deactivate() else { endBackgroundTask(); return }
         cancelWork()
         connectionState = .disconnected
@@ -587,7 +784,7 @@ final class RemoteTerminalModel {
     }
 
     private func resumeIfNeeded() {
-        guard appActive, resumeWhenActive, attachment == nil, busy == nil, displayAttachment != nil,
+        guard appActive, resumeWhenActive, !parked, attachment == nil, busy == nil, displayAttachment != nil,
               canReconnect, let session = selectedSession else { return }
         resumeWhenActive = false
         attach(session, mode: reconnectMode, automatic: true)
@@ -711,6 +908,44 @@ final class RemoteTerminalModel {
                              argument: String(localized: "Unpaired from \(grant.host.name)", bundle: .main))
     }
 
+    /// Ends a one-terminal invitation's grant early, from this device (a
+    /// participant may delete its own grant on the relay server). Only that
+    /// grant ends: it can't be undone, and the other device must invite
+    /// this one again. A terminal open from it is left first, after the
+    /// detach ACK. Throws when the server wasn't told, leaving it listed.
+    func endInvitation(_ grant: DeviceGrant) async throws {
+        guard unpairingID == nil else { return }
+        unpairingID = grant.id
+        defer { unpairingID = nil }
+        #if DEBUG
+        let pairing: PairingClient? = RemoteFixture.isActive ? nil : try pairingClient()
+        #else
+        let pairing: PairingClient? = try pairingClient()
+        #endif
+        if selectedGrant?.id == grant.id {
+            cancelWork()
+            resumeWhenActive = false
+            notice = false
+            if let previous = deactivate() {
+                connectionState = .disconnected
+                busy = String(localized: "Leaving…", bundle: .main)
+                do { try await previous.detach() } catch { await previous.abort() }
+                busy = nil
+            }
+            clearDisplay()
+            selectedSession = nil
+            sessions = []
+            selectedGrant = nil
+            connectionState = .browsing
+        }
+        try await pairing?.revoke(grantID: grant.id, pairingID: grant.pairingID)
+        grants.removeAll { $0.id == grant.id }
+        terminals[grant.id] = nil
+        listing[grant.id] = nil
+        SharedTerminals.forget(grant.id)
+        UIAccessibility.post(notification: .announcement, argument: String(localized: "Invitation ended", bundle: .main))
+    }
+
     /// The pairings Unpair ends: `grant` and any other this device holds with
     /// the same device, the one asked for first.
     /// Groups pairings by device, in the order devices first appear.
@@ -738,6 +973,7 @@ final class RemoteTerminalModel {
     func showSessions() {
         guard busy == nil else { return }
         resumeWhenActive = false
+        parked = false
         notice = false
         let previous = deactivate()
         cancelWork()
@@ -769,6 +1005,7 @@ final class RemoteTerminalModel {
     }
 
     func suspend() {
+        parked = false
         cancelWork()
         let previous = deactivate()
         if let previous { Task { await previous.abort() } }
@@ -784,7 +1021,8 @@ final class RemoteTerminalModel {
         work = nil
         authorizationCheck = nil
         busy = nil
-        if attachment == nil, displayAttachment != nil, connectionState != .ended {
+        // A parked terminal stays connected on screen until it resumes.
+        if attachment == nil, !parked, displayAttachment != nil, connectionState != .ended {
             connectionState = .disconnected
         }
     }
@@ -798,6 +1036,7 @@ final class RemoteTerminalModel {
 
     private func clearDisplay() {
         resumeWhenActive = false
+        parked = false
         displayAttachment = nil
         attachmentID = UUID()
     }

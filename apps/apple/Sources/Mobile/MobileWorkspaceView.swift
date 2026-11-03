@@ -233,14 +233,16 @@ struct MobileWorkspaceView: View {
         // switcher, and system prompts make the app briefly inactive, and
         // must not cost the connection.
         .onChange(of: scenePhase) { _, phase in
+            // Paired and SSH terminals are kept for 3 minutes in the
+            // background, then let go (Round 17).
             if phase == .active {
                 macs.enterForeground()
                 macs.loadNew(servers.relayServers)
+                ssh.enterForeground()
             } else if phase == .background {
                 macs.enterBackground()
+                ssh.enterBackground()
             }
-            // SSH sessions survive tab switches but never the background.
-            if phase == .background { ssh.disconnectAll(forBackground: true) }
         }
     }
 }
@@ -253,6 +255,8 @@ private struct MobileSettingsView: View {
     @AppStorage(TerminalFontSize.key) private var fontSize = TerminalFontSize.standard
     @AppStorage(TerminalColorScheme.key) private var palette = TerminalColorScheme.system
     @AppStorage(CommandSnippets.key) private var snippets = Data()
+    @AppStorage(TerminalAnnounceOutput.key) private var announceOutput = false
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @State private var textAndColorsShown = false
 
     var body: some View {
@@ -275,6 +279,11 @@ private struct MobileSettingsView: View {
                                        value: String(localized: "\(CommandSnippets.decode(snippets).count) saved", bundle: .main))
                     }
                     .accessibilityIdentifier("snippetSettings")
+                    // While VoiceOver runs, here rather than in Advanced.
+                    if TerminalAnnounceOutput.inMainList(voiceOver: voiceOver) {
+                        Toggle(String(localized: "Announce New Output", bundle: .main), isOn: $announceOutput).witermSwitchTint()
+                            .accessibilityIdentifier("terminalAnnounceOutput")
+                    }
                 }
 
                 Section(String(localized: "Help", bundle: .main)) {
@@ -303,6 +312,7 @@ private struct MobileSettingsView: View {
 private struct AdvancedSettingsView: View {
     @AppStorage("witerm.terminalHighContrast") private var highContrast = false
     @AppStorage(MobileKey.key) private var keys = ""
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
 
     var body: some View {
         Form {
@@ -317,7 +327,7 @@ private struct AdvancedSettingsView: View {
                 }
                 .accessibilityIdentifier("mobileKeyRowSettings")
             }
-            TerminalFeedbackSections()
+            TerminalFeedbackSections(includesAnnounce: !TerminalAnnounceOutput.inMainList(voiceOver: voiceOver))
         }
         .formStyle(.grouped)
         .navigationTitle(String(localized: "Advanced", bundle: .main))

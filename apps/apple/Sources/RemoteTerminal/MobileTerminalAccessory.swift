@@ -115,7 +115,7 @@ enum MobileKey: String, CaseIterable, Identifiable {
 
 /// One accessible row shared by direct SSH and paired terminals. Actions are
 /// committed on touch-up so scrolling the row never sends a key by accident.
-@MainActor final class MobileTerminalAccessory: UIInputView, UIInputViewAudioFeedback {
+@MainActor final class MobileTerminalAccessory: UIInputView, UIInputViewAudioFeedback, UIScrollViewDelegate {
     private weak var terminal: RemoteNativeTerminalView.TerminalInputView?
     private let control = UIButton(type: .system)
     private let keys = UIStackView()
@@ -127,6 +127,11 @@ enum MobileKey: String, CaseIterable, Identifiable {
     /// actions menu while the navigation bar steps aside for typing (iPhone
     /// in landscape).
     private let barKeys = UIStackView()
+    private let keyScroll = UIScrollView()
+    private let keyClip = UIView()
+    private let edgeFade = CAGradientLayer()
+    /// How far the keys fade at an edge with more keys past it.
+    static let fadeWidth: CGFloat = 36
     private let hideKeyboard = UIButton(type: .system)
     private var barActions: UIHostingController<AnyView>?
     private var barKeyHeights: [NSLayoutConstraint] = []
@@ -149,10 +154,20 @@ enum MobileKey: String, CaseIterable, Identifiable {
         super.init(frame: CGRect(x: 0, y: 0, width: 360, height: 52), inputViewStyle: .keyboard)
         allowsSelfSizing = true
         autoresizingMask = [.flexibleWidth]
-        let scroll = UIScrollView()
+        let scroll = keyScroll
         scroll.showsHorizontalScrollIndicator = true
+        scroll.delegate = self
+        // The keys fade out at an edge with more keys past it, so a key cut
+        // off there reads as "more this way" (the row scrolls sideways).
+        keyClip.layer.mask = edgeFade
+        keyClip.addSubview(scroll)
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            scroll.leadingAnchor.constraint(equalTo: keyClip.leadingAnchor), scroll.trailingAnchor.constraint(equalTo: keyClip.trailingAnchor),
+            scroll.topAnchor.constraint(equalTo: keyClip.topAnchor), scroll.bottomAnchor.constraint(equalTo: keyClip.bottomAnchor)
+        ])
         // The scrolling keys take whatever width the bar's keys leave.
-        let row = UIStackView(arrangedSubviews: [scroll, barKeys])
+        let row = UIStackView(arrangedSubviews: [keyClip, barKeys])
         row.axis = .horizontal
         row.translatesAutoresizingMaskIntoConstraints = false
         addSubview(row)
@@ -160,8 +175,13 @@ enum MobileKey: String, CaseIterable, Identifiable {
             row.leadingAnchor.constraint(equalTo: leadingAnchor), row.trailingAnchor.constraint(equalTo: trailingAnchor),
             row.topAnchor.constraint(equalTo: topAnchor), row.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
-        scroll.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        scroll.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        keyClip.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        keyClip.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        // A swipe down on the row hides the keyboard, as a swipe down on
+        // the keyboard does elsewhere; the row itself only scrolls sideways.
+        let swipe = UISwipeGestureRecognizer(target: self, action: #selector(swipedDown))
+        swipe.direction = .down
+        addGestureRecognizer(swipe)
         barKeys.axis = .horizontal
         barKeys.alignment = .center
         barKeys.spacing = 6
@@ -213,27 +233,72 @@ enum MobileKey: String, CaseIterable, Identifiable {
     @objc private func applyOutline() {
         let outlined = UIAccessibility.isDarkerSystemColorsEnabled
         let color = UIColor.label.withAlphaComponent(0.45).resolvedColor(with: traitCollection).cgColor
-        for key in keys.arrangedSubviews + [hideKeyboard] {
+        for key in keys.arrangedSubviews {
             key.layer.borderWidth = outlined ? 1 : 0
             key.layer.borderColor = color
             key.layer.cornerRadius = 8
             key.layer.cornerCurve = .continuous
         }
+        // Hide Keyboard is a capsule: glass draws its own edge; the solid
+        // fallback gets the outline in its own shape.
+        let glass = FloatingTerminalButton.usesGlass
+        hideKeyboard.layer.borderWidth = outlined && !glass ? 1 : 0
+        hideKeyboard.layer.borderColor = color
+        hideKeyboard.layer.cornerRadius = outlined && !glass ? hideKeyboard.bounds.height / 2 : 0
     }
 
     required init?(coder: NSCoder) { nil }
+
+    func scrollViewDidScroll(_ scrollView: UIScrollView) { updateEdgeFade() }
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
         updateMetrics()
         terminal?.keyRowMoved?()
+        // Shows that the row scrolls when it has more keys, once it has
+        // laid out and the keyboard has risen.
+        if window != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
+                guard let self, self.window != nil else { return }
+                self.updateEdgeFade()
+                if self.moreKeys { self.keyScroll.flashScrollIndicators() }
+            }
+        }
     }
 
     /// The terminal measures the keyboard's space from where this row is,
     /// which is how it learns of a rotation with only the key row up.
     override func layoutSubviews() {
         super.layoutSubviews()
+        updateEdgeFade()
         terminal?.keyRowMoved?()
+    }
+
+    /// Fades the leading edge while scrolled from the start and the
+    /// trailing edge while keys remain past it.
+    private func updateEdgeFade() {
+        let width = keyClip.bounds.width
+        guard width > 0 else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        edgeFade.frame = keyClip.bounds
+        let fade = min(Self.fadeWidth / width, 0.25)
+        let offset = keyScroll.contentOffset.x, end = keyScroll.contentSize.width - keyScroll.bounds.width
+        let opaque = UIColor.black.cgColor, clear = UIColor.clear.cgColor
+        edgeFade.startPoint = CGPoint(x: 0, y: 0.5)
+        edgeFade.endPoint = CGPoint(x: 1, y: 0.5)
+        edgeFade.colors = [offset > 1 ? clear : opaque, opaque, opaque, offset < end - 1 ? clear : opaque]
+        edgeFade.locations = [0, NSNumber(value: Double(fade)), NSNumber(value: Double(1 - fade)), 1]
+        moreKeys = offset < end - 1
+    }
+
+    /// Whether keys remain past the trailing edge (for tests).
+    private(set) var moreKeys = false
+
+    @objc private func swipedDown() {
+        guard let terminal, terminal.isFirstResponder else { return }
+        _ = terminal.resignFirstResponder()
     }
 
     /// Follows the saved key row; a changed setting applies to open terminals.
@@ -353,22 +418,27 @@ enum MobileKey: String, CaseIterable, Identifiable {
         }
     }
 
+    private static let hideSymbol = "keyboard.chevron.compact.down"
+
+    /// The same glass capsule as the keyboard button it stands in for
+    /// (`FloatingTerminalButton`), so it reads as a button to press, not
+    /// another key of the row.
+    @objc private func styleHideKeyboard() {
+        FloatingTerminalButton.style(hideKeyboard, symbol: Self.hideSymbol, textStyle: .callout)
+        applyOutline()
+    }
+
     private func configureHideKeyboard() {
-        var configuration = UIButton.Configuration.plain()
-        configuration.image = UIImage(systemName: "keyboard.chevron.compact.down")
-        configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(textStyle: .callout)
-        configuration.baseForegroundColor = .label
-        configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10)
-        hideKeyboard.configuration = configuration
+        FloatingTerminalButton.style(hideKeyboard, symbol: Self.hideSymbol, textStyle: .callout)
+        NotificationCenter.default.addObserver(self, selector: #selector(styleHideKeyboard),
+                                               name: UIAccessibility.reduceTransparencyStatusDidChangeNotification, object: nil)
         let label = String(localized: "Hide Keyboard", bundle: .main)
         hideKeyboard.accessibilityLabel = label
         hideKeyboard.accessibilityIdentifier = "terminalKey-hideKeyboard"
         hideKeyboard.showsLargeContentViewer = true
         hideKeyboard.largeContentTitle = label
-        hideKeyboard.largeContentImage = UIImage(systemName: "keyboard.chevron.compact.down")
-        hideKeyboard.backgroundColor = .tertiarySystemFill
-        hideKeyboard.layer.cornerRadius = 8
-        hideKeyboard.widthAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+        hideKeyboard.largeContentImage = UIImage(systemName: Self.hideSymbol)
+        hideKeyboard.widthAnchor.constraint(equalTo: hideKeyboard.heightAnchor).isActive = true
         hideKeyboard.setContentHuggingPriority(.required, for: .horizontal)
         hideKeyboard.addAction(UIAction { [weak self] _ in
             guard let terminal = self?.terminal, terminal.isFirstResponder else { return }

@@ -85,6 +85,15 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
     /// type when watching. Nil: no button (the terminal can only watch, or
     /// isn't connected).
     var keyboardButton: (() -> Void)? = nil
+    /// A tap on the terminal while watching one this device may type in.
+    var tapToType: (() -> Void)? = nil
+    /// The link was let go in the background (or lost): keep the screen and
+    /// wait for a new `attachment` (Round 17's resume in place).
+    var isParked: () -> Bool = { false }
+    /// The link failed; true when the model parks the terminal to resume it.
+    var onLinkLost: (Error) -> Bool = { _ in false }
+    /// The grid the Mac set, for resuming at it.
+    var onGrid: (Int, Int) -> Void = { _, _ in }
     let onFailure: (Error) -> Void
     let onEnded: () -> Void
 
@@ -106,18 +115,28 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         surface.terminal.passesMouseToPrograms = false
         surface.terminal.focusesWhenShown = isInteractive && mode == .control
         surface.terminal.terminalDelegate = context.coordinator
+        context.coordinator.isParked = isParked
+        context.coordinator.onLinkLost = onLinkLost
+        context.coordinator.onGrid = onGrid
+        context.coordinator.surface = surface
         context.coordinator.start(surface.terminal)
         finder?.terminal = surface.terminal
         return surface
     }
 
     func updateUIView(_ view: TerminalSurface, context: Context) {
+        context.coordinator.isParked = isParked
+        context.coordinator.onLinkLost = onLinkLost
+        context.coordinator.onGrid = onGrid
+        // A resumed terminal: the same renderer takes the new link.
+        context.coordinator.replace(attachment)
         view.setInteractive(isInteractive)
         context.coordinator.setInteractive(isInteractive)
         view.updateFontSize(fontSize)
         view.updateAppearance(highContrast: highContrast, scheme: preferredColorScheme, palette: palette)
         view.announceOutput = announceOutput
         view.terminal.setBarActions(barActions)
+        view.terminal.tapToType = tapToType
         view.setKeyboardButton(keyboardButton, identifier: "remoteKeyboard",
                                hint: String(localized: "Starts typing in this terminal.", bundle: .main))
         context.coordinator.requestKeyboardToggle(keyboardRequest, terminal: view.terminal)
@@ -195,6 +214,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             scroll.delegate = self
             accessibilityElements = [readingView]
             terminal.geometryChanged = { [weak self] session in self?.applyGeometry(session) }
+            terminal.watchingFit = { [weak self] in self?.watchingFit }
             terminal.readingChanged = { [weak self] in self?.refreshReadingDocument(outputChanged: $0) }
             readingView.rectFromGrid = { [weak self] in self?.readingRectFromGrid($0) ?? .zero }
             readingView.pointToGrid = { [weak self] point in self?.readingPointToGrid(point) ?? CGPoint(x: -1, y: -1) }
@@ -218,11 +238,8 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         }
 
         private func installLatestButton() {
-            var configuration = UIButton.Configuration.gray()
-            configuration.image = UIImage(systemName: "arrow.down.to.line")
-            configuration.cornerStyle = .capsule
-            configuration.baseForegroundColor = .label
-            latestButton.configuration = configuration
+            FloatingTerminalButton.style(latestButton, symbol: Self.latestSymbol)
+            latestButton.largeContentImage = UIImage(systemName: Self.latestSymbol)
             latestButton.accessibilityLabel = String(localized: "Jump to Latest", bundle: .main)
             latestButton.accessibilityIdentifier = "terminalJumpToLatest"
             latestButton.showsLargeContentViewer = true
@@ -233,15 +250,20 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             addInteraction(UILargeContentViewerInteraction())
         }
 
+        private static let latestSymbol = "arrow.down.to.line"
+        private static let keyboardSymbol = "keyboard"
+
+        /// Both floating buttons share one style (`FloatingTerminalButton`)
+        /// and change it together when Reduce Transparency does.
+        @objc private func restyleFloatingButtons() {
+            FloatingTerminalButton.style(latestButton, symbol: Self.latestSymbol)
+            FloatingTerminalButton.style(keyboardButton, symbol: Self.keyboardSymbol)
+        }
+
         private func installKeyboardButton() {
-            var configuration: UIButton.Configuration
-            if #available(iOS 26.0, *), !UIAccessibility.isReduceTransparencyEnabled { configuration = .glass() }
-            else { configuration = .gray() }
-            configuration.image = UIImage(systemName: "keyboard")
-            configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(textStyle: .body)
-            configuration.cornerStyle = .capsule
-            configuration.baseForegroundColor = .label
-            keyboardButton.configuration = configuration
+            FloatingTerminalButton.style(keyboardButton, symbol: Self.keyboardSymbol)
+            NotificationCenter.default.addObserver(self, selector: #selector(restyleFloatingButtons),
+                                                   name: UIAccessibility.reduceTransparencyStatusDidChangeNotification, object: nil)
             let label = String(localized: "Show Keyboard", bundle: .main)
             keyboardButton.accessibilityLabel = label
             keyboardButton.showsLargeContentViewer = true
@@ -297,7 +319,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         private var keyboardButtonStrip: CGFloat {
             guard keyboardButtonAction != nil, keyboardOverlap == 0,
                   !terminal.isFirstResponder || holdsStripForKeyboard else { return 0 }
-            return Self.keyboardButtonSide + 2 * WitermMetrics.Space.s
+            return Self.keyboardButtonSide + 2 * FloatingTerminalButton.gap
         }
 
         /// Just focused: the strip stays until the keyboard's inset arrives
@@ -305,7 +327,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         /// keyboard frame in flux (rotating) never brings the strip back.
         private var holdsStripForKeyboard = false
 
-        static let keyboardButtonSide: CGFloat = 44
+        static let keyboardButtonSide = FloatingTerminalButton.side
 
         private func installSizeReadout() {
             sizeReadout.font = .preferredFont(forTextStyle: .headline)
@@ -528,6 +550,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
                 : note.name == UIResponder.keyboardDidChangeFrameNotification ? "dcf"
                 : note.name == UIResponder.keyboardDidShowNotification ? "ds" : "dh"
             Self.probeEvent(tag + String(format: "(%.0f,%.0f)", frame.minY, frame.height))
+            Self.layoutLog.notice("keyboard \(tag, privacy: .public) frame=\(String(format: "%.0f,%.0f,%.0fx%.0f", frame.minX, frame.minY, frame.width, frame.height), privacy: .public)")
             #endif
         }
 
@@ -602,11 +625,14 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             scroll.transform = .identity
             scroll.frame = content
             readingView.frame = content
-            let side: CGFloat = 44, margin: CGFloat = WitermMetrics.Space.m
-            latestButton.frame = CGRect(x: content.maxX - side - margin, y: content.maxY - side - margin, width: side, height: side)
-            let keySide = Self.keyboardButtonSide
-            keyboardButton.frame = CGRect(x: bounds.maxX - max(WitermMetrics.Space.l, safeAreaInsets.right) - keySide,
-                                          y: content.maxY + WitermMetrics.Space.s, width: keySide, height: keySide)
+            // One placement rule for both floating buttons: the same
+            // trailing inset; Jump to Latest just above the text's bottom
+            // (the key row or the keyboard button's strip), the keyboard
+            // button in its strip under the text.
+            let side = FloatingTerminalButton.side, gap = FloatingTerminalButton.gap
+            let trailingX = bounds.maxX - max(FloatingTerminalButton.trailing, safeAreaInsets.right) - side
+            latestButton.frame = CGRect(x: trailingX, y: content.maxY - side - gap, width: side, height: side)
+            keyboardButton.frame = CGRect(x: trailingX, y: content.maxY + gap, width: side, height: side)
             layoutSizeReadout()
             if let grid = fixedGrid {
                 preserveGrid(grid)
@@ -644,10 +670,34 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             }
             #if DEBUG
             countProbedGrid()
+            logLayout()
             #endif
             refreshReadingDocument()
             updateLatestButton(output: false)
         }
+
+        #if DEBUG
+        /// DEBUG only, for confirming layout on a phone: each layout that
+        /// changed the keyboard's space, the text area or the grid, never
+        /// terminal content. `log stream --predicate 'subsystem == "com.witerm"
+        /// AND category == "terminal-layout"'`.
+        static let layoutLog = Logger(subsystem: "com.witerm", category: "terminal-layout")
+        private var loggedLayout = ""
+
+        private func logLayout() {
+            func rect(_ r: CGRect) -> String { String(format: "%.0f,%.0f,%.0fx%.0f", r.minX, r.minY, r.width, r.height) }
+            let core = terminal.getTerminal(), content = contentBounds, fit = fitGrid
+            let keyboard = Self.reportedKeyboard.map { rect($0.frame) + String(format: "@%.0fx%.0f", $0.screen.width, $0.screen.height) } ?? "none"
+            let fixed = fixedGrid.map { "\($0.columns)x\($0.rows)" } ?? "none"
+            let line = "mode=\(mode == .view ? "view" : "control") focused=\(terminal.isFirstResponder) keyboard=[\(keyboard)] "
+                + "keyRow=[\(keyRowFrame.map { rect($0.frame) } ?? "none")] " + String(format: "overlap=%.1f strip=%.0f ", keyboardOverlap, keyboardButtonStrip)
+                + "view=\(rect(bounds)) text=\(rect(content)) grid=\(core.cols)x\(core.rows) fixed=\(fixed) fit=\(fit.columns)x\(fit.rows) "
+                + String(format: "gridHeight=%.0f", terminal.frame.height)
+            guard line != loggedLayout else { return }
+            loggedLayout = line
+            Self.layoutLog.notice("layout \(line, privacy: .public)")
+        }
+        #endif
 
         override func safeAreaInsetsDidChange() {
             super.safeAreaInsetsDidChange()
@@ -676,6 +726,76 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             func whole(_ length: CGFloat, _ unit: CGFloat) -> Int { Int((length / unit) * (1 + 1e-9)) }
             let content = contentBounds
             return (min(500, max(20, whole(content.width, cell.width))), min(200, max(5, whole(content.height, cell.height))))
+        }
+
+        // MARK: Resuming in place
+
+        /// A still picture of the screen as it was, over the renderer while
+        /// a resumed link redraws it, so returning to the app never shows a
+        /// blank frame or a reset (Round 17).
+        private var resumeCover: UIView?
+        private var uncoverWork: DispatchWorkItem?
+        private var coverDeadline = Date.distantPast
+        private var coveredAt = Date.distantPast
+        /// Covers shown, and how long the last one stayed, for the probe.
+        private(set) var coversShown = 0
+        private(set) var lastCoverMs = 0
+        /// Most a cover stays up, and how long output must pause first.
+        static let coverMaximum: TimeInterval = 1.5
+        static let coverQuiet: TimeInterval = 0.15
+
+        func coverForResume() {
+            resumeCover?.removeFromSuperview()
+            guard !bounds.isEmpty, let cover = snapshotView(afterScreenUpdates: false) else { return }
+            cover.frame = bounds
+            cover.isUserInteractionEnabled = false
+            cover.accessibilityElementsHidden = true
+            addSubview(cover)
+            resumeCover = cover
+            coversShown += 1
+            coveredAt = Date()
+            coverDeadline = Date().addingTimeInterval(Self.coverMaximum)
+            scheduleUncover(at: coverDeadline)
+        }
+
+        /// The redraw is arriving: the cover goes once output pauses.
+        func resumeOutputArrived() {
+            guard resumeCover != nil else { return }
+            scheduleUncover(at: min(coverDeadline, Date().addingTimeInterval(Self.coverQuiet)))
+        }
+
+        private func scheduleUncover(at time: Date) {
+            uncoverWork?.cancel()
+            let work = DispatchWorkItem { [weak self] in self?.uncover() }
+            uncoverWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + max(0, time.timeIntervalSinceNow), execute: work)
+        }
+
+        private func uncover() {
+            guard let cover = resumeCover else { return }
+            resumeCover = nil
+            lastCoverMs = Int(Date().timeIntervalSince(coveredAt) * 1000)
+            #if DEBUG
+            Self.layoutLog.notice("resume cover removed after \(self.lastCoverMs, privacy: .public) ms")
+            refreshReadingDocument()
+            #endif
+            UIView.animate(withDuration: 0.12, animations: { cover.alpha = 0 }, completion: { _ in cover.removeFromSuperview() })
+            UIAccessibility.post(notification: .layoutChanged, argument: readingView)
+        }
+
+        /// The grid this view shows once it stops typing: the whole view
+        /// (no keyboard), less the keyboard button's strip, in whole cells.
+        /// Hiding the keyboard tells the Mac this size before letting go, so
+        /// the watched grid fills the screen instead of keeping the rows
+        /// that were above the keyboard (the black half screen, Round 17).
+        var watchingFit: (columns: Int, rows: Int) {
+            let cell = cellSize
+            guard cell.width > 0, cell.height > 0, !bounds.isEmpty else { return (session.columns, session.rows) }
+            func whole(_ length: CGFloat, _ unit: CGFloat) -> Int { Int((length / unit) * (1 + 1e-9)) }
+            let left = max(Self.edgeInset, safeAreaInsets.left), right = max(Self.edgeInset, safeAreaInsets.right)
+            let width = bounds.width - left - right
+            let height = bounds.height - (Self.keyboardButtonSide + 2 * FloatingTerminalButton.gap)
+            return (min(500, max(20, whole(width, cell.width))), min(200, max(5, whole(height, cell.height))))
         }
 
         func setInteractive(_ enabled: Bool) {
@@ -862,6 +982,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             var line = String(format: " mode=%@ fitRows=%d gap=%.1f overflow=%.1f", mode == .view ? "view" : "control",
                               fitGrid.rows, max(0, shown - grid), max(0, grid - shown))
             if RemoteFixture.isActive { line += " links=\(FixtureMac.shared.opened)" }
+            line += " covers=\(coversShown) coverMs=\(lastCoverMs) focused=\(terminal.isFirstResponder ? 1 : 0)"
             return line
         }
 
@@ -1148,6 +1269,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             for recognizer in gestureRecognizers ?? [] {
                 if let other = recognizer as? UITapGestureRecognizer, other.numberOfTapsRequired == 2 { tap.require(toFail: other) }
             }
+            tap.delegate = tapGate
             addGestureRecognizer(tap)
             focusTapRecognizer = tap
             let menu = UIEditMenuInteraction(delegate: self)
@@ -1303,6 +1425,15 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
 
         private var selectionPressRecognizer: UILongPressGestureRecognizer?
         private lazy var pressGate = SelectionPressGate(terminal: self)
+        private lazy var tapGate = TapGate(terminal: self)
+        /// A touch that came down on moving output only stops it: its tap
+        /// never starts typing (set by `TapGate`).
+        var tapStoppedScrolling = false
+        /// Watching a paired terminal this device may type in: a tap asks
+        /// to type, as tapping an SSH terminal brings up the keyboard (the
+        /// view decides; it never takes typing from someone else). Nil
+        /// while typing, or when this device can only watch.
+        var tapToType: (() -> Void)?
         /// From where the finger took a handle to the middle of the character
         /// at that end, so the end doesn't jump to the row the knob hangs in.
         private var handleGrabOffset = CGVector.zero
@@ -1483,7 +1614,9 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         }
 
         private func shouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
-            if recognizer === focusTapRecognizer { return selection.active || (acceptsInput && !isFirstResponder) }
+            if recognizer === focusTapRecognizer {
+                return selection.active || (acceptsInput && !isFirstResponder) || (!acceptsInput && tapToType != nil && !tapStoppedScrolling)
+            }
             if let pan = recognizer as? UIPanGestureRecognizer, pan === handleRecognizer {
                 return selectionHandle(near: Self.touchDown(of: pan, in: self)) != nil
             }
@@ -1555,6 +1688,8 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
                 setNeedsDisplay()
             } else if acceptsInput, !isFirstResponder {
                 _ = becomeFirstResponder()
+            } else if !acceptsInput, !tapStoppedScrolling, let tapToType {
+                tapToType()
             }
         }
 
@@ -1689,6 +1824,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         private func postFocus(_ focused: Bool, will: Bool = false) {
             #if DEBUG
             TerminalSurface.probeEvent((focused ? "f+" : "f-") + (will ? "w" : ""))
+            if !will { TerminalSurface.layoutLog.notice("focus \(focused ? "gained" : "lost", privacy: .public) mode=\(self.mode == .view ? "view" : "control", privacy: .public)") }
             #endif
             NotificationCenter.default.post(name: will ? .witermTerminalFocusWillChange : .witermTerminalFocusChanged,
                                             object: self, userInfo: ["focused": focused])
@@ -1767,6 +1903,8 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         }
 
         var geometryChanged: ((LocalSessionInfo) -> Void)?
+        /// The grid its surface shows once it stops typing (`watchingFit`).
+        var watchingFit: (() -> (columns: Int, rows: Int)?)?
         var readingChanged: ((Bool) -> Void)?
         /// The key row was laid out, or came or went: the keyboard's space
         /// may have changed (rotating with only the key row up reports
@@ -2075,6 +2213,22 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
     /// coast, here, in the grid's sideways scroll, or a program's wheel
     /// coast) only stops it, as elsewhere in iOS; resting there never
     /// starts a selection.
+    /// Notes whether a tap's touch landed on moving output (a fling, the
+    /// grid's sideways scroll, or a program's wheel coast), which it only
+    /// stops, so that tap never starts typing.
+    @MainActor final class TapGate: NSObject, UIGestureRecognizerDelegate {
+        private weak var terminal: TerminalInputView?
+
+        init(terminal: TerminalInputView) { self.terminal = terminal }
+
+        func gestureRecognizer(_ recognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            guard let terminal else { return true }
+            terminal.tapStoppedScrolling = terminal.isDecelerating || terminal.isDragging
+                || (terminal.superview as? UIScrollView)?.isDecelerating == true
+            return true
+        }
+    }
+
     @MainActor final class SelectionPressGate: NSObject, UIGestureRecognizerDelegate {
         private weak var terminal: TerminalInputView?
 
@@ -2108,6 +2262,13 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         private var resizing = false
         private var stopped = false
         private var serverGrid: (Int, Int)
+        /// Between a parked link and its replacement: nothing is sent, and
+        /// nothing typed meanwhile is kept for later.
+        private var paused = false
+        var isParked: () -> Bool = { false }
+        var onLinkLost: (Error) -> Bool = { _ in false }
+        var onGrid: (Int, Int) -> Void = { _, _ in }
+        weak var surface: TerminalSurface?
 
         init(attachment: any PairedTerminalLink, mode: LocalAttachmentMode, keyboardRequest: Int,
              isInteractive: Bool,
@@ -2138,14 +2299,28 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         func start(_ view: TerminalInputView) {
             terminal = view
             stabilizeTestCursor(view)
-            outputTask = Task { [weak self, weak view, attachment] in
+            consume(attachment, resuming: false)
+        }
+
+        /// Feeds `link`'s events to the renderer. A resumed link's first
+        /// event resets the renderer first (its earlier output and the
+        /// Mac's redraw then rebuild the same screen and scrollback), under
+        /// a still picture of the old screen, so nothing blank shows.
+        private func consume(_ link: any PairedTerminalLink, resuming: Bool) {
+            outputTask = Task { [weak self, link] in
+                var reset = resuming
                 do {
-                    for try await event in attachment.events {
+                    for try await event in link.events {
                         try Task.checkCancellation()
-                        guard let self, !self.stopped, let view else { return }
+                        guard let self, !self.stopped, self.attachment === link, let view = self.terminal else { return }
+                        if reset {
+                            reset = false
+                            view.getTerminal().resetToInitialState()
+                        }
                         switch event {
                         case .geometry(let session):
                             self.serverGrid = (session.columns, session.rows)
+                            self.onGrid(session.columns, session.rows)
                             view.applyGeometry(session)
                         case .output(let data):
                             self.feeding = true
@@ -2153,15 +2328,49 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
                             self.feeding = false
                             self.stabilizeTestCursor(view)
                             view.requestReadingRefresh(output: true)
+                            if resuming { self.surface?.resumeOutputArrived() }
                         }
                     }
-                    guard let self, !self.stopped, !Task.isCancelled else { return }
+                    guard let self, !self.stopped, !Task.isCancelled, self.attachment === link else { return }
+                    if self.isParked() { return self.pause() }
                     self.stop()
                     self.onEnded()
                 } catch {
-                    guard !Task.isCancelled else { return }
-                    self?.fail(error)
+                    guard !Task.isCancelled, let self, self.attachment === link else { return }
+                    if self.isParked() || self.onLinkLost(error) { return self.pause() }
+                    self.fail(error)
                 }
+            }
+        }
+
+        /// The link is gone but the terminal stays: input and resizes stop
+        /// until `replace`; what was queued is dropped, never resent.
+        private func pause() {
+            guard !paused else { return }
+            paused = true
+            inputTask?.cancel(); inputTask = nil
+            resizeTask?.cancel(); resizeTask = nil
+            resizing = false
+            inputQueue.removeAll()
+            inputBytes = 0
+        }
+
+        /// A new link for the same terminal (a resume in place): the same
+        /// renderer, keyboard and scrollback; the Mac's redraw comes under a
+        /// still picture of the old screen.
+        func replace(_ link: any PairedTerminalLink) {
+            guard link !== attachment, !stopped, let view = terminal else { return }
+            outputTask?.cancel()
+            pause()
+            attachment = link
+            paused = false
+            serverGrid = (link.session.columns, link.session.rows)
+            surface?.coverForResume()
+            consume(link, resuming: true)
+            // This device's own size, when the Mac's differs (typing only).
+            if mode == .control, isInteractive {
+                let core = view.getTerminal()
+                sizeChanged(source: view, newCols: core.cols, newRows: core.rows)
             }
         }
 
@@ -2219,7 +2428,8 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         }
 
         func send(source: TerminalView, data: ArraySlice<UInt8>) {
-            guard !stopped, isInteractive, mode == .control, terminal === source, !data.isEmpty else { return }
+            // While the link is being replaced, keys are dropped: never kept to resend.
+            guard !stopped, !paused, isInteractive, mode == .control, terminal === source, !data.isEmpty else { return }
             let pieces = (data.count + 16 * 1024 - 1) / (16 * 1024)
             guard inputBytes + data.count <= 64 * 1024, inputQueue.count + pieces <= 256 else {
                 fail(RelayError.backpressure)
@@ -2233,6 +2443,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             }
             guard inputTask == nil else { return }
             inputTask = Task { [weak self, attachment] in
+                let link = attachment
                 defer { self?.inputTask = nil }
                 do {
                     while let self, !self.stopped, self.isInteractive, !self.inputQueue.isEmpty {
@@ -2243,8 +2454,9 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
                         self.inputBytes -= piece.data.count
                     }
                 } catch {
-                    guard !Task.isCancelled, self?.isInteractive == true else { return }
-                    self?.fail(error)
+                    guard !Task.isCancelled, let self, self.isInteractive, self.attachment === link else { return }
+                    if self.isParked() { return self.pause() }
+                    self.fail(error)
                 }
             }
         }
@@ -2253,8 +2465,10 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             guard !stopped, isInteractive, mode == .control, terminal === source else { return }
             if newCols == serverGrid.0 && newRows == serverGrid.1 { return }
             pendingSize = (min(500, max(20, newCols)), min(200, max(5, newRows)))
-            guard resizeTask == nil else { return }
+            // Sent once the new link is in place.
+            guard resizeTask == nil, !paused else { return }
             resizeTask = Task { [weak self, attachment] in
+                let link = attachment
                 defer { self?.resizeTask = nil; self?.resizing = false }
                 do {
                     while let self, !self.stopped, self.isInteractive, self.pendingSize != nil {
@@ -2264,10 +2478,12 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
                         self.resizing = true
                         try await attachment.resize(columns: size.0, rows: size.1)
                         self.resizing = false
+                        self.onGrid(size.0, size.1)
                     }
                 } catch {
-                    guard !Task.isCancelled, self?.isInteractive == true else { return }
-                    self?.fail(error)
+                    guard !Task.isCancelled, let self, self.isInteractive, self.attachment === link else { return }
+                    if self.isParked() { return self.pause() }
+                    self.fail(error)
                 }
             }
         }

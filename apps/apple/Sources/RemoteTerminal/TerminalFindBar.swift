@@ -37,39 +37,42 @@ enum TerminalTextScale {
     }
 }
 
-/// Text size and colors in one submenu of a terminal's actions: smaller and
-/// larger text side by side, then the color scheme. Like pinching, it
+/// Text size and colors, inline at the top of a terminal's actions menu:
+/// never a menu opened from the menu (the owner's rule, docs/design/README.md).
+/// One row of Smaller, the size (which restores the standard size) and
+/// Larger, like Safari's zoom, that keeps the menu open so the size can be
+/// stepped; then the color scheme as checkmarked choices. Like pinching, it
 /// changes only this device's view; Settings ▸ Text and Colors has the same
 /// preference with previews.
-struct TerminalTextAndColorsMenu: View {
+struct TerminalTextAndColorsItems: View {
     @AppStorage(TerminalFontSize.key) private var fontSize = TerminalFontSize.standard
     @AppStorage(TerminalColorScheme.key) private var palette = TerminalColorScheme.system
 
     var body: some View {
-        Menu {
-            ControlGroup {
-                Button(String(localized: "Decrease Text Size", bundle: .main), systemImage: "textformat.size.smaller") {
-                    fontSize = TerminalFontSize.clamped(fontSize - 1)
-                }
-                .disabled(fontSize <= TerminalFontSize.range.lowerBound)
-                .accessibilityIdentifier("terminalSmallerText")
-                Button(String(localized: "Increase Text Size", bundle: .main), systemImage: "textformat.size.larger") {
-                    fontSize = TerminalFontSize.clamped(fontSize + 1)
-                }
-                .disabled(fontSize >= TerminalFontSize.range.upperBound)
-                .accessibilityIdentifier("terminalLargerText")
+        ControlGroup {
+            Button(String(localized: "Decrease Text Size", bundle: .main), systemImage: "textformat.size.smaller") {
+                fontSize = TerminalFontSize.clamped(fontSize - 1)
             }
-            .controlGroupStyle(.compactMenu)
-            Picker(String(localized: "Color Scheme", bundle: .main), selection: $palette) {
-                ForEach(TerminalColorScheme.allCases) { scheme in
-                    Text(scheme.title).tag(scheme)
-                }
+            .disabled(fontSize <= TerminalFontSize.range.lowerBound)
+            .menuActionDismissBehavior(.disabled)
+            .accessibilityIdentifier("terminalSmallerText")
+            Button(String(localized: "\(Int(fontSize)) pt", bundle: .main)) { fontSize = TerminalFontSize.standard }
+                .disabled(fontSize == TerminalFontSize.standard)
+                .menuActionDismissBehavior(.disabled)
+                .accessibilityIdentifier("terminalTextSize")
+            Button(String(localized: "Increase Text Size", bundle: .main), systemImage: "textformat.size.larger") {
+                fontSize = TerminalFontSize.clamped(fontSize + 1)
             }
-            .pickerStyle(.inline)
-        } label: {
-            Label(String(localized: "Text and Colors", bundle: .main), systemImage: "textformat.size")
+            .disabled(fontSize >= TerminalFontSize.range.upperBound)
+            .menuActionDismissBehavior(.disabled)
+            .accessibilityIdentifier("terminalLargerText")
         }
-        .accessibilityIdentifier("terminalTextAndColors")
+        Picker(String(localized: "Color Scheme", bundle: .main), selection: $palette) {
+            ForEach(TerminalColorScheme.allCases) { scheme in
+                Text(scheme.title).tag(scheme)
+            }
+        }
+        .pickerStyle(.inline)
     }
 }
 

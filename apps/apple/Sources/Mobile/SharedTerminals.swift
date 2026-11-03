@@ -47,8 +47,8 @@ enum SharedTerminals {
 /// without a Mac. On only in DEBUG builds launched with
 /// `-witerm.debug.remoteFixture 1` and the relay server
 /// `https://relay.fixture.invalid` (docs/verification.md). Everything stays
-/// in memory: nothing reaches a relay server, and opening a fixture terminal
-/// fails like an unreachable device.
+/// in memory: nothing reaches a relay server. Its terminals open through
+/// `FixtureMac`, which stands in for the Macs' service (Round 17).
 enum RemoteFixture {
     #if DEBUG
     static let isActive = UserDefaults.standard.bool(forKey: "witerm.debug.remoteFixture")

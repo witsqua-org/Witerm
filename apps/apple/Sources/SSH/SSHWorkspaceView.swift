@@ -558,7 +558,7 @@ struct SSHWorkspaceView<Home: View>: View {
                 }
                 if !backgroundTipSeen {
                     // Said once, the first time it applies: with a live SSH terminal on screen.
-                    IssueBanner(String(localized: "SSH stops in the background. Use tmux to keep programs running.", bundle: .main),
+                    IssueBanner(String(localized: "SSH stays connected for 3 minutes in the background. Use tmux to keep programs running longer.", bundle: .main),
                                 systemImage: "info.circle") {
                         Button(String(localized: "OK", bundle: .main)) { backgroundTipSeen = true }
                             .font(.subheadline).touchTarget()
@@ -639,7 +639,7 @@ struct SSHWorkspaceView<Home: View>: View {
     /// The terminal's actions, in the bar's menu or, while the bar is hidden
     /// for typing, on the key row. iPad's header has its own Find button.
     @ViewBuilder private func sessionActions(_ session: SSHSession, find: Bool) -> some View {
-        TerminalTextAndColorsMenu()
+        TerminalTextAndColorsItems()
         if find {
             Button(String(localized: "Find in Terminal", bundle: .main), systemImage: "magnifyingglass") { finding = true }
                 .accessibilityIdentifier("terminalFind")
