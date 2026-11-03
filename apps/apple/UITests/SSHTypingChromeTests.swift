@@ -5,7 +5,9 @@ import XCTest
 /// host form never brings up the system's Save Password offer (typing and
 /// pasting into the password field still work), and on iPhone in landscape
 /// the navigation bar steps aside while the keyboard is up, with Hide
-/// Keyboard and the terminal's actions on the key row. Prints `PERF` lines.
+/// Keyboard and the terminal's actions on the key row. Round 14 adds the
+/// grid after rotating with the key row up and after a text size change,
+/// each checked against what the host's `stty size` says. Prints `PERF` lines.
 /// The host and the fixture's pin are removed at the end; nothing else is
 /// touched. `WITERM_R13_BASELINE=1` measures without asserting the new
 /// behavior, for the numbers before.
@@ -190,6 +192,41 @@ import XCTest
         removeHost(named: name, fingerprint: fingerprint)
     }
 
+    // MARK: Grid
+
+    /// The newest `rows columns` line the fixture's `stty size` printed.
+    private func grid() -> (rows: Int, columns: Int)? {
+        text().split(whereSeparator: \.isNewline).reversed().lazy.compactMap { line -> (Int, Int)? in
+            let parts = line.trimmingCharacters(in: .whitespaces).split(separator: " ")
+            guard parts.count == 2, let rows = Int(parts[0]), let columns = Int(parts[1]) else { return nil }
+            return (rows, columns)
+        }.first
+    }
+
+    /// The renderer's own grid, from the layout probe.
+    private func probedGrid() -> String { "\(Int(probe("cols") ?? -1))x\(Int(probe("rows") ?? -1))" }
+
+    /// Runs the "Grid size" snippet (`stty size`) from the key row and
+    /// returns what the host says its window is.
+    private func stty() -> (rows: Int, columns: Int)? {
+        if !keyboard.waitForExistence(timeout: 1.5) { app.buttons["sshKeyboard"].tap() }
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+        let key = app.buttons["terminalKey-snippets"]
+        XCTAssertTrue(key.waitForExistence(timeout: 5))
+        for _ in 0..<6 where !key.isHittable {
+            let escape = app.buttons["terminalKey-escape"]
+            let start = escape.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: -140, dy: 0)))
+        }
+        key.tap()
+        let item = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Grid size")).firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: 5))
+        item.tap()
+        let marker = probe("rows")
+        _ = until(5) { grid() != nil && lastLine().hasSuffix("~$") && probe("rows") == marker }
+        return grid()
+    }
+
     // MARK: Save Password
 
     func testConnectingDoesNotOfferToSaveThePassword() throws {
@@ -264,32 +301,6 @@ import XCTest
         let actions = app.buttons["sshSessionActions"]
         let hideKey = app.buttons["terminalKey-hideKeyboard"]
         let actionsKey = app.buttons["terminalKey-actions"]
-        func grid() -> (rows: Int, columns: Int)? {
-            text().split(whereSeparator: \.isNewline).reversed().lazy.compactMap { line -> (Int, Int)? in
-                let parts = line.trimmingCharacters(in: .whitespaces).split(separator: " ")
-                guard parts.count == 2, let rows = Int(parts[0]), let columns = Int(parts[1]) else { return nil }
-                return (rows, columns)
-            }.first
-        }
-        func probedGrid() -> String { "\(Int(probe("cols") ?? -1))x\(Int(probe("rows") ?? -1))" }
-        func stty() -> (rows: Int, columns: Int)? {
-            if !keyboard.waitForExistence(timeout: 1.5) { app.buttons["sshKeyboard"].tap() }
-            XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
-            let key = app.buttons["terminalKey-snippets"]
-            XCTAssertTrue(key.waitForExistence(timeout: 5))
-            for _ in 0..<6 where !key.isHittable {
-                let escape = app.buttons["terminalKey-escape"]
-                let start = escape.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-                start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: -140, dy: 0)))
-            }
-            key.tap()
-            let item = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Grid size")).firstMatch
-            XCTAssertTrue(item.waitForExistence(timeout: 5))
-            item.tap()
-            let marker = probe("rows")
-            _ = until(5) { grid() != nil && lastLine().hasSuffix("~$") && probe("rows") == marker }
-            return grid()
-        }
 
         // Portrait, keyboard up: the bar stays, as before.
         let portrait = try XCTUnwrap(stty())
@@ -340,8 +351,9 @@ import XCTest
         // Hide and show, five times: how long, how many grids on the way, and
         // how far apart the first and last of them were (the probe logs each
         // grid with the milliseconds since the one before).
-        // The frame right after rotating isn't the reference: the key row's
-        // inset arrives with the next show (the same before this round).
+        // Since Round 14 the frame right after rotating is already the one
+        // each later show lands on (before, the key row's inset arrived only
+        // with the next show).
         let rotatedFrame = terminal.frame
         var upFrame = CGRect.zero, downFrame = CGRect.zero
         var shows: [Double] = [], hides: [Double] = []
@@ -351,7 +363,7 @@ import XCTest
             let count = Int((probe("grids") ?? 0) - before)
             let log = (terminal.label.components(separatedBy: "gridlog=").last ?? "").split(separator: ">")
             let gaps = log.suffix(max(0, count)).dropFirst().compactMap { Int($0.split(separator: "+").last ?? "") }
-            print("PROBE gridlog=\(log.joined(separator: ">"))")
+            print("PROBE gridlog=\(log.joined(separator: ">")) events=\(terminal.label.components(separatedBy: " events=").last?.components(separatedBy: " gridlog=").first ?? "")")
             return (count, gaps.reduce(0, +))
         }
         for index in 0..<5 {
@@ -381,6 +393,7 @@ import XCTest
                 upFrame = terminal.frame
                 print("PERF grid landscape_kb=\(probedGrid()) frame=\(upFrame) after_rotation_frame=\(rotatedFrame)")
                 shot("landscape-keyboard-again")
+                if !baseline { XCTAssertEqual(rotatedFrame, upFrame, "Rotating must already give the frame a show gives") }
             } else {
                 XCTAssertEqual(terminal.frame, upFrame, "Showing the keyboard must land on the same frame")
             }
@@ -392,10 +405,13 @@ import XCTest
         // At most the bar and the key row's inset, close enough together that
         // the host is resized once (SSH waits 75 ms for the size to settle).
         XCTAssertLessThanOrEqual(showSteps.max() ?? 0, 2, "Showing the keyboard must not step through grids")
-        // The first hide also applies the key row's inset that rotating left out.
-        XCTAssertLessThanOrEqual(hideSteps.dropFirst().max() ?? 0, 2, "Hiding the keyboard must not step through grids")
+        // Before Round 14 the first hide also applied the key row's inset that
+        // rotating had left out, so the baseline skips it.
+        let checkedHides = baseline ? Array(hideSteps.dropFirst()) : hideSteps
+        let checkedHideSpans = baseline ? Array(hideSpans.dropFirst()) : hideSpans
+        XCTAssertLessThanOrEqual(checkedHides.max() ?? 0, 2, "Hiding the keyboard must not step through grids")
         XCTAssertLessThan(showSpans.max() ?? 0, 75, "The grids on the way must come within one resize")
-        XCTAssertLessThan(hideSpans.dropFirst().max() ?? 0, 75, "The grids on the way must come within one resize")
+        XCTAssertLessThan(checkedHideSpans.max() ?? 0, 75, "The grids on the way must come within one resize")
 
         // Back to portrait with the keyboard up: the bar returns.
         XCUIDevice.shared.orientation = .portrait
@@ -405,11 +421,187 @@ import XCTest
         shot("portrait-keyboard-again")
         print("PERF grid portrait_again_kb=\(again.columns)x\(again.rows) frame=\(terminal.frame) \(terminal.label)")
         XCTAssertEqual(again.columns, portrait.columns, "Portrait restores the columns")
-        // Not the rows: with only the key row up (a hardware keyboard), coming
-        // back to portrait leaves the terminal 13 rows tall until the keyboard
-        // is next hidden or shown, before this round as after it (see the HCI
-        // log, Round 13: iOS).
+        // Before Round 14, with only the key row up (a hardware keyboard),
+        // coming back to portrait left the terminal 13 rows tall until the
+        // keyboard was next hidden or shown (see the HCI log, Round 14: iOS).
+        if !baseline { XCTAssertEqual(again.rows, portrait.rows, "Portrait restores the rows") }
         XCTAssertFalse(hideKey.exists)
+
+        disconnectAndRemove(name, fingerprint: fingerprint)
+    }
+
+    // MARK: Round 14: layout
+
+    /// Connects a new fixture host whose snippet prints the host's window size.
+    private func connectForGrid(_ prefix: String) throws -> (name: String, fingerprint: String) {
+        let (port, fingerprint) = try fixture()
+        launch(snippets: [("Grid size", "stty size")])
+        let name = prefix + " " + String(UUID().uuidString.prefix(4))
+        fillForm(port: port, name: name, paste: false)
+        app.buttons["sshConnect"].tap()
+        trustAndWait(fingerprint: fingerprint)
+        _ = until(3) { false }
+        return (name, fingerprint)
+    }
+
+    /// How far the terminal's text area ends below the top of the first key:
+    /// more than usual when rows run under the key row, less for a gap above
+    /// it. (The key sits 4 pt inside the row, so a text area that ends on the
+    /// row reads -4.)
+    private func underKeyRow() -> Double {
+        let row = app.buttons["terminalKey-escape"]
+        guard row.exists else { return .nan }
+        return Double(terminal.frame.maxY - row.frame.minY)
+    }
+
+    /// The diagnostics the layout probe adds about the keyboard.
+    private func keyboardDiagnostics() -> String {
+        guard let range = terminal.label.range(of: "kbdiag=[") else { return "" }
+        return String(terminal.label[range.upperBound...].prefix { $0 != "]" })
+    }
+
+    /// Rotating with the key row up (a hardware keyboard) gives each
+    /// orientation the grid it has after the keyboard is hidden and shown
+    /// again there: the terminal never runs under the key row nor leaves the
+    /// rest of the screen empty, and the host is told the same size.
+    func testRotationWithTheKeyRowUpFitsEachOrientation() throws {
+        continueAfterFailure = true
+        executionTimeAllowance = 400
+        let (name, fingerprint) = try connectForGrid("R14 Rot")
+        let hideKey = app.buttons["terminalKey-hideKeyboard"]
+
+        // Portrait: the key row up, then down, then up again.
+        let portrait = try XCTUnwrap(stty())
+        let portraitGrid = probedGrid()
+        let portraitReferenceUnder = underKeyRow()
+        report("r14_portrait_kb_under_key_row_pt", portraitReferenceUnder)
+        shot("r14-rotation-1-portrait-keyrow")
+        app.buttons["sshKeyboard"].tap()
+        XCTAssertNotNil(until(5) { !keyboard.exists })
+        _ = until(1) { false }
+        let portraitDown = probedGrid()
+        app.buttons["sshKeyboard"].tap()
+        XCTAssertNotNil(until(5) { typeable })
+        _ = until(1) { false }
+        XCTAssertEqual(probedGrid(), portraitGrid, "Showing the key row again gives the same grid")
+        print("PERF r14 portrait_kb=\(portrait.columns)x\(portrait.rows) probe=\(portraitGrid) portrait_no_kb=\(portraitDown)")
+
+        // Landscape with the key row up, before any hide or show there.
+        var changes = probe("grids") ?? 0
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let rotated = until(5) { terminal.frame.width > terminal.frame.height }
+        report("r14_rotate_landscape_s", rotated ?? -1)
+        _ = until(1.5) { false }
+        let landscapeGrid = probedGrid()
+        let landscapeUnder = underKeyRow()
+        let landscapeSteps = Int((probe("grids") ?? 0) - changes)
+        print("PERF r14 landscape_after_rotation=\(landscapeGrid) under_key_row_pt=\(landscapeUnder) grid_changes=\(landscapeSteps) kbdiag=\(keyboardDiagnostics())")
+        print("PROBE gridlog=\(terminal.label.components(separatedBy: "gridlog=").last ?? "")")
+        shot("r14-rotation-2-landscape-keyrow")
+        let landscape = try XCTUnwrap(stty())
+        XCTAssertEqual("\(landscape.columns)x\(landscape.rows)", landscapeGrid, "The host has the landscape grid")
+        // The reference: the same orientation after the key row hides and shows.
+        XCTAssertTrue(hideKey.waitForExistence(timeout: 5))
+        hideKey.tap()
+        XCTAssertNotNil(until(5) { !keyboard.exists })
+        _ = until(1) { false }
+        app.buttons["sshKeyboard"].tap()
+        XCTAssertNotNil(until(5) { typeable && hideKey.exists })
+        _ = until(1) { false }
+        let landscapeReference = probedGrid()
+        let landscapeReferenceUnder = underKeyRow()
+        print("PERF r14 landscape_reference=\(landscapeReference) under_key_row_pt=\(landscapeReferenceUnder)")
+        XCTAssertEqual(landscapeGrid, landscapeReference, "Rotating must give landscape the grid it has after the key row hides and shows")
+        XCTAssertEqual(landscapeUnder, landscapeReferenceUnder, accuracy: 1, "After rotating, the terminal must end on the key row, not run under it")
+        XCTAssertLessThanOrEqual(landscapeSteps, 3, "Rotating must not step through grids")
+
+        // Back to portrait with the key row up.
+        changes = probe("grids") ?? 0
+        XCUIDevice.shared.orientation = .portrait
+        let back = until(5) { terminal.frame.width < terminal.frame.height && probedGrid() == portraitGrid }
+        report("r14_rotate_portrait_to_full_grid_s", back ?? -1)
+        _ = until(1.5) { false }
+        let portraitAgainGrid = probedGrid()
+        let portraitUnder = underKeyRow()
+        let portraitSteps = Int((probe("grids") ?? 0) - changes)
+        print("PERF r14 portrait_after_rotation=\(portraitAgainGrid) under_key_row_pt=\(portraitUnder) grid_changes=\(portraitSteps) kbdiag=\(keyboardDiagnostics())")
+        print("PROBE gridlog=\(terminal.label.components(separatedBy: "gridlog=").last ?? "")")
+        shot("r14-rotation-3-portrait-again-keyrow")
+        let again = try XCTUnwrap(stty())
+        print("PERF r14 portrait_again_host=\(again.columns)x\(again.rows)")
+        XCTAssertEqual(portraitAgainGrid, portraitGrid, "Back in portrait, the key row-up grid is the full portrait one")
+        XCTAssertEqual(again.rows, portrait.rows, "The host gets the portrait rows back")
+        XCTAssertEqual(again.columns, portrait.columns)
+        XCTAssertEqual(portraitUnder, portraitReferenceUnder, accuracy: 1, "Back in portrait, the terminal must end on the key row, with no empty band")
+        XCTAssertLessThanOrEqual(portraitSteps, 3, "Rotating must not step through grids")
+
+        disconnectAndRemove(name, fingerprint: fingerprint)
+    }
+
+    /// Larger and Smaller text from the actions menu reflow the grid at once
+    /// to whole cells of the new size, and the host is told that size.
+    func testTextSizeReflowsTheGridAndResizesTheHost() throws {
+        continueAfterFailure = true
+        executionTimeAllowance = 300
+        let (name, fingerprint) = try connectForGrid("R14 Size")
+        let actions = app.buttons["sshSessionActions"]
+        func sizeItem(_ id: String, _ label: String) -> XCUIElement {
+            app.buttons.matching(NSPredicate(format: "identifier == %@ OR label == %@", id, label)).firstMatch
+        }
+        func closeMenu() {
+            if sizeItem("terminalLargerText", "Increase Text Size").exists {
+                terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
+            }
+            XCTAssertNotNil(until(5) { !sizeItem("terminalLargerText", "Increase Text Size").exists })
+        }
+        /// Rows that fit the text area in whole cells of the probed height.
+        func fittingRows() -> Int {
+            let cell = probe("cell") ?? 0
+            return cell > 0 ? Int((Double(terminal.frame.height) / cell) * (1 + 1e-9)) : -1
+        }
+        /// Taps a size step and returns how long the grid took to change.
+        func step(_ id: String, _ label: String, from grid: String) -> Double? {
+            XCTAssertNotNil(until(5) { actions.isHittable })
+            actions.tap()
+            let item = sizeItem(id, label)
+            XCTAssertTrue(item.waitForExistence(timeout: 5), label)
+            let cell = probe("cell") ?? 0
+            item.tap()
+            let changed = until(5, poll: 0.02) { probedGrid() != grid }
+            report("r14_text_size_cell_changed", (probe("cell") ?? 0) - cell)
+            closeMenu()
+            return changed
+        }
+
+        let before = try XCTUnwrap(stty())
+        let beforeGrid = probedGrid()
+        XCTAssertEqual("\(before.columns)x\(before.rows)", beforeGrid, "The host starts with the renderer's grid")
+        shot("r14-text-size-1-before")
+
+        // Larger.
+        let larger = step("terminalLargerText", "Increase Text Size", from: beforeGrid)
+        report("r14_text_size_larger_reflow_s", larger ?? -1)
+        _ = until(1) { false }
+        let largerGrid = probedGrid()
+        print("PERF r14 text_size before=\(beforeGrid) larger=\(largerGrid) fitting_rows=\(fittingRows()) label=\(terminal.label)")
+        shot("r14-text-size-2-larger")
+        XCTAssertNotNil(larger, "Larger text must reflow the grid")
+        XCTAssertLessThan(larger ?? 99, 1, "The grid must reflow within a second")
+        XCTAssertEqual(Int(probe("rows") ?? -1), fittingRows(), "The rows are the whole cells that fit")
+        let largerHost = try XCTUnwrap(stty())
+        XCTAssertEqual("\(largerHost.columns)x\(largerHost.rows)", largerGrid, "The host must see the new size")
+        XCTAssertLessThan(largerHost.columns, before.columns)
+
+        // Smaller, back to where it was (the size is kept, so this restores it).
+        let smaller = step("terminalSmallerText", "Decrease Text Size", from: largerGrid)
+        report("r14_text_size_smaller_reflow_s", smaller ?? -1)
+        _ = until(1) { false }
+        shot("r14-text-size-3-restored")
+        XCTAssertNotNil(smaller, "Smaller text must reflow the grid")
+        XCTAssertLessThan(smaller ?? 99, 1, "The grid must reflow within a second")
+        XCTAssertEqual(probedGrid(), beforeGrid, "The original size gives the original grid")
+        let restoredHost = try XCTUnwrap(stty())
+        XCTAssertEqual("\(restoredHost.columns)x\(restoredHost.rows)", beforeGrid, "The host must see the original size again")
 
         disconnectAndRemove(name, fingerprint: fingerprint)
     }

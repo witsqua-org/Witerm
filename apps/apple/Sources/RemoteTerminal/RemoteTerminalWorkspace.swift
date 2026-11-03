@@ -338,6 +338,9 @@ struct RemoteTerminalWorkspace: View {
                     onEnded: { model.attachmentEnded(id: id) }
                 )
                 .id(id)
+                // The renderer leaves the keyboard's space itself (see
+                // `TerminalKeyboardOverlap`).
+                .ignoresSafeArea(.keyboard, edges: .bottom)
                 if !model.isInteractive { connectionOverlay }
             }
             // While watching a terminal this device could type in, list it

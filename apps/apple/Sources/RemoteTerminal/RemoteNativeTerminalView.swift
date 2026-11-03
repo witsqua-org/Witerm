@@ -14,6 +14,56 @@ extension Notification.Name {
     static let witermTerminalFocusWillChange = Notification.Name("witermTerminalFocusWillChange")
 }
 
+/// How much of a terminal's bottom the keyboard covers, from where the key
+/// row and the keyboard are now. With a hardware keyboard only the key row
+/// shows, and iOS reports nothing when the device rotates with it up, so a
+/// keyboard frame or height kept from before belongs to the old orientation:
+/// it left landscape running under the key row and portrait 13 rows tall.
+/// All rectangles are in the screen's coordinate space as it is now.
+enum TerminalKeyboardOverlap {
+    /// - Parameters:
+    ///   - view: The terminal's frame.
+    ///   - screen: The screen's bounds.
+    ///   - keyRow: The terminal's key row, while it's in a window.
+    ///   - keyRowWindow: The size of the key row's window.
+    ///   - reported: The keyboard frame UIKit last reported, with the screen
+    ///     size it was reported for.
+    ///   - hiddenSinceKeyRowMoved: UIKit said the keyboard hid after the key
+    ///     row last moved.
+    /// - Returns: `nil` when the answer is the last one: while the key row's
+    ///   window is still in the other orientation (just after this view
+    ///   rotated, before the key row has), so no grid for the old one
+    ///   flashes; and while the key row slides away below the screen, so its
+    ///   rows return when the keyboard reports it has gone, together with
+    ///   the navigation bar, not 0.4 s ahead of it.
+    static func bottom(view: CGRect, screen: CGRect, keyRow: CGRect?, keyRowWindow: CGSize? = nil,
+                       reported: (frame: CGRect, screen: CGSize)?, hiddenSinceKeyRowMoved: Bool = false) -> CGFloat? {
+        let edge = screen.maxY
+        if let row = keyRow {
+            if let space = keyRowWindow, screen.width != screen.height,
+               space == CGSize(width: screen.height, height: screen.width) { return nil }
+            if row.minY >= edge - 0.5, !hiddenSinceKeyRowMoved { return nil }
+        }
+        func onScreen(_ rect: CGRect) -> Bool { rect.height > 0 && rect.minY < edge - 0.5 && rect.intersects(screen) }
+        func docked(_ rect: CGRect) -> Bool { rect.maxY >= edge - 1 }
+        // A frame reported for another orientation or window size says
+        // nothing about this one.
+        let keyboard = reported.flatMap { $0.screen == screen.size && onScreen($0.frame) ? $0.frame : nil }
+        var top: CGFloat?
+        if let row = keyRow, onScreen(row) {
+            // The key row tops whatever covers the bottom: alone (a hardware
+            // keyboard) or on a docked keyboard. Only an undocked iPad
+            // keyboard, reported away from the bottom, covers less.
+            let floating = !docked(row) && keyboard.map { !docked($0) } == true
+            if !floating { top = row.minY }
+        }
+        // Another field's keyboard, such as the find bar's.
+        if top == nil, let keyboard, docked(keyboard) { top = keyboard.minY }
+        guard let top else { return 0 }
+        return min(view.height, max(0, view.maxY - top))
+    }
+}
+
 struct RemoteNativeTerminalView: UIViewRepresentable {
     let attachment: RemoteTerminalAttachment
     let mode: LocalAttachmentMode
@@ -136,6 +186,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             installLatestButton()
             installSizeReadout()
             terminal.scrollStateChanged = { [weak self] output in self?.updateLatestButton(output: output) }
+            observeKeyboard()
         }
 
         private func installLatestButton() {
@@ -231,14 +282,121 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             refreshReadingDocument()
         }
 
-        /// The area the text uses: the view without its side insets.
+        /// The area the text uses: the view without its side insets and
+        /// without the part the keyboard covers.
         private var contentBounds: CGRect {
             let left = max(Self.edgeInset, safeAreaInsets.left), right = max(Self.edgeInset, safeAreaInsets.right)
-            return bounds.inset(by: UIEdgeInsets(top: 0, left: left, bottom: 0, right: right))
+            return bounds.inset(by: UIEdgeInsets(top: 0, left: left, bottom: keyboardOverlap, right: right))
+        }
+
+        // MARK: Keyboard
+
+        /// How much of the view's bottom the keyboard (or the key row alone)
+        /// covers, as of the last layout. SwiftUI's keyboard avoidance is off
+        /// for terminals: it kept a frame from the orientation the keyboard
+        /// was shown in, because iOS reports nothing when the device rotates
+        /// with only the key row up.
+        private(set) var keyboardOverlap: CGFloat = 0
+
+        /// The keyboard frame UIKit last reported, in screen coordinates,
+        /// with the screen size it was reported for. One keyboard serves
+        /// every terminal.
+        private static var reportedKeyboard: (frame: CGRect, screen: CGSize)?
+        /// Orders the keyboard's hiding and this view's key row moves.
+        private static var keyboardEvents = 0
+        private static var hiddenAt = 0
+        private var keyRowMovedAt = 0
+        /// Where the key row was last seen, in screen coordinates.
+        private var keyRowSeen: CGRect?
+
+        private func observeKeyboard() {
+            let center = NotificationCenter.default
+            center.addObserver(self, selector: #selector(keyboardWillMove(_:)),
+                               name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
+            for name in [UIResponder.keyboardDidChangeFrameNotification, UIResponder.keyboardDidShowNotification,
+                         UIResponder.keyboardDidHideNotification] {
+                center.addObserver(self, selector: #selector(keyboardDidMove(_:)), name: name, object: nil)
+            }
+            terminal.keyRowMoved = { [weak self] in
+                self?.noteKeyRow()
+                self?.keyboardMayHaveMoved()
+            }
+        }
+
+        private func recordKeyboard(_ note: Notification) {
+            guard let frame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue,
+                  let screen = (note.object as? UIScreen) ?? window?.windowScene?.screen else { return }
+            Self.reportedKeyboard = (frame, screen.coordinateSpace.bounds.size)
+            if note.name == UIResponder.keyboardDidHideNotification {
+                Self.keyboardEvents += 1
+                Self.hiddenAt = Self.keyboardEvents
+            }
+            #if DEBUG
+            let tag = note.name == UIResponder.keyboardWillChangeFrameNotification ? "wcf"
+                : note.name == UIResponder.keyboardDidChangeFrameNotification ? "dcf"
+                : note.name == UIResponder.keyboardDidShowNotification ? "ds" : "dh"
+            Self.probeEvent(tag + String(format: "(%.0f,%.0f)", frame.minY, frame.height))
+            #endif
+        }
+
+        /// The key row's frame, while it's in a shown window.
+        private var keyRowFrame: (frame: CGRect, window: CGSize)? {
+            guard let screen = window?.windowScene?.screen, let row = terminal.inputAccessoryView,
+                  let rowWindow = row.window, !rowWindow.isHidden, !row.isHidden else { return nil }
+            return (row.convert(row.bounds, to: screen.coordinateSpace), rowWindow.bounds.size)
+        }
+
+        /// Counts a move only when the key row really moved (it also lays
+        /// out when its keys change, as when the bar returns).
+        private func noteKeyRow() {
+            let frame = keyRowFrame?.frame
+            guard frame != keyRowSeen else { return }
+            keyRowSeen = frame
+            #if DEBUG
+            Self.probeEvent(frame.map { String(format: "k(%.0f)", $0.minY) } ?? "k(out)")
+            #endif
+            Self.keyboardEvents += 1
+            keyRowMovedAt = Self.keyboardEvents
+        }
+
+        /// Only noted: the space changes once the keyboard has moved (or
+        /// the key row reports where it is), as the bar's return does.
+        @objc private func keyboardWillMove(_ note: Notification) { recordKeyboard(note) }
+
+        @objc private func keyboardDidMove(_ note: Notification) {
+            recordKeyboard(note)
+            keyboardMayHaveMoved()
+        }
+
+        /// Lays out again when the keyboard's space changed: now, and once
+        /// more after this turn, when the key row's own move has landed.
+        func keyboardMayHaveMoved() {
+            relayoutIfKeyboardMoved()
+            DispatchQueue.main.async { [weak self] in
+                self?.noteKeyRow()
+                self?.relayoutIfKeyboardMoved()
+            }
+        }
+
+        private func relayoutIfKeyboardMoved() {
+            guard let measured = measuredKeyboardOverlap() else { return }
+            if abs(measured - keyboardOverlap) > 0.25 { setNeedsLayout() }
+        }
+
+        /// Measured from where the key row and the keyboard are now, in the
+        /// current orientation, never from a height kept from before; `nil`
+        /// while the key row hasn't rotated yet.
+        private func measuredKeyboardOverlap() -> CGFloat? {
+            guard let screen = window?.windowScene?.screen else { return 0 }
+            let space = screen.coordinateSpace, row = keyRowFrame
+            return TerminalKeyboardOverlap.bottom(view: convert(bounds, to: space), screen: space.bounds, keyRow: row?.frame,
+                                                  keyRowWindow: row?.window, reported: Self.reportedKeyboard,
+                                                  hiddenSinceKeyRowMoved: Self.hiddenAt > keyRowMovedAt)
         }
 
         override func layoutSubviews() {
             super.layoutSubviews()
+            if let measured = measuredKeyboardOverlap() { keyboardOverlap = measured }
             let content = contentBounds
             if pinchStartSize == nil {
                 scroll.transform = .identity
@@ -246,9 +404,9 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             }
             readingView.frame = content
             let side: CGFloat = 44, margin: CGFloat = WitermMetrics.Space.m
-            latestButton.frame = CGRect(x: content.maxX - side - margin, y: bounds.maxY - side - margin, width: side, height: side)
+            latestButton.frame = CGRect(x: content.maxX - side - margin, y: content.maxY - side - margin, width: side, height: side)
             let readout = sizeReadout.intrinsicContentSize
-            sizeReadout.frame = CGRect(x: bounds.midX - (readout.width + 32) / 2, y: bounds.midY - (readout.height + 16) / 2,
+            sizeReadout.frame = CGRect(x: content.midX - (readout.width + 32) / 2, y: content.midY - (readout.height + 16) / 2,
                                        width: readout.width + 32, height: readout.height + 16)
             if let grid = fixedGrid {
                 preserveGrid(grid)
@@ -331,13 +489,22 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
 
         func updateFontSize(_ size: CGFloat) {
             guard terminal.font.pointSize != size else { return }
-            // SwiftTerm's font setter resizes from the old frame. A fixed grid
-            // must keep its rows/columns while its physical cell size changes.
+            // SwiftTerm's font setter resizes from the current frame and then
+            // soft-resets the terminal, clearing the program's modes; with no
+            // frame it changes only the cells. A fixed grid must keep its
+            // rows/columns while its physical cell size changes.
             terminal.frame = .zero
             terminal.font = .monospacedSystemFont(ofSize: size, weight: .regular)
             if let grid = fixedGrid {
                 preserveGrid(grid)
                 terminal.frame = fixedGridFrame()
+            } else {
+                // SwiftTerm refits its grid in layout only when its size
+                // differs from the last layout's, so getting the same frame
+                // back kept the old columns and rows. Lay it out once with no
+                // size: the next layout fits whole cells of the new size and
+                // tells the host, through SwiftTerm's own resize.
+                terminal.layoutIfNeeded()
             }
             setNeedsLayout()
         }
@@ -431,7 +598,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         func refreshReadingDocument(outputChanged: Bool = false) {
             let core = terminal.getTerminal()
             guard !core.synchronizedOutputActive, !terminal.bounds.isEmpty else { return }
-            let visible = terminal.convert(bounds, from: self).intersection(terminal.bounds)
+            let visible = terminal.convert(contentBounds, from: self).intersection(terminal.bounds)
             let origin = CGPoint(x: 0, y: CGFloat(core.getTopVisibleRow()) * cellSize.height)
             let page = TerminalAXViewport.cells(in: visible, origin: origin, cellSize: cellSize, columns: core.cols, rows: core.rows)
             let cursor = core.getCursorLocation()
@@ -447,6 +614,8 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
                     core.cols, probeGridChanges, core.rows, core.getTopVisibleRow(), terminal.scrollPosition, page.rows.lowerBound, page.rows.upperBound,
                     cellSize.height, terminal.frame.height, bounds.height, terminal.contentOffset.y, terminal.contentSize.height,
                     Self.footprintMB()) + String(format: " burst=%.3f", terminal.probeBurst.last - terminal.probeBurst.start)
+                    + probeKeyboardDiagnostics()
+                    + " events=" + Self.probeEvents.joined(separator: ",")
                     + " gridlog=" + probeGridLog.joined(separator: ">")
             }
             #endif
@@ -463,6 +632,20 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         private var probeGridLog: [String] = []
         private var probeLastGridTime = CACurrentMediaTime()
 
+        /// The keyboard's space and where the key row is, in screen points.
+        private func probeKeyboardDiagnostics() -> String {
+            func describe(_ rect: CGRect) -> String { String(format: "%.0f,%.0f,%.0f,%.0f", rect.minX, rect.minY, rect.width, rect.height) }
+            var parts = [String(format: "overlap=%.1f", keyboardOverlap)]
+            if let window, let screen = window.windowScene?.screen {
+                parts.append("screen=" + describe(screen.coordinateSpace.bounds))
+                parts.append("surface=" + describe(convert(bounds, to: screen.coordinateSpace)))
+                if let row = terminal.inputAccessoryView, row.window != nil {
+                    parts.append("keyRow=" + describe(row.convert(row.bounds, to: screen.coordinateSpace)))
+                }
+            }
+            return " kbdiag=[" + parts.joined(separator: " ") + "]"
+        }
+
         private func countProbedGrid() {
             guard Self.layoutProbe else { return }
             let grid = (columns: terminal.getTerminal().cols, rows: terminal.getTerminal().rows)
@@ -473,8 +656,18 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
                 let gap = Int(((now - probeLastGridTime) * 1000).rounded())
                 probeLastGridTime = now
                 probeGridLog = Array((probeGridLog + ["\(grid.columns)x\(grid.rows)+\(gap)"]).suffix(6))
+                Self.probeEvent("g\(grid.columns)x\(grid.rows)")
             }
             probeLastGrid = grid
+        }
+
+        static var probeEvents: [String] = []
+        static var probeEventTime = CACurrentMediaTime()
+        static func probeEvent(_ name: String) {
+            guard layoutProbe else { return }
+            let now = CACurrentMediaTime()
+            probeEvents = Array((probeEvents + ["\(name)+\(Int(((now - probeEventTime) * 1000).rounded()))"]).suffix(16))
+            probeEventTime = now
         }
 
         /// The app's memory as the system counts it, for the performance probe.
@@ -808,6 +1001,9 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         /// it (the bar hidden while typing in landscape) lands in the same
         /// pass as the keyboard's, and the grid is resized once.
         private func postFocus(_ focused: Bool, will: Bool = false) {
+            #if DEBUG
+            TerminalSurface.probeEvent((focused ? "f+" : "f-") + (will ? "w" : ""))
+            #endif
             NotificationCenter.default.post(name: will ? .witermTerminalFocusWillChange : .witermTerminalFocusChanged,
                                             object: self, userInfo: ["focused": focused])
         }
@@ -885,6 +1081,10 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
 
         var geometryChanged: ((LocalSessionInfo) -> Void)?
         var readingChanged: ((Bool) -> Void)?
+        /// The key row was laid out, or came or went: the keyboard's space
+        /// may have changed (rotating with only the key row up reports
+        /// nothing else).
+        var keyRowMoved: (() -> Void)?
         private var readingRefreshQueued = false
         private var readingRefreshHasOutput = false
 

@@ -446,6 +446,9 @@ struct SSHTerminalSurface: View {
             scheme: systemColorScheme, announceOutput: announceOutput,
             keyboardRequest: keyboardRequest, barActions: barActions)
             .id(session.token)
+            // The renderer leaves the keyboard's space itself (see
+            // `TerminalKeyboardOverlap`).
+            .ignoresSafeArea(.keyboard, edges: .bottom)
         #endif
     }
 }

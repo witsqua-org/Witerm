@@ -223,6 +223,14 @@ enum MobileKey: String, CaseIterable, Identifiable {
     override func didMoveToWindow() {
         super.didMoveToWindow()
         updateMetrics()
+        terminal?.keyRowMoved?()
+    }
+
+    /// The terminal measures the keyboard's space from where this row is,
+    /// which is how it learns of a rotation with only the key row up.
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        terminal?.keyRowMoved?()
     }
 
     /// Follows the saved key row; a changed setting applies to open terminals.
