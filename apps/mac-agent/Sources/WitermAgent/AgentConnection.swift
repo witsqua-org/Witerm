@@ -20,6 +20,10 @@ final class AgentConnection: @unchecked Sendable {
     private let received: @Sendable (Data, AgentConnection) -> Void
     private let disconnected: @Sendable (AgentConnection, Bool) -> Void
     static let deliveryLimit = 256 * 1024
+    /// How long a client may take nothing before it's let go. Longer than
+    /// the client's own wait, so a stuck window says so itself.
+    static let stallLimit: TimeInterval = 45
+    private var lastDelivery = ProcessInfo.processInfo.systemUptime
 
     init(descriptor: Int32, received: @escaping @Sendable (Data, AgentConnection) -> Void, disconnected: @escaping @Sendable (AgentConnection, Bool) -> Void) throws {
         self.descriptor = descriptor
@@ -51,6 +55,25 @@ final class AgentConnection: @unchecked Sendable {
         condition.signal()
         condition.unlock()
         return true
+    }
+
+    /// Blocks a PTY reader while this connection's queue can't take another
+    /// chunk, so output waits in the PTY (and tmux) instead of overflowing
+    /// here. False once the connection is closing, or after it's ended for
+    /// delivering nothing for `stallLimit`.
+    func waitForRoom(reserve: Int = 32 * 1024) -> Bool {
+        condition.lock()
+        while queuedBytes + reserve > Self.deliveryLimit, !closing {
+            if ProcessInfo.processInfo.systemUptime - lastDelivery >= Self.stallLimit {
+                condition.unlock()
+                finish(afterFlush: false, terminalError: .backpressure, emitClosed: true)
+                return false
+            }
+            _ = condition.wait(until: Date().addingTimeInterval(0.5))
+        }
+        let open = !closing
+        condition.unlock()
+        return open
     }
 
     func finish(afterFlush: Bool, terminalError: LocalAgentErrorCode? = nil, emitClosed: Bool = false) {
@@ -124,8 +147,14 @@ final class AgentConnection: @unchecked Sendable {
             let bytes = outgoing.removeFirst()
             // Keep in-flight bytes in the accounting until the bounded write ends.
             condition.unlock()
-            let success = Posix.writeAll(descriptor, data: bytes)
-            condition.lock(); queuedBytes -= bytes.count; condition.unlock()
+            // A client that reads slowly is waited for; one that reads nothing
+            // for the stall limit is let go.
+            let success = Posix.writeAll(descriptor, data: bytes, timeout: Self.stallLimit)
+            condition.lock()
+            queuedBytes -= bytes.count
+            lastDelivery = ProcessInfo.processInfo.systemUptime
+            condition.broadcast()
+            condition.unlock()
             if !success { return }
         }
     }

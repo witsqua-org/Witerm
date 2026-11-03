@@ -40,6 +40,35 @@ func shellPID(_ capture: Capture) async throws -> String {
     return String(text[range])
 }
 
+/// Runs `seq 1 count` on an attachment read like the Mac window reads it
+/// (events, with scrollback) by a deliberately slow renderer, and returns
+/// the seconds until the shell's marker after the last line arrives. The
+/// attachment must stay open throughout: nothing may end it for being slow.
+func burst(_ attachment: LocalTerminalAttachment, lines count: Int, marker: Int) async throws -> Double {
+    let started = Date()
+    let reader = Task { () throws -> String in
+        var tail = ""
+        var events = 0
+        for try await event in attachment.events {
+            guard case .output(let data) = event else { continue }
+            events += 1
+            tail = String((tail + String(decoding: data, as: UTF8.self)).suffix(8192))
+            if tail.contains("WT_BURST_\(marker)") { return tail }
+            if events.isMultiple(of: 16) { try await Task.sleep(for: .milliseconds(5)) }
+            if Date().timeIntervalSince(started) > 600 { throw SmokeFailure("A burst of \(count) lines didn't finish") }
+        }
+        throw SmokeFailure("The attachment ended during a burst of \(count) lines")
+    }
+    try await Task.sleep(for: .milliseconds(300))
+    // macOS seq writes 1000000 as 1e+06 without a format.
+    try await attachment.send(Data("seq -f '%.0f' 1 \(count); printf 'WT_''BURST_%s\\n' \(marker)\n".utf8))
+    let tail = try await reader.value
+    // The last line comes right before the marker: nothing at the end was lost.
+    guard let end = tail.range(of: "WT_BURST_\(marker)"), tail[..<end.lowerBound].contains("\(count)")
+    else { throw SmokeFailure("The last line of a burst of \(count) lines was missing") }
+    return Date().timeIntervalSince(started)
+}
+
 func startAgent(executable: URL, state: URL) throws -> Process {
     let process = Process()
     process.executableURL = executable
@@ -147,8 +176,18 @@ func waitForAgent(_ client: LocalAgentClient) async throws {
         try await waitFor("WT_RENAMED", in: capture)
         guard try await shellPID(capture) == originalPID else { throw SmokeFailure("Shell changed after rename") }
         await restarted.disconnect(); reader.cancel()
+        // Bursts far bigger than any queue, read slowly: the window's reader
+        // waits, the agent stops reading the pane meanwhile, tmux coalesces
+        // the screen, and the attachment stays open.
+        var timings: [String] = []
+        for (index, lines) in [100_000, 1_000_000].enumerated() {
+            let slow = try await client.attach(sessionID: session.id, columns: 103, rows: 37, history: true)
+            let seconds = try await burst(slow, lines: lines, marker: 70 + index)
+            timings.append("\(lines) lines \(String(format: "%.1f", seconds)) s")
+            await slow.disconnect()
+        }
         try await client.close(sessionID: session.id)
         guard try await client.sessions().isEmpty else { throw SmokeFailure("Close left a session") }
-        print("PASS: real PTY input, resize, shared typing with a refused paired writer, read-only, alternate-screen repaint, reconnect, agent restart, rename and explicit close")
+        print("PASS: real PTY input, resize, shared typing with a refused paired writer, read-only, alternate-screen repaint, reconnect, agent restart, rename, bursts to a slow renderer (\(timings.joined(separator: ", "))) and explicit close")
     }
 }

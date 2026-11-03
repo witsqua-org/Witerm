@@ -1,0 +1,9 @@
+{
+  "add": {
+    "This window stopped showing its output. Open it again; it kept running.": "此窗口停止显示它的输出。请重新打开；它仍在运行。"
+  },
+  "change": {},
+  "remove": [
+    "It printed faster than this window could show. Open it again; it kept running."
+  ]
+}

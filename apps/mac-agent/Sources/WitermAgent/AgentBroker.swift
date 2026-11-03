@@ -351,6 +351,9 @@ final class AgentBroker: @unchecked Sendable {
             child.start(output: { [weak connection] bytes in
                 let visible = screen?.filter(bytes) ?? bytes
                 return visible.isEmpty ? true : connection?.enqueue(LocalAgentFrame(kind: .output, data: visible)) ?? false
+            }, room: { [weak connection] in
+                // A slow client slows this pane's reader; tmux coalesces meanwhile.
+                connection?.waitForRoom() ?? false
             }, ended: { [weak connection] in connection?.finish(afterFlush: true, emitClosed: true) })
         case .input:
             guard let child = connection.child, let id = connection.sessionID, let data = request.data, data.count <= 16384 else { throw AgentFailure(.invalidRequest) }

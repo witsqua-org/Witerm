@@ -35,8 +35,8 @@ The Mac background service (`witerm-agent`) hosts shells in a private tmux serve
 **Limits.**
 - 16 sessions and 32 connections.
 - Input up to 16 KiB, JSON lines up to 64 KiB, output chunks up to 8 KiB.
-- 256 KiB of pending output per connection.
-- A slow consumer is closed with `backpressure` and must reattach to get a redraw. Bytes are never dropped. Terminal bytes, commands, environment, and clipboard are never logged.
+- 256 KiB of pending output per connection. While a connection's queue is that full, the service stops reading the session's PTY for it, so tmux holds the output and coalesces the screen for that client; nothing is dropped and nothing is reordered. A client that takes nothing for 45 seconds is closed with `backpressure` and must reattach to get a redraw.
+- Clients read the same way: past 1 MiB of unread output they stop reading the socket until their consumer catches up, and they give up (`backpressure`) only after 30 seconds without progress. Terminal bytes, commands, environment, and clipboard are never logged.
 
 ## Wire format
 

@@ -419,124 +419,289 @@ public enum LocalAgentClientError: Error, Equatable, Sendable {
   case rejected(LocalAgentErrorCode)
 }
 
-// One lazily selected consumer route. Before selection, retain at most 64
-// ordered events. Legacy output ignores geometry without creating a second
-// queue or a projection task. Each selected stream supports one iterator.
+// One lazily selected consumer route, with backpressure counted in bytes.
+// Events wait in one ordered queue until the consumer takes them; legacy
+// output ignores geometry without queueing it. Each selected stream supports
+// one iterator. A producer never drops an event for being early or fast: it
+// waits for room (`waitForRoom` on a reader thread, `room()` in a task) while
+// more than `byteLimit` is unread, so a slow renderer slows the socket
+// instead of losing or reordering output. Only a consumer that takes nothing
+// for `stallLimit` is given up on, and `yield` refuses an event past
+// `hardLimit`, which a waiting producer never reaches.
 final class LocalTerminalStreams: @unchecked Sendable {
   enum YieldResult { case enqueued, dropped, terminated }
   private enum Route { case undecided, events, output }
-  private let lock = NSRecursiveLock()
+  /// Unread bytes before producers wait.
+  let byteLimit: Int
+  /// A producer that doesn't wait is refused here.
+  let hardLimit: Int
+  /// How long a producer waits while the consumer takes nothing.
+  let stallLimit: Duration
+
+  private let condition = NSCondition()
   private let conflictError: Error
   private var route: Route = .undecided
-  private var buffered: [LocalTerminalEvent] = []
+  private var queue: [LocalTerminalEvent] = []
+  private var head = 0
+  private var queuedBytes = 0
   private var completed = false
   private var terminalError: Error?
-  private var eventsStream: AsyncThrowingStream<LocalTerminalEvent, Error>?
-  private var outputStream: AsyncThrowingStream<Data, Error>?
-  private var eventsContinuation: AsyncThrowingStream<LocalTerminalEvent, Error>.Continuation?
-  private var outputContinuation: AsyncThrowingStream<Data, Error>.Continuation?
+  private var consumerGone = false
+  private var notifiedTermination = false
+  private var waiter: CheckedContinuation<LocalTerminalEvent?, Error>?
+  private var roomWaiters: [UUID: CheckedContinuation<Bool, Never>] = [:]
+  private var lastProgress = ContinuousClock.now
+  /// The iterator taking events; a second one is refused.
+  private var activeConsumer: UUID?
   private var termination: (@Sendable () -> Void)?
 
-  init(conflictError: Error) { self.conflictError = conflictError }
+  init(conflictError: Error, byteLimit: Int = 1 << 20, stallLimit: Duration = .seconds(30)) {
+    self.conflictError = conflictError
+    self.byteLimit = byteLimit
+    self.hardLimit = byteLimit * 8
+    self.stallLimit = stallLimit
+  }
 
   func onTermination(_ callback: @escaping @Sendable () -> Void) {
-    lock.withLock { termination = callback }
+    condition.withLock { termination = callback }
+  }
+
+  /// What an event costs against the limits: its bytes plus framing.
+  private static func cost(_ event: LocalTerminalEvent) -> Int {
+    switch event {
+    case .output(let data): data.count + 64
+    case .geometry: 256
+    }
+  }
+
+  /// Ends the consumer when the iterator that took events goes away, as an
+  /// abandoned stream's termination did.
+  private final class ConsumerToken: @unchecked Sendable {
+    let id = UUID()
+    weak var streams: LocalTerminalStreams?
+    init(_ streams: LocalTerminalStreams) { self.streams = streams }
+    deinit { streams?.released(id) }
   }
 
   func events() -> AsyncThrowingStream<LocalTerminalEvent, Error> {
-    lock.lock()
-    if route == .output {
-      lock.unlock()
-      return AsyncThrowingStream { $0.finish(throwing: conflictError) }
-    }
-    if let eventsStream {
-      lock.unlock()
-      return eventsStream
-    }
+    condition.lock()
+    defer { condition.unlock() }
+    if route == .output { return AsyncThrowingStream { $0.finish(throwing: conflictError) } }
     route = .events
-    let (stream, continuation) = AsyncThrowingStream<LocalTerminalEvent, Error>.makeStream(
-      bufferingPolicy: .bufferingOldest(64))
-    eventsStream = stream
-    eventsContinuation = continuation
-    continuation.onTermination = { [weak self] _ in self?.consumerEnded() }
-    for event in buffered { continuation.yield(event) }
-    buffered.removeAll()
-    let finished = completed
-    let error = terminalError
-    lock.unlock()
-    if finished { continuation.finish(throwing: error) }
-    return stream
+    let token = ConsumerToken(self)
+    return AsyncThrowingStream<LocalTerminalEvent, Error>(unfolding: { [token] in
+      guard let streams = token.streams else { return nil }
+      return try await streams.next(token.id)
+    })
   }
 
   func output() -> AsyncThrowingStream<Data, Error> {
-    lock.lock()
-    if route == .events {
-      lock.unlock()
-      return AsyncThrowingStream { $0.finish(throwing: conflictError) }
+    condition.lock()
+    defer { condition.unlock() }
+    if route == .events { return AsyncThrowingStream { $0.finish(throwing: conflictError) } }
+    if route == .undecided {
+      route = .output
+      // Geometry waiting from before the choice isn't output.
+      queue = queue[head...].filter { if case .output = $0 { true } else { false } }
+      head = 0
+      queuedBytes = queue.reduce(0) { $0 + Self.cost($1) }
     }
-    if let outputStream {
-      lock.unlock()
-      return outputStream
-    }
-    route = .output
-    let (stream, continuation) = AsyncThrowingStream<Data, Error>.makeStream(
-      bufferingPolicy: .bufferingOldest(64))
-    outputStream = stream
-    outputContinuation = continuation
-    continuation.onTermination = { [weak self] _ in self?.consumerEnded() }
-    for case .output(let data) in buffered { continuation.yield(data) }
-    buffered.removeAll()
-    let finished = completed
-    let error = terminalError
-    lock.unlock()
-    if finished { continuation.finish(throwing: error) }
-    return stream
+    let token = ConsumerToken(self)
+    return AsyncThrowingStream<Data, Error>(unfolding: { [token] in
+      guard let streams = token.streams else { return nil }
+      while let event = try await streams.next(token.id) {
+        if case .output(let data) = event { return data }
+      }
+      return nil
+    })
+  }
+
+  private func released(_ id: UUID) {
+    let mine = condition.withLock { activeConsumer == id }
+    if mine { consumerEnded() }
   }
 
   func yield(_ event: LocalTerminalEvent) -> YieldResult {
-    lock.lock()
-    defer { lock.unlock() }
-    guard !completed else { return .terminated }
-    switch route {
-    case .undecided:
-      guard buffered.count < 64 else { return .dropped }
-      buffered.append(event)
+    condition.lock()
+    if completed || consumerGone {
+      condition.unlock()
+      return .terminated
+    }
+    if route == .output, case .geometry = event {
+      condition.unlock()
       return .enqueued
-    case .events:
-      switch eventsContinuation!.yield(event) {
-      case .enqueued: return .enqueued
-      case .dropped: return .dropped
-      case .terminated: return .terminated
-      @unknown default: return .dropped
+    }
+    if let waiter {
+      // Nothing is queued while a consumer waits.
+      self.waiter = nil
+      lastProgress = .now
+      condition.unlock()
+      waiter.resume(returning: event)
+      return .enqueued
+    }
+    let cost = Self.cost(event)
+    guard queuedBytes + cost <= hardLimit else {
+      condition.unlock()
+      return .dropped
+    }
+    queue.append(event)
+    queuedBytes += cost
+    condition.unlock()
+    return .enqueued
+  }
+
+  /// Blocks a reader thread until there's room. False when the consumer
+  /// took nothing for `stallLimit`; true once there's room, or once the
+  /// streams ended (the next `yield` says so).
+  func waitForRoom() -> Bool {
+    condition.lock()
+    defer { condition.unlock() }
+    while queuedBytes > byteLimit, !completed, !consumerGone {
+      let idle = ContinuousClock.now - lastProgress
+      if idle >= stallLimit { return false }
+      let remaining = stallLimit - idle
+      let seconds = Double(remaining.components.seconds) + Double(remaining.components.attoseconds) / 1e18
+      _ = condition.wait(until: Date().addingTimeInterval(min(seconds, 1)))
+    }
+    return true
+  }
+
+  /// The same for a task: suspends until there's room. False when the
+  /// consumer took nothing for `stallLimit`.
+  func room() async -> Bool {
+    let id = UUID()
+    let deadline = Task { [weak self] in
+      guard let limit = self?.stallLimit else { return }
+      try? await Task.sleep(for: limit)
+      self?.resumeRoomWaiter(id, false)
+    }
+    defer { deadline.cancel() }
+    return await withCheckedContinuation { continuation in
+      condition.lock()
+      guard queuedBytes > byteLimit, !completed, !consumerGone else {
+        condition.unlock()
+        continuation.resume(returning: true)
+        return
       }
-    case .output:
-      guard case .output(let data) = event else { return .enqueued }
-      switch outputContinuation!.yield(data) {
-      case .enqueued: return .enqueued
-      case .dropped: return .dropped
-      case .terminated: return .terminated
-      @unknown default: return .dropped
-      }
+      roomWaiters[id] = continuation
+      condition.unlock()
     }
   }
 
+  private func resumeRoomWaiter(_ id: UUID, _ value: Bool) {
+    let continuation = condition.withLock { roomWaiters.removeValue(forKey: id) }
+    continuation?.resume(returning: value)
+  }
+
+  /// The consumer's next event, or nil at the end.
+  private func next(_ consumer: UUID) async throws -> LocalTerminalEvent? {
+    try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<LocalTerminalEvent?, Error>) in
+        condition.lock()
+        if activeConsumer == nil { activeConsumer = consumer }
+        guard activeConsumer == consumer else {
+          condition.unlock()
+          continuation.resume(throwing: conflictError)
+          return
+        }
+        if Task.isCancelled || consumerGone {
+          consumerGone = true
+          condition.unlock()
+          continuation.resume(returning: nil)
+          notifyTermination()
+          return
+        }
+        if head < queue.count {
+          let event = queue[head]
+          head += 1
+          queuedBytes -= Self.cost(event)
+          if head > 256, head * 2 > queue.count {
+            queue.removeFirst(head)
+            head = 0
+          }
+          lastProgress = .now
+          let released = queuedBytes <= byteLimit ? takeRoomWaiters() : []
+          condition.broadcast()
+          condition.unlock()
+          released.forEach { $0.resume(returning: true) }
+          continuation.resume(returning: event)
+          return
+        }
+        if completed {
+          let error = terminalError
+          condition.unlock()
+          if let error { continuation.resume(throwing: error) } else { continuation.resume(returning: nil) }
+          return
+        }
+        guard waiter == nil else {
+          condition.unlock()
+          continuation.resume(throwing: conflictError)
+          return
+        }
+        waiter = continuation
+        lastProgress = .now
+        let released = takeRoomWaiters()
+        condition.broadcast()
+        condition.unlock()
+        released.forEach { $0.resume(returning: true) }
+      }
+    } onCancel: {
+      consumerEnded()
+    }
+  }
+
+  /// Must hold the lock.
+  private func takeRoomWaiters() -> [CheckedContinuation<Bool, Never>] {
+    let all = Array(roomWaiters.values)
+    roomWaiters.removeAll()
+    return all
+  }
+
   func finish(throwing error: Error?) {
-    lock.lock()
+    condition.lock()
     guard !completed else {
-      lock.unlock()
+      condition.unlock()
       return
     }
     completed = true
     terminalError = error
-    let events = eventsContinuation
-    let output = outputContinuation
-    lock.unlock()
-    events?.finish(throwing: error)
-    output?.finish(throwing: error)
+    // What's queued is still delivered; the end comes after it.
+    let waiting = head < queue.count ? nil : waiter
+    if waiting != nil { waiter = nil }
+    let released = takeRoomWaiters()
+    let selected = route != .undecided
+    condition.broadcast()
+    condition.unlock()
+    released.forEach { $0.resume(returning: true) }
+    if let waiting {
+      if let error { waiting.resume(throwing: error) } else { waiting.resume(returning: nil) }
+    }
+    if selected { notifyTermination() }
   }
 
+  /// The consumer stopped (its task was cancelled): nothing more is queued.
   private func consumerEnded() {
-    let callback = lock.withLock { termination }
+    condition.lock()
+    consumerGone = true
+    let waiting = waiter
+    waiter = nil
+    queue.removeAll()
+    head = 0
+    queuedBytes = 0
+    let released = takeRoomWaiters()
+    condition.broadcast()
+    condition.unlock()
+    released.forEach { $0.resume(returning: true) }
+    waiting?.resume(returning: nil)
+    notifyTermination()
+  }
+
+  private func notifyTermination() {
+    let callback: (@Sendable () -> Void)? = condition.withLock {
+      guard !notifiedTermination else { return nil }
+      notifiedTermination = true
+      return termination
+    }
     callback?()
   }
 }

@@ -15,7 +15,8 @@ import XCTest
 @MainActor
 final class PerformanceTests: XCTestCase {
     private var app: XCUIApplication!
-    private var lines: [String] = []
+    /// Written by the test on the main actor, read once by `tearDown` after it.
+    nonisolated(unsafe) private var lines: [String] = []
 
     override func tearDown() {
         let attachment = XCTAttachment(string: lines.joined(separator: "\n"))
@@ -388,8 +389,8 @@ final class PerformanceTests: XCTestCase {
     /// An hour of a busy log, sped up: 360,000 lines (100 a second for an
     /// hour), 100 lines every 50 ms, through one terminal, with the app's
     /// footprint sampled outside the runner (the "PERF … mark" lines time
-    /// it). Then bursts of 1,000, 3,600 and 50,000 lines at once, to see
-    /// which the window keeps up with.
+    /// it). Then bursts of 1,000, 3,600, 100,000 and 1,000,000 lines at
+    /// once, each of which must finish with the window still attached.
     func testMemoryAfterLongOutput() throws {
         launch(try path())
         executionTimeAllowance = 1500
@@ -421,14 +422,17 @@ final class PerformanceTests: XCTestCase {
         record("interrupted during paced output", interrupted.exists ? 1 : 0)
         RunLoop.current.run(until: Date().addingTimeInterval(5))
         mark("settled")
-        for (lines, token) in [(1000, 11), (3600, 12), (50000, 13)] {
+        // macOS seq writes 1000000 as 1e+06 without a format.
+        for (lines, token) in [(1000, 11), (3600, 12), (100_000, 13), (1_000_000, 14)] {
             guard !interrupted.exists else { break }
             mark("burst \(lines)")
-            let burst = run("seq 1 \(lines); echo PERF_$((\(token)*2))_BURST", done: "PERF_\(token * 2)_BURST", timeout: 120)
+            let burst = run("seq -f '%.0f' 1 \(lines); echo PERF_$((\(token)*2))_BURST", done: "PERF_\(token * 2)_BURST",
+                            timeout: 600)
             record("burst of \(lines) lines", burst ?? -1)
             record("interrupted by \(lines) lines", interrupted.exists ? 1 : 0)
         }
         mark("bursts done")
+        XCTAssertFalse(interrupted.exists, "Output interrupted the window")
         XCTAssertTrue(row.exists)
     }
 }

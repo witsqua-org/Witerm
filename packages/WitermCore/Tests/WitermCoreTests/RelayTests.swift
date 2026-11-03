@@ -1252,14 +1252,17 @@ final class RelayTests: XCTestCase {
     }
   }
 
-  func testRemoteBoundedStreamFailsWithoutDroppingAndContinuing() async throws {
+  /// Output that arrives before anyone reads it is kept whole and in order,
+  /// however many frames: the reader waits on bytes, never drops.
+  func testRemoteEarlyOutputIsKeptWholeAndInOrder() async throws {
     let p = try RelayTestPeers()
-    let (client, host, socket, _) = try await p.channels()
+    let (client, host, _, _) = try await p.channels()
     let session = LocalSessionInfo(
       id: "77777777-7777-4777-8777-777777777777", name: "Shell",
       createdAt: Date(timeIntervalSince1970: 1_700_000_000), columns: 80, rows: 24)
     let rpc = RemoteRPCConnection(channel: client)
     await rpc.start()
+    let frames = 300
     let server = Task {
       let request = try RemoteWire.decoder().decode(
         LocalAgentRequest.self, from: await host.receive())
@@ -1268,26 +1271,20 @@ final class RelayTests: XCTestCase {
           LocalAgentFrame(
             id: request.id, kind: .response,
             ok: true, session: session, mode: .view)))
-      for index in 0..<65 {
+      for index in 0..<frames {
         try await host.send(
-          RemoteWire.encoder().encode(LocalAgentFrame(kind: .output, data: Data([UInt8(index)]))))
+          RemoteWire.encoder().encode(LocalAgentFrame(kind: .output, data: Data([UInt8(index % 256)]))))
       }
+      try await host.send(RemoteWire.encoder().encode(LocalAgentFrame(kind: .closed)))
     }
     _ = try await rpc.request(
       LocalAgentRequest(
         operation: .attach, sessionID: session.id,
         columns: 80, rows: 24, mode: .view))
     try await server.value
-    for _ in 0..<100 {
-      if await socket.inbox.isClosed() { break }
-      try await Task.sleep(for: .milliseconds(2))
-    }
     var chunks: [Data] = []
-    do {
-      for try await bytes in rpc.output { chunks.append(bytes) }
-      XCTFail("overflow ended successfully")
-    } catch { XCTAssertEqual(error as? RelayError, .backpressure) }
-    XCTAssertEqual(chunks, (UInt8(0)..<64).map { Data([$0]) })
+    for try await bytes in rpc.output { chunks.append(bytes) }
+    XCTAssertEqual(chunks, (0..<frames).map { Data([UInt8($0 % 256)]) })
     await rpc.close()
     await host.close()
   }

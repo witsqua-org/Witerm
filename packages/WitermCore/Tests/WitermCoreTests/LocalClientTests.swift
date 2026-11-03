@@ -462,27 +462,36 @@
       }
     }
 
-    func testBoundedStreamClosesInsteadOfDroppingVTBytes() async throws {
+    /// More output than the client keeps unread, sent before anyone reads it
+    /// and then read slowly, arrives whole and in order: the client's reader
+    /// waits (and so does the sender) instead of ending the attachment.
+    func testOutputPastTheLimitWaitsAndArrivesWholeAndInOrder() async throws {
+      let frames = 2500
       let broker = try LocalTestBroker { request, descriptor in
         try LocalTestBroker.send(
           LocalAgentFrame(
             id: request.id, kind: .response, ok: true, session: Self.session, mode: request.mode),
           to: descriptor)
-        for value in 0..<70 {
-          try LocalTestBroker.send(
-            LocalAgentFrame(kind: .output, data: Data([UInt8(value)])), to: descriptor)
+        for index in 0..<frames {
+          var chunk = Data(repeating: 65, count: 1000)
+          chunk[0] = UInt8(index & 0xff)
+          chunk[1] = UInt8(index >> 8)
+          try LocalTestBroker.send(LocalAgentFrame(kind: .output, data: chunk), to: descriptor)
         }
+        try LocalTestBroker.send(LocalAgentFrame(kind: .closed), to: descriptor)
       }
       defer { broker.stop() }
       let attachment = try await LocalAgentClient(socketURL: broker.socketURL).attach(
         sessionID: Self.session.id)
-      try await broker.ended.wait()
-      var received = Data()
-      do {
-        for try await chunk in attachment.output { received.append(chunk) }
-        XCTFail("overflow completed without an error")
-      } catch { XCTAssertEqual(error as? LocalAgentClientError, .backpressure) }
-      XCTAssertEqual(received, Data((0..<64).map(UInt8.init)))
+      // Nobody reads for a while: 2.5 MB waits rather than overflowing.
+      try await Task.sleep(for: .milliseconds(500))
+      var next = 0
+      for try await chunk in attachment.output {
+        XCTAssertEqual(Int(chunk[0]) | Int(chunk[1]) << 8, next, "out of order")
+        next += 1
+        if next.isMultiple(of: 200) { try await Task.sleep(for: .milliseconds(5)) }
+      }
+      XCTAssertEqual(next, frames, "output was lost")
     }
 
     func testCancellationClosesAnOutstandingRPC() async throws {

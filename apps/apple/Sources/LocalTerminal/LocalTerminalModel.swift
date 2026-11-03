@@ -4,8 +4,9 @@ import Foundation
 import Observation
 import WitermCore
 
-/// The terminal printed faster than this window's renderer took it in, so
-/// the background service ended the attachment rather than drop output.
+/// This window took none of the terminal's output for 30 seconds (it was
+/// stuck), so its attachment was let go. Fast output alone never does this:
+/// the service and the client wait for a slow window.
 struct LocalOutputOverflow: Error {}
 
 struct LocalTerminalIssue: Equatable {
@@ -19,7 +20,7 @@ struct LocalTerminalIssue: Equatable {
         if error is LocalOutputOverflow {
             // Not a paste: say what happened, and that nothing stopped.
             title = String(localized: "Terminal Interrupted", bundle: .main)
-            recovery = String(localized: "It printed faster than this window could show. Open it again; it kept running.", bundle: .main)
+            recovery = String(localized: "This window stopped showing its output. Open it again; it kept running.", bundle: .main)
             return
         }
         switch error as? LocalAgentClientError {

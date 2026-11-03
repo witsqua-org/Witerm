@@ -276,6 +276,9 @@ actor RemoteRPCConnection {
   }
 
   private func emit(_ event: LocalTerminalEvent) async throws -> Bool {
+    // A slow renderer slows this reader instead of losing output; a
+    // handoff's detach ACK is never held behind it.
+    if !detaching, !(await terminal.room()) { throw RelayError.backpressure }
     switch terminal.yield(event) {
     case .enqueued: return true
     case .dropped: throw RelayError.backpressure

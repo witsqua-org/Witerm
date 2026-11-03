@@ -767,6 +767,54 @@ final class AgentTests: XCTestCase {
         try await client.close(sessionID: session.id)
     }
 
+    /// A burst far bigger than any queue reaches a slow renderer whole: the
+    /// client waits for its consumer, the service stops reading the pane
+    /// meanwhile, and nobody ends the attachment for being slow.
+    func testABurstReachesASlowRendererWithoutEndingIt() async throws {
+        guard FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/tmux") else { throw XCTSkip("tmux is required") }
+        let url = try directory()
+        let configuration = try AgentConfiguration(stateDirectory: url, shellPath: "/bin/sh")
+        let broker = try AgentBroker(configuration: configuration)
+        try broker.start()
+        defer {
+            broker.stop()
+            _ = try? CommandRunner(executable: "/opt/homebrew/bin/tmux", environment: configuration.environment)
+                .run(["-S", url.appendingPathComponent("tmux.sock").path, "kill-server"])
+        }
+        let client = LocalAgentClient(socketURL: url.appendingPathComponent("agent.sock"))
+        let session = try await client.create(name: "Burst", columns: 80, rows: 24)
+        let attachment = try await client.attach(sessionID: session.id, columns: 80, rows: 24, history: true)
+        let reader = Task { () throws -> (bytes: Int, tail: String) in
+            var bytes = 0
+            var events = 0
+            var tail = ""
+            let started = Date()
+            // A slow renderer that keeps typing too: input answers aren't
+            // stuck behind the queued output for long.
+            for try await event in attachment.events {
+                guard case .output(let data) = event else { continue }
+                bytes += data.count
+                events += 1
+                tail = String((tail + String(decoding: data, as: UTF8.self)).suffix(4096))
+                if tail.contains("BURST_DONE_42") { break }
+                if events.isMultiple(of: 16) { try await Task.sleep(for: .milliseconds(10)) }
+                if events == 2000 { try await attachment.send(Data(":".utf8)) }
+                if Date().timeIntervalSince(started) > 180 { break }
+            }
+            return (bytes, tail)
+        }
+        try await Task.sleep(for: .milliseconds(500))
+        try await attachment.send(Data("seq 1 200000; echo BURST_DONE_$((6*7))\n".utf8))
+        let result = try await reader.value
+        XCTAssertTrue(result.tail.contains("BURST_DONE_42"), "The burst didn't finish on a slow renderer")
+        XCTAssertTrue(result.tail.contains("200000"), "The last line didn't arrive")
+        // Ending the reader above ended the attachment (as always); the
+        // session itself still runs.
+        let listed = try await client.sessions()
+        XCTAssertTrue(listed.contains { $0.id == session.id })
+        try await client.close(sessionID: session.id)
+    }
+
     func testCreateStartsInDirectoryAndNamesItsSession() async throws {
         guard FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/tmux") else { throw XCTSkip("tmux is required") }
         let url = try directory()

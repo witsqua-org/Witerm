@@ -30,7 +30,12 @@ final class PTYChild: @unchecked Sendable {
         self.master = master
     }
 
-    func start(output: @escaping @Sendable (Data) -> Bool, ended: @escaping @Sendable () -> Void) {
+    /// `room` paces reading: it's asked before each read and may block until
+    /// whoever receives the output can take more; false stops reading. Not
+    /// reading lets the PTY fill, so tmux coalesces the screen for a slow
+    /// client instead of anything being dropped here.
+    func start(output: @escaping @Sendable (Data) -> Bool, room: @escaping @Sendable () -> Bool = { true },
+               ended: @escaping @Sendable () -> Void) {
         let shouldStart = lock.withLock { () -> Bool in
             guard !started else { return false }; started = true; return true
         }
@@ -47,6 +52,8 @@ final class PTYChild: @unchecked Sendable {
                 if ready < 0 && errno == EINTR { continue }
                 if ready < 0 { break }
                 if ready > 0 {
+                    // Outside the barrier, so pausing output elsewhere never waits on a slow client.
+                    guard room() else { break }
                     outputBarrier.lock()
                     let readable = lock.withLock { !stopped && master == descriptor }
                     guard readable else { outputBarrier.unlock(); break }

@@ -50,7 +50,7 @@ Production Developer ID signing and notarization haven't been done yet.
 **Security and limits**
 - The state directory is 0700 and sockets are 0600. Both sides check the peer's user ID, and a lock stops a second service from starting.
 - At most 16 sessions and 32 connections, with bounded input and output queues.
-- A viewer that can't keep up is disconnected and redraws when it reattaches. Bytes are never dropped silently.
+- A viewer that can't keep up slows its terminal's output instead of being disconnected: past 1 MiB unread it stops reading, the service stops reading the pane for it, and tmux coalesces the screen meanwhile, so `seq 1 1000000` in a window ends with the window still attached. Nothing is dropped or reordered; lines tmux skipped for a slow window stay in tmux's scrollback. Only a viewer that takes nothing for 30 seconds (45 at the service) is disconnected, and it redraws when it reattaches. (Before Round 12b the window's client kept 64 events and the service ended the attachment at 256 KiB queued, so a burst of about 3,600 lines interrupted a Mac window.)
 
 Protocol details: [local-agent-v1](../protocol/local-agent-v1.md).
 
@@ -60,7 +60,7 @@ Protocol details: [local-agent-v1](../protocol/local-agent-v1.md).
 make test-local   # WitermCore, service tests, and a real tmux smoke test
 ```
 
-The smoke tool (`tools/local-agent-smoke`) uses a temporary 0700 directory, its own tmux server, and `/bin/sh`. It checks input and `stty size`, exclusive control and read-only limits, redraw on reconnect, the same shell PID across reconnect and service restart, and explicit close. It cleans up only what it created and never prints terminal content.
+The smoke tool (`tools/local-agent-smoke`) uses a temporary 0700 directory, its own tmux server, and `/bin/sh`. It checks input and `stty size`, exclusive control and read-only limits, redraw on reconnect, the same shell PID across reconnect and service restart, bursts of 100,000 and 1,000,000 lines to a deliberately slow scrollback reader (each must end with its last line and a marker, without the attachment ending), and explicit close. It cleans up only what it created and never prints terminal content.
 
 ### Checking the installed service
 

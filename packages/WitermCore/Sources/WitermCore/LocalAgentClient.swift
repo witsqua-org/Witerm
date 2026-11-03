@@ -553,6 +553,13 @@
             finish(throwing: error)
             return
           }
+          // A slow renderer slows this reader, and so the socket and the
+          // service, instead of losing output. Only one that takes nothing
+          // for a long while is let go.
+          guard terminal.waitForRoom() else {
+            finish(throwing: LocalAgentClientError.backpressure)
+            return
+          }
         }
         guard buffer.count < LocalWire.maximumLineBytes else {
           finish(throwing: LocalAgentClientError.invalidResponse)
