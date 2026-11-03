@@ -91,6 +91,8 @@ struct SSHNativeTerminalView: UIViewRepresentable {
     let scheme: ColorScheme?
     let announceOutput: Bool
     let keyboardRequest: Int
+    /// The bar's actions for the key row while the bar is hidden for typing.
+    var barActions: AnyView? = nil
 
     func makeUIView(context: Context) -> UIView {
         let container = UIView()
@@ -103,6 +105,7 @@ struct SSHNativeTerminalView: UIViewRepresentable {
         host.surface.updateFontSize(fontSize)
         host.surface.updateAppearance(highContrast: highContrast, scheme: scheme, palette: palette)
         host.surface.announceOutput = announceOutput
+        host.surface.terminal.setBarActions(barActions)
         host.coordinator.toggleKeyboard(keyboardRequest)
     }
 

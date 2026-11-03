@@ -25,6 +25,8 @@ struct RemoteTerminalWorkspace: View {
     /// Mirrors whether a terminal is shown, changed without animation; see
     /// `SSHWorkspaceView.show(_:)` for why the tab bar must not animate.
     @State private var terminalShown = false
+    /// See `TerminalTypingBar`.
+    @State private var typingBarHidden = false
 
 
     var body: some View {
@@ -41,6 +43,8 @@ struct RemoteTerminalWorkspace: View {
         .navigationBarTitleDisplayMode(model.selectedGrant == nil ? .large : .inline)
         // iPhone gives the terminal the whole screen; iPad keeps the tabs.
         .toolbar(terminalShown && compactTerminal ? .hidden : .automatic, for: .tabBar)
+        .modifier(TerminalTypingBar(terminal: { [finder] in finder.terminal }, identity: model.attachmentID,
+                                    enabled: compactTerminal && model.displayAttachment != nil, barHidden: $typingBarHidden))
         .onReceive(NotificationCenter.default.publisher(for: .witermFindInTerminal)) { _ in
             if model.displayAttachment != nil { finding = true }
         }
@@ -329,6 +333,7 @@ struct RemoteTerminalWorkspace: View {
                     announceOutput: terminalAnnounceOutput,
                     finder: finder,
                     inputDestination: model.selectedGrant.map { $0.host.name + " · " + attachment.session.name },
+                    barActions: typingBarHidden ? keyRowActions : nil,
                     onFailure: { model.attachmentFailed($0, id: id) },
                     onEnded: { model.attachmentEnded(id: id) }
                 )
@@ -403,6 +408,11 @@ struct RemoteTerminalWorkspace: View {
                 .accessibilityIdentifier("terminalActionsMenu")
         }
         .font(WitermType.rowDetail)
+    }
+
+    /// The bar's actions menu as the key row's last key, tinted like the bar.
+    private var keyRowActions: AnyView {
+        AnyView(TerminalKeyRowActions { terminalSecondaryActions }.tint(model.selectedGrant?.host.identityHue))
     }
 
     /// Text size first (the most frequent), then find and display, typing or

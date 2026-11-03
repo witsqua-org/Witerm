@@ -55,6 +55,7 @@ Saved hosts are under **SSH Hosts** in the Mac sidebar. On iOS they're in **Term
 - Knowing which hosts have saved credentials never asks: only their attributes are read.
 - Host profiles never contain passwords, keys, or passphrases. Host-key pins stay readable without authentication, so verification never waits for Face ID.
 - Changing a host's address, port, or username clears its saved credentials.
+- **No Save Password offer (iOS).** The password and passphrase fields aren't marked as login passwords, so iOS doesn't offer to save them into Passwords, which syncs, after Connect, Save, Cancel or a swipe down. By design, Passwords AutoFill doesn't fill these fields either: type or paste the password, or save it with **Save Credentials on This Device**. Internally the fields are marked as one-time codes (`textContentType(.oneTimeCode)`), the one kind iOS 27 leaves alone; with no content type, or with the fields emptied before the form closes, it still asked (the latter after a swipe down). The Mac form is unchanged and makes no such offer.
 - In the simulator, Keychain access needs a normally signed build, and Face ID is driven with `xcrun simctl spawn <device> notifyutil -s com.apple.BiometricKit.enrollmentChanged 1 && … -p com.apple.BiometricKit.enrollmentChanged` (enroll) and `-p com.apple.BiometricKit_Sim.pearl.match` / `.nomatch`.
 
 ## Mobile keyboard row

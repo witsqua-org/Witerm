@@ -481,3 +481,40 @@ Further production work on 2026-11-03: the Round 11 leftovers, a second review o
 - `WitermMacTerminalTests` (33, with the new `MacRound12Tests`: dropped paths are one shell word each, the terminal's menu offers Paste only while typing, the Open step's title is a word, and "Paired *date*").
 - On this round's signed build: `DevicePairingFixtureTests` (the Edit sheet; Approve with "Also unpair the older…" on, which leaves one Fixture iPhone; Approve with it off, which leaves two with their dates; and Approve in Chinese), `LocalSessionFlowTests.testRenameAndFindInFreshSession`, `ContinueFlowTests.testContinueSheetStartsAtTheFirstUnfinishedStep`, `SSHConfigurationTests.testSaveEditFavoriteAndSearchWithoutConnecting`, `SSHHostFlowTests.testCreateTrustConnectAndRemoveFixtureHost` (disposable OpenSSH fixture), both `WelcomeTourTests`, and `PerformanceTests`. `AuditScreenshotTests` (light, dark and Chinese) ran up to the snippet editor; after the Esc fix its re-run was cut short by another app coming to the front, and wasn't repeated while the Mac was in use.
 - WitermiOS builds (`CODE_SIGNING_ALLOWED=NO`) with the shared-file changes.
+
+## Round 13: iOS
+
+Two decisions the lead took from Round 12's "Reviewed, not changed" list, on 2026-11-03, on the iPhone 18 Pro simulator against the disposable OpenSSH fixture. Captures are in `.build/screenshots/round13-ios/` (`before/`, `after/`, and the attempts `e2/`, `e2b/`, `e3/`); landscape captures come out in the portrait buffer, rotated.
+
+| # | Finding | Change | Main code |
+|---|---|---|---|
+| 1 | After Connect, iOS offered "Save Password?" into Passwords, which syncs, over the host-key sheet (`before/offer-2.png`; twice in one run: a new host and its reconnect). SSH credentials stay on this device: in memory, or the protected Keychain after **Save Credentials on This Device**. | The password and passphrase fields are marked as one-time codes on iOS, the one kind iOS 27 leaves alone: no offer after Connect, a reconnect, Cancel, or a swipe down. Typing and pasting (the field's edit menu) still work. Passwords AutoFill no longer fills these fields, by design. Witerm's own Face ID–protected saving is unchanged. The Mac form keeps its password type. | [SSHProfileForm](../../apps/apple/Sources/SSH/SSHProfileForm.swift) (`sshSecretInput`) |
+| 2 | In landscape on iPhone with the keyboard up, the navigation bar (78 pt) took rows from a terminal that had five (85 × 5). | While the terminal has the keyboard in landscape, the bar steps aside. The key row then ends, pinned outside its scrolling keys, with Hide Keyboard and the bar's actions menu (the same items: text size, Find, SFTP Files, Port Forwarding, Terminal Display, Disconnect; or for a paired terminal Terminal Display, Stop or Start Typing, Leave). Hiding the keyboard, portrait, or the terminal losing focus brings the bar back with the back button, the title and the switcher. The bar stays while VoiceOver runs, in portrait, on iPad, and on regular widths. Paired-Mac and SSH terminals share it. | [TerminalFindBar](../../apps/apple/Sources/RemoteTerminal/TerminalFindBar.swift) (`TerminalTypingBar`), [MobileTerminalAccessory](../../apps/apple/Sources/RemoteTerminal/MobileTerminalAccessory.swift), [RemoteNativeTerminalView](../../apps/apple/Sources/RemoteTerminal/RemoteNativeTerminalView.swift), [SSHWorkspaceView](../../apps/apple/Sources/SSH/SSHWorkspaceView.swift), [RemoteTerminalWorkspace](../../apps/apple/Sources/RemoteTerminal/RemoteTerminalWorkspace.swift) |
+
+**Suppressing Save Password, what was tried** (`SSHTypingChromeTests.testConnectingDoesNotOfferToSaveThePassword`, offers counted and declined, never accepted):
+
+| Attempt | New host | Reconnect | Cancel, swipe down |
+|---|---|---|---|
+| Before: `.textContentType(.password)` | offered | offered | not run |
+| No content type | offered | offered | not run |
+| No content type, fields emptied before the form closes | none | none | offered (a swipe down closes the sheet without the form's code) |
+| `.textContentType(.oneTimeCode)` (kept) | none | none | none |
+
+**Landscape numbers** (`SSHTypingChromeTests.testLandscapeTypingGivesTheTerminalTheBarsRows`, five hide-and-show cycles). This simulator shows only the key row for the keyboard, as with a hardware keyboard, and that couldn't be changed within this round's rules; so the keyboard-up grids are with the key row alone. With the software keyboard (Round 12: 85 × 5) the same 78 pt give four or five rows, about 85 × 9, not measured here.
+
+| Measure | Before | After |
+|---|---|---|
+| Grid, keyboard (key row) up / down | 85 × 15 / 85 × 17 | 85 × 20 / 85 × 17 |
+| Keyboard shown → typeable (and bar gone) | 0.24–0.30 s | 0.33–0.37 s, once 0.55 s |
+| Keyboard hidden → gone (and bar back) | 0.03–0.05 s | 0.08–0.10 s |
+| Grid changes per show / hide | 1 / 1 | 2 / 2: show 52–69 ms apart (the bar leaves, then the key row's inset arrives); hide 5–8 ms apart (one frame). Both within the SSH resize's 75 ms settling, so the host gets one window-size change. |
+| Portrait with the key row up / after landscape | 45 × 41 / 45 × 13 | 45 × 41 / 45 × 13 |
+
+Times include the test's polling (about 50 ms). The bar leaves when the terminal is about to take the keyboard (a new will-change focus notice, posted before the responder change) and returns when the keyboard has gone; first tries that followed focus after the change, or the keyboard's will-show notification (not posted for the key row alone), left 0.27–0.6 s between the two grids.
+
+**Found, not changed:**
+
+- Rotating with the key row up leaves the terminal's keyboard inset stale until the keyboard is next hidden or shown: in landscape the terminal runs 32 pt under the key row (85 × 22 instead of 85 × 20; before: 85 × 17 instead of 85 × 15), and back in portrait it's 13 rows tall with the rest of the screen empty (45 × 13 instead of 45 × 41), on the build before this round too. Round 12's rotation test checked only the columns.
+- Larger or smaller text from either actions menu (the bar's in portrait too) changes the cell size at once, but the grid kept its columns and rows for the 5 s the test waited (85 × 22 with 18 pt rows, which no longer fit). The size is kept and applies fully at the next launch. Not checked on the build before this round; the font path wasn't changed.
+
+**Verification:** see [verification.md](../verification.md), Round 13: iOS.

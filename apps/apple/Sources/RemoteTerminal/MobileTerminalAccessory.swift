@@ -121,6 +121,13 @@ enum MobileKey: String, CaseIterable, Identifiable {
     private let keys = UIStackView()
     private var keyHeightConstraint: NSLayoutConstraint?
     private var shown: [MobileKey] = []
+    /// At the row's end while the navigation bar steps aside for typing
+    /// (iPhone in landscape): Hide Keyboard, which brings the bar back, and
+    /// the bar's own actions menu. Hidden otherwise.
+    private let barKeys = UIStackView()
+    private let hideKeyboard = UIButton(type: .system)
+    private var barActions: UIHostingController<AnyView>?
+    private var barKeyHeights: [NSLayoutConstraint] = []
 
     /// Keys grow with the text up to the size terminal text stops at, so the
     /// largest accessibility sizes keep more than four keys on screen; a
@@ -141,13 +148,27 @@ enum MobileKey: String, CaseIterable, Identifiable {
         allowsSelfSizing = true
         autoresizingMask = [.flexibleWidth]
         let scroll = UIScrollView()
-        scroll.translatesAutoresizingMaskIntoConstraints = false
         scroll.showsHorizontalScrollIndicator = true
-        addSubview(scroll)
+        // The scrolling keys take whatever width the bar's keys leave.
+        let row = UIStackView(arrangedSubviews: [scroll, barKeys])
+        row.axis = .horizontal
+        row.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(row)
         NSLayoutConstraint.activate([
-            scroll.leadingAnchor.constraint(equalTo: leadingAnchor), scroll.trailingAnchor.constraint(equalTo: trailingAnchor),
-            scroll.topAnchor.constraint(equalTo: topAnchor), scroll.bottomAnchor.constraint(equalTo: bottomAnchor)
+            row.leadingAnchor.constraint(equalTo: leadingAnchor), row.trailingAnchor.constraint(equalTo: trailingAnchor),
+            row.topAnchor.constraint(equalTo: topAnchor), row.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
+        scroll.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        scroll.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        barKeys.axis = .horizontal
+        barKeys.alignment = .center
+        barKeys.spacing = 6
+        barKeys.isLayoutMarginsRelativeArrangement = true
+        barKeys.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 0, leading: 6, bottom: 0, trailing: 6)
+        barKeys.setContentHuggingPriority(.required, for: .horizontal)
+        barKeys.setContentCompressionResistancePriority(.required, for: .horizontal)
+        barKeys.isHidden = true
+        configureHideKeyboard()
         keys.axis = .horizontal
         keys.spacing = 6
         keys.translatesAutoresizingMaskIntoConstraints = false
@@ -189,7 +210,7 @@ enum MobileKey: String, CaseIterable, Identifiable {
     @objc private func applyOutline() {
         let outlined = UIAccessibility.isDarkerSystemColorsEnabled
         let color = UIColor.label.withAlphaComponent(0.45).resolvedColor(with: traitCollection).cgColor
-        for key in keys.arrangedSubviews {
+        for key in keys.arrangedSubviews + [hideKeyboard] {
             key.layer.borderWidth = outlined ? 1 : 0
             key.layer.borderColor = color
             key.layer.cornerRadius = 8
@@ -321,7 +342,59 @@ enum MobileKey: String, CaseIterable, Identifiable {
         }
     }
 
+    private func configureHideKeyboard() {
+        var configuration = UIButton.Configuration.plain()
+        configuration.image = UIImage(systemName: "keyboard.chevron.compact.down")
+        configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(textStyle: .callout)
+        configuration.baseForegroundColor = .label
+        configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10)
+        hideKeyboard.configuration = configuration
+        let label = String(localized: "Hide Keyboard", bundle: .main)
+        hideKeyboard.accessibilityLabel = label
+        hideKeyboard.accessibilityIdentifier = "terminalKey-hideKeyboard"
+        hideKeyboard.showsLargeContentViewer = true
+        hideKeyboard.largeContentTitle = label
+        hideKeyboard.largeContentImage = UIImage(systemName: "keyboard.chevron.compact.down")
+        hideKeyboard.backgroundColor = .tertiarySystemFill
+        hideKeyboard.layer.cornerRadius = 8
+        hideKeyboard.widthAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+        hideKeyboard.setContentHuggingPriority(.required, for: .horizontal)
+        hideKeyboard.addAction(UIAction { [weak self] _ in
+            guard let terminal = self?.terminal, terminal.isFirstResponder else { return }
+            _ = terminal.resignFirstResponder()
+        }, for: .touchUpInside)
+        barKeys.addArrangedSubview(hideKeyboard)
+        let height = hideKeyboard.heightAnchor.constraint(equalToConstant: keyHeight)
+        height.isActive = true
+        barKeyHeights.append(height)
+    }
+
+    /// Shows the bar's keys with `actions` as the menu, or hides them. The
+    /// menu is hosted once per key row (one per terminal view) and keeps its
+    /// first content, which reads what changes (such as typing or watching)
+    /// as it opens, so SwiftUI's updates don't rebuild it each time.
+    func setBarActions(_ actions: AnyView?) {
+        guard let actions else {
+            if !barKeys.isHidden { barKeys.isHidden = true }
+            return
+        }
+        if barActions == nil {
+            let host = UIHostingController(rootView: actions)
+            host.sizingOptions = .intrinsicContentSize
+            host.view.backgroundColor = .clear
+            host.view.setContentHuggingPriority(.required, for: .horizontal)
+            host.view.setContentCompressionResistancePriority(.required, for: .horizontal)
+            barKeys.addArrangedSubview(host.view)
+            let height = host.view.heightAnchor.constraint(equalToConstant: keyHeight)
+            height.isActive = true
+            barKeyHeights.append(height)
+            barActions = host
+        }
+        if barKeys.isHidden { barKeys.isHidden = false }
+    }
+
     @objc private func updateMetrics() {
+        barKeyHeights.forEach { $0.constant = keyHeight }
         guard let constraint = keyHeightConstraint, constraint.constant != keyHeight else { return }
         constraint.constant = keyHeight
         frame.size.height = keyHeight + 8
@@ -363,6 +436,34 @@ enum MobileKey: String, CaseIterable, Identifiable {
         button.setContentHuggingPriority(.required, for: .horizontal)
         button.setContentCompressionResistancePriority(.required, for: .horizontal)
         if let action { button.addAction(UIAction { _ in action() }, for: .touchUpInside) }
+    }
+}
+
+/// The terminal's actions menu as the key row's last key, while the
+/// navigation bar that usually holds it is hidden for typing.
+struct TerminalKeyRowActions<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    var body: some View {
+        Menu(content: content) {
+            Image(systemName: "ellipsis")
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(Color(uiColor: .label))
+                .frame(minWidth: 44, maxHeight: .infinity)
+                .padding(.horizontal, 4)
+                .background(Color(uiColor: .tertiarySystemFill), in: .rect(cornerRadius: 8, style: .continuous))
+                .overlay {
+                    // The other keys' outline with Increase Contrast.
+                    if contrast == .increased {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .strokeBorder(Color(uiColor: .label).opacity(0.45), lineWidth: 1)
+                    }
+                }
+                .contentShape(.rect(cornerRadius: 8, style: .continuous))
+        }
+        .accessibilityLabel(String(localized: "Terminal Actions", bundle: .main))
+        .accessibilityIdentifier("terminalKey-actions")
     }
 }
 

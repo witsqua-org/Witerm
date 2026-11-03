@@ -101,6 +101,81 @@ struct TerminalKeyboardButton: View {
     }
 }
 
+/// On iPhone in landscape the keyboard leaves a terminal a handful of
+/// rows, and the navigation bar takes 78 pt of them. While the terminal has
+/// the keyboard, the bar steps aside; the key row then ends with Hide
+/// Keyboard (which brings the bar back) and the bar's actions. The bar stays
+/// in portrait, on iPad and other regular widths, and while VoiceOver runs,
+/// so the title and state stay where VoiceOver finds them.
+struct TerminalTypingBar: ViewModifier {
+    /// The input view whose focus this follows.
+    let terminal: () -> UIView?
+    /// Changes when another terminal view is shown.
+    let identity: AnyHashable?
+    /// A terminal that can type is shown in the compact layout.
+    let enabled: Bool
+    @Binding var barHidden: Bool
+    @Environment(\.horizontalSizeClass) private var horizontal
+    @Environment(\.verticalSizeClass) private var vertical
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+    /// Whether the terminal has (or is about to have) the keyboard focus.
+    /// Plain storage: it's read right after it's written, in the same event.
+    @State private var focus = Focus()
+
+    private final class Focus {
+        var focused = false
+    }
+
+    static func hidesBar(enabled: Bool, horizontal: UserInterfaceSizeClass?, vertical: UserInterfaceSizeClass?,
+                         voiceOver: Bool, focused: Bool) -> Bool {
+        enabled && horizontal == .compact && vertical == .compact && !voiceOver && focused
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .toolbar(barHidden ? .hidden : .automatic, for: .navigationBar)
+            // The bar leaves as the terminal is about to take the keyboard,
+            // ahead of the keyboard's own inset, and returns once the keyboard
+            // has gone, next to the inset's removal rather than a keyboard
+            // animation apart. When no keyboard notification comes (focus
+            // moving while the keyboard stays), it follows a moment later.
+            .onReceive(NotificationCenter.default.publisher(for: .witermTerminalFocusWillChange)) { note in
+                focusChanged(note)
+                update(hideOnly: true)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .witermTerminalFocusChanged)) { note in
+                focusChanged(note)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { update() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in update() }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidChangeFrameNotification)) { _ in update() }
+            .onChange(of: identity, initial: true) {
+                focus.focused = terminal()?.isFirstResponder ?? false
+                update()
+            }
+            .onChange(of: enabled) { update() }
+            .onChange(of: horizontal) { update() }
+            .onChange(of: vertical) { update() }
+            .onChange(of: voiceOver) { update() }
+    }
+
+    private func focusChanged(_ note: Notification) {
+        guard let view = terminal(), (note.object as AnyObject?) === view else { return }
+        focus.focused = note.userInfo?["focused"] as? Bool ?? false
+    }
+
+    /// Without an animation of its own. `hideOnly` before the keyboard
+    /// moves: the bar may leave then, but returns only once it has gone.
+    private func update(hideOnly: Bool = false) {
+        let hide = Self.hidesBar(enabled: enabled, horizontal: horizontal, vertical: vertical,
+                                 voiceOver: voiceOver, focused: focus.focused)
+        guard hide != barHidden, hide || !hideOnly else { return }
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) { barHidden = hide }
+    }
+}
+
 /// Search in the terminal's scrollback, shown under a terminal's header.
 struct TerminalFindBar: View {
     let finder: TerminalFinder

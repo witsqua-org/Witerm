@@ -387,8 +387,9 @@ struct SSHProfileForm: View {
                        : String(localized: "Enter or Edit Private Key", bundle: .main)) { draft.wrappedValue.showingPrivateKey = true }
             }
             SecureField(String(localized: "Private Key Passphrase (Optional)", bundle: .main), text: draft.passphrase)
+                .sshSecretInput(password: false)
         } else {
-            SecureField(String(localized: "Password", bundle: .main), text: draft.password).textContentType(.password)
+            SecureField(String(localized: "Password", bundle: .main), text: draft.password).sshSecretInput(password: true)
                 .focused($focused, equals: .credential(draft.wrappedValue.id))
                 .accessibilityIdentifier("sshHostPassword")
         }
@@ -539,6 +540,22 @@ struct SSHProfileForm: View {
 }
 
 extension View {
+    /// An SSH password or passphrase. On iOS it isn't marked as a login
+    /// password: iOS would offer, after Connect or Cancel, to save it into
+    /// Passwords, which syncs, while SSH credentials stay on this device
+    /// (in memory, or the protected Keychain when the person saves them).
+    /// A field marked as a one-time code is the only kind iOS leaves alone;
+    /// unmarked, or emptied before the form closes, it still asked (the
+    /// latter after a swipe down). Passwords AutoFill doesn't fill it either.
+    /// The Mac keeps what it had: the password type on the password only.
+    @ViewBuilder func sshSecretInput(password: Bool) -> some View {
+        #if os(iOS)
+        self.textContentType(.oneTimeCode)
+        #else
+        if password { self.textContentType(.password) } else { self }
+        #endif
+    }
+
     @ViewBuilder func sshLiteralInput() -> some View {
         #if os(iOS)
         self.textInputAutocapitalization(.never)

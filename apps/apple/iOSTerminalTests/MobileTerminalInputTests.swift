@@ -92,9 +92,8 @@ import XCTest
         terminal.terminalDelegate = spy
         let accessory = try XCTUnwrap(terminal.inputAccessoryView)
         accessory.layoutIfNeeded()
-        func buttons(_ view: UIView) -> [UIButton] {
-            (view as? UIButton).map { [$0] } ?? view.subviews.flatMap(buttons)
-        }
+        // The bar's keys are hidden until the bar is.
+        func buttons(_ view: UIView) -> [UIButton] { visibleButtons(view) }
         let keys = buttons(accessory)
         let control = try XCTUnwrap(keys.first { $0.accessibilityIdentifier == "terminalControlModifier" })
         let interrupt = try XCTUnwrap(keys.first { $0.accessibilityIdentifier == "terminalInterrupt" })
@@ -117,9 +116,8 @@ import XCTest
         let terminal = input(), spy = InputSpy()
         terminal.terminalDelegate = spy
         let accessory = try XCTUnwrap(terminal.inputAccessoryView)
-        func buttons(_ view: UIView) -> [UIButton] {
-            (view as? UIButton).map { [$0] } ?? view.subviews.flatMap(buttons)
-        }
+        // The bar's keys are hidden until the bar is.
+        func buttons(_ view: UIView) -> [UIButton] { visibleButtons(view) }
         func press(_ id: String) throws -> String {
             spy.bytes = Data()
             try XCTUnwrap(buttons(accessory).first { $0.accessibilityIdentifier == "terminalKey-\(id)" })
@@ -157,8 +155,7 @@ import XCTest
         let terminal = input()
         let accessory = try XCTUnwrap(terminal.inputAccessoryView)
         func identifiers() -> [String] {
-            func buttons(_ view: UIView) -> [UIButton] { (view as? UIButton).map { [$0] } ?? view.subviews.flatMap(buttons) }
-            return buttons(accessory).compactMap(\.accessibilityIdentifier)
+            visibleButtons(accessory).compactMap(\.accessibilityIdentifier)
         }
         XCTAssertEqual(identifiers(), ["terminalInterrupt", "terminalKey-escape"])
         // The Snippets key waits for a snippet, then takes its saved place.
@@ -181,12 +178,61 @@ import XCTest
         accessory.frame = CGRect(x: 0, y: 600, width: 390, height: accessory.intrinsicContentSize.height)
         accessory.setNeedsLayout()
         accessory.layoutIfNeeded()
-        func buttons(_ view: UIView) -> [UIButton] { (view as? UIButton).map { [$0] } ?? view.subviews.flatMap(buttons) }
-        let keys = buttons(accessory)
+        let keys = visibleButtons(accessory)
         let right = try XCTUnwrap(keys.first { $0.accessibilityIdentifier == "terminalKey-right" })
         let edge = right.convert(right.bounds, to: accessory).maxX
         XCTAssertLessThanOrEqual(edge, 390, "Widths: \(keys.prefix(7).map { Int($0.bounds.width) })")
         for key in keys { XCTAssertGreaterThanOrEqual(key.bounds.width, 44); XCTAssertGreaterThanOrEqual(key.bounds.height, 44) }
+    }
+
+    private func visibleButtons(_ view: UIView) -> [UIButton] {
+        guard !view.isHidden else { return [] }
+        return (view as? UIButton).map { [$0] } ?? view.subviews.flatMap(visibleButtons)
+    }
+
+    /// While the bar is hidden for typing, the key row ends with Hide
+    /// Keyboard and the bar's actions, pinned outside the scrolling keys;
+    /// otherwise neither is there.
+    func testBarKeysJoinTheRowOnlyWhileTheBarIsHidden() throws {
+        let terminal = input()
+        let accessory = try XCTUnwrap(terminal.inputAccessoryView as? MobileTerminalAccessory)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 874, height: 402))
+        window.addSubview(accessory)
+        func layOut() {
+            accessory.frame = CGRect(x: 0, y: 350, width: 874, height: accessory.intrinsicContentSize.height)
+            accessory.setNeedsLayout()
+            accessory.layoutIfNeeded()
+        }
+        layOut()
+        XCTAssertFalse(visibleButtons(accessory).contains { $0.accessibilityIdentifier == "terminalKey-hideKeyboard" })
+        terminal.setBarActions(AnyView(TerminalKeyRowActions { Button("Item") {} }))
+        layOut()
+        let hide = try XCTUnwrap(visibleButtons(accessory).first { $0.accessibilityIdentifier == "terminalKey-hideKeyboard" })
+        XCTAssertEqual(hide.accessibilityLabel, String(localized: "Hide Keyboard", bundle: .main))
+        XCTAssertGreaterThanOrEqual(hide.bounds.width, 44)
+        XCTAssertGreaterThanOrEqual(hide.bounds.height, 44)
+        let frame = hide.convert(hide.bounds, to: accessory)
+        XCTAssertLessThanOrEqual(frame.maxX, 874)
+        XCTAssertGreaterThan(frame.minX, 874 - 160, "Pinned at the row's end, not scrolled with the keys")
+        terminal.setBarActions(nil)
+        layOut()
+        XCTAssertFalse(visibleButtons(accessory).contains { $0.accessibilityIdentifier == "terminalKey-hideKeyboard" })
+    }
+
+    /// The bar steps aside only in a compact terminal on iPhone in landscape,
+    /// while it has the keyboard, and never while VoiceOver runs.
+    func testBarHidesOnlyWhileTypingInCompactLandscape() {
+        func hides(_ enabled: Bool = true, _ horizontal: UserInterfaceSizeClass? = .compact, _ vertical: UserInterfaceSizeClass? = .compact,
+                   voiceOver: Bool = false, focused: Bool = true) -> Bool {
+            TerminalTypingBar.hidesBar(enabled: enabled, horizontal: horizontal, vertical: vertical, voiceOver: voiceOver, focused: focused)
+        }
+        XCTAssertTrue(hides())
+        XCTAssertFalse(hides(focused: false), "Not without the keyboard")
+        XCTAssertFalse(hides(true, .compact, .regular), "Not in portrait")
+        XCTAssertFalse(hides(true, .regular, .compact), "Not on a regular width (iPad, a large iPhone in landscape)")
+        XCTAssertFalse(hides(true, .regular, .regular), "Not on iPad")
+        XCTAssertFalse(hides(voiceOver: true), "Not while VoiceOver runs")
+        XCTAssertFalse(hides(false), "Not without a terminal that types")
     }
 
     func testSnippetsTypeOnlyWhenInputIsAllowed() {

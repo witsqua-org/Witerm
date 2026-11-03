@@ -425,6 +425,8 @@ struct SSHTerminalSurface: View {
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.colorScheme) private var systemColorScheme
     #if os(iOS)
+    /// The bar's actions for the key row while the bar is hidden for typing.
+    var barActions: AnyView? = nil
     @Environment(\.dynamicTypeSize) private var typeSize
     #endif
     @AppStorage(TerminalFontSize.key) private var fontSize = TerminalFontSize.standard
@@ -442,7 +444,7 @@ struct SSHTerminalSurface: View {
         SSHNativeTerminalView(host: session.terminal, fontSize: TerminalFontSize.clamped(fontSize) * TerminalTextScale.factor(typeSize),
             highContrast: highContrast || contrast == .increased, palette: palette,
             scheme: systemColorScheme, announceOutput: announceOutput,
-            keyboardRequest: keyboardRequest)
+            keyboardRequest: keyboardRequest, barActions: barActions)
             .id(session.token)
         #endif
     }
@@ -464,6 +466,8 @@ struct SSHWorkspaceView<Home: View>: View {
     @ViewBuilder let home: Home
     @State private var keyboardRequest = 0
     @State private var finding = false
+    /// See `TerminalTypingBar`.
+    @State private var typingBarHidden = false
     @AppStorage("witerm.sshBackgroundTipSeen") private var backgroundTipSeen = false
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.colorScheme) private var systemColorScheme
@@ -567,7 +571,8 @@ struct SSHWorkspaceView<Home: View>: View {
                     }
                     .padding(.horizontal, WitermMetrics.Space.l).padding(.vertical, WitermMetrics.Space.s)
                 }
-                SSHTerminalSurface(session: session, keyboardRequest: keyboardRequest)
+                SSHTerminalSurface(session: session, keyboardRequest: keyboardRequest,
+                                   barActions: typingBarHidden ? keyRowActions(session) : nil)
             } else if let connecting = model.connectingProfile {
                 VStack(spacing: WitermMetrics.Space.l) {
                     ProgressView(String(localized: "Connecting to \(String(connecting.name))…", bundle: .main))
@@ -604,6 +609,8 @@ struct SSHWorkspaceView<Home: View>: View {
         .navigationTitle(shownProfile?.name ?? (sizeClass == .regular ? "" : String(localized: "Terminals", bundle: .main)))
         .navigationBarTitleDisplayMode(shownID == nil ? .large : .inline)
         .toolbar(shownID == nil || sizeClass == .regular ? .automatic : .hidden, for: .tabBar)
+        .modifier(TerminalTypingBar(terminal: { [session = shown] in session?.terminal.surface.terminal }, identity: shown?.token,
+                                    enabled: shown != nil && sizeClass != .regular, barHidden: $typingBarHidden))
         .toolbar {
             if shownID != nil, sizeClass != .regular {
                 ToolbarItem(placement: .topBarLeading) {
@@ -629,18 +636,7 @@ struct SSHWorkspaceView<Home: View>: View {
             }
             ToolbarItem(placement: .primaryAction) {
                 if let session = shown {
-                    Menu {
-                        TerminalTextSizeControls()
-                        if sizeClass != .regular {
-                            Button(String(localized: "Find in Terminal", bundle: .main), systemImage: "magnifyingglass") { finding = true }
-                                .accessibilityIdentifier("terminalFind")
-                        }
-                        Button(String(localized: "SFTP Files", bundle: .main), systemImage: "folder") { ui.files = session }
-                        Button(String(localized: "Port Forwarding", bundle: .main), systemImage: "arrow.left.arrow.right") { ui.forwarding = session }
-                        Button(String(localized: "Terminal Display", bundle: .main), systemImage: "paintpalette") { ui.appearance = true }
-                        Divider()
-                        Button(String(localized: "Disconnect", bundle: .main), systemImage: WitermSymbols.disconnect, role: .destructive) { model.disconnect(session) }
-                    } label: { Label(String(localized: "Terminal Actions", bundle: .main), systemImage: WitermSymbols.more) }
+                    Menu { sessionActions(session, find: sizeClass != .regular) } label: { Label(String(localized: "Terminal Actions", bundle: .main), systemImage: WitermSymbols.more) }
                     .accessibilityIdentifier("sshSessionActions")
                 } else if sizeClass != .regular {
                     Button(String(localized: "Add SSH Host…", bundle: .main), systemImage: "plus", action: ui.presentNew)
@@ -649,6 +645,26 @@ struct SSHWorkspaceView<Home: View>: View {
                 }
             }
         }
+    }
+
+    /// The bar's actions menu as the key row's last key, tinted like the bar.
+    private func keyRowActions(_ session: SSHSession) -> AnyView {
+        AnyView(TerminalKeyRowActions { sessionActions(session, find: true) }.tint(session.profile.identityHue))
+    }
+
+    /// The terminal's actions, in the bar's menu or, while the bar is hidden
+    /// for typing, on the key row. iPad's header has its own Find button.
+    @ViewBuilder private func sessionActions(_ session: SSHSession, find: Bool) -> some View {
+        TerminalTextSizeControls()
+        if find {
+            Button(String(localized: "Find in Terminal", bundle: .main), systemImage: "magnifyingglass") { finding = true }
+                .accessibilityIdentifier("terminalFind")
+        }
+        Button(String(localized: "SFTP Files", bundle: .main), systemImage: "folder") { ui.files = session }
+        Button(String(localized: "Port Forwarding", bundle: .main), systemImage: "arrow.left.arrow.right") { ui.forwarding = session }
+        Button(String(localized: "Terminal Display", bundle: .main), systemImage: "paintpalette") { ui.appearance = true }
+        Divider()
+        Button(String(localized: "Disconnect", bundle: .main), systemImage: WitermSymbols.disconnect, role: .destructive) { model.disconnect(session) }
     }
 
     /// Other live SSH terminals, for switching from the title.
