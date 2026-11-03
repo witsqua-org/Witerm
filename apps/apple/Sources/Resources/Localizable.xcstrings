@@ -86,19 +86,19 @@
         }
       }
     },
-    "%@ didn’t answer. Check your network, or that the server is running." : {
+    "%@ didn’t answer. Check your network, or that the relay server is running." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ didn’t answer. Check your network, or that the server is running."
+            "value" : "%@ didn’t answer. Check your network, or that the relay server is running."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ 没有响应。请检查网络，或确认服务器正在运行。"
+            "value" : "%@ 没有响应。请检查网络，或确认中继服务器正在运行。"
           }
         }
       }
@@ -188,19 +188,19 @@
         }
       }
     },
-    "%@ runs a Witerm version this app can’t use. Update the server or the app." : {
+    "%@ runs a Witerm version this app can’t use. Update the relay server or the app." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ runs a Witerm version this app can’t use. Update the server or the app."
+            "value" : "%@ runs a Witerm version this app can’t use. Update the relay server or the app."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ 运行的 Witerm 版本无法与此应用配合使用。请更新服务器或应用。"
+            "value" : "%@ 运行的 Witerm 版本无法与此应用配合使用。请更新中继服务器或应用。"
           }
         }
       }
@@ -235,6 +235,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@，所以你现在仅观看。"
+          }
+        }
+      }
+    },
+    "%@. %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@. %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@。%2$@"
           }
         }
       }
@@ -1883,6 +1900,23 @@
         }
       }
     },
+    "Can’t Reach the Relay Server" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can’t Reach the Relay Server"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法连接中继服务器"
+          }
+        }
+      }
+    },
     "Can’t Verify Terminals on This Mac" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1913,23 +1947,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "尚不能打开“%@”"
-          }
-        }
-      }
-    },
-    "Change the server address to HTTPS." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Change the server address to HTTPS."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请将服务器地址改为 HTTPS。"
           }
         }
       }
@@ -2138,53 +2155,53 @@
         }
       }
     },
-    "Check that the server is available, then try again." : {
+    "Check that the relay server is reachable, then try again." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Check that the server is available, then try again."
+            "value" : "Check that the relay server is reachable, then try again."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请确认服务器可用，然后重试。"
+            "value" : "请确认中继服务器可以访问，然后重试。"
           }
         }
       }
     },
-    "Check that the server is running, then try again." : {
+    "Check that the relay server is running, then try again." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Check that the server is running, then try again."
+            "value" : "Check that the relay server is running, then try again."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请确认服务器已启动，然后重试。"
+            "value" : "请确认中继服务器已启动，然后重试。"
           }
         }
       }
     },
-    "Check that the server is up to date, then try again." : {
+    "Check that the relay server is up to date, then try again." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Check that the server is up to date, then try again."
+            "value" : "Check that the relay server is up to date, then try again."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请确认服务器已更新，然后重试。"
+            "value" : "请确认中继服务器已更新，然后重试。"
           }
         }
       }
@@ -2257,19 +2274,19 @@
         }
       }
     },
-    "Check the address, network and server, then try again." : {
+    "Check the address and your network, then try again." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Check the address, network and server, then try again."
+            "value" : "Check the address and your network, then try again."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请确认地址、网络与服务器是否可用，然后重试。"
+            "value" : "请检查地址和网络，然后重试。"
           }
         }
       }
@@ -2342,70 +2359,19 @@
         }
       }
     },
-    "Check the server address, then get an invitation from the matching device." : {
+    "Check the relay server’s address." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Check the server address, then get an invitation from the matching device."
+            "value" : "Check the relay server’s address."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请先核对服务器地址，再从对应的设备获取邀请。"
-          }
-        }
-      }
-    },
-    "Check the server connection when you are ready." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Check the server connection when you are ready."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "准备好后，检查服务器连接。"
-          }
-        }
-      }
-    },
-    "Check the server’s domain name." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Check the server’s domain name."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请检查服务器域名是否正确。"
-          }
-        }
-      }
-    },
-    "Check the terminal service on the device, then try again." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Check the terminal service on the device, then try again."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请检查该设备上的终端服务后重试。"
+            "value" : "请检查中继服务器的地址。"
           }
         }
       }
@@ -2427,23 +2393,6 @@
         }
       }
     },
-    "Check your network and server, then try again." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Check your network and server, then try again."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请确认网络与服务器可用，然后重试。"
-          }
-        }
-      }
-    },
     "Check your network and the device, then reconnect." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2457,6 +2406,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "请检查网络与该设备，然后重新连接。"
+          }
+        }
+      }
+    },
+    "Check your network and the relay server, then try again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check your network and the relay server, then try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请确认网络与中继服务器可用，然后重试。"
           }
         }
       }
@@ -3022,23 +2988,6 @@
         }
       }
     },
-    "Connection checked. The server is reachable." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Connection checked. The server is reachable."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "检查通过，服务器可以访问"
-          }
-        }
-      }
-    },
     "Connections" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3464,6 +3413,23 @@
         }
       }
     },
+    "Deleted %@." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deleted %@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已删除“%@”。"
+          }
+        }
+      }
+    },
     "Deleted %@. Undo is available." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3600,19 +3566,19 @@
         }
       }
     },
-    "Devices paired through this server stop appearing here. They stay paired." : {
+    "Devices paired through this relay server stop appearing here. They stay paired." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Devices paired through this server stop appearing here. They stay paired."
+            "value" : "Devices paired through this relay server stop appearing here. They stay paired."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "通过此服务器配对的设备将不再显示在这里，但仍保持配对。"
+            "value" : "通过此中继服务器配对的设备将不再显示在这里，但仍保持配对。"
           }
         }
       }
@@ -3664,23 +3630,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "断开"
-          }
-        }
-      }
-    },
-    "Disconnect another SSH session before opening a new one." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Disconnect another SSH session before opening a new one."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请先断开另一个 SSH 会话，再打开新的会话。"
           }
         }
       }
@@ -4297,19 +4246,36 @@
         }
       }
     },
-    "Enter the server’s host name, such as witerm.example.com." : {
+    "Enter the relay server’s address." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Enter the server’s host name, such as witerm.example.com."
+            "value" : "Enter the relay server’s address."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请输入服务器的主机名，例如 witerm.example.com。"
+            "value" : "请输入中继服务器的地址。"
+          }
+        }
+      }
+    },
+    "Enter the relay server’s host name, such as witerm.example.com." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter the relay server’s host name, such as witerm.example.com."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请输入中继服务器的主机名，例如 witerm.example.com。"
           }
         }
       }
@@ -4773,6 +4739,23 @@
         }
       }
     },
+    "Get an invitation from a device that uses this relay server." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Get an invitation from a device that uses this relay server."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请从使用此中继服务器的设备获取邀请。"
+          }
+        }
+      }
+    },
     "Give the relay server an HTTPS address." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5142,19 +5125,19 @@
         }
       }
     },
-    "Incompatible Server Version" : {
+    "Incompatible Relay Server" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Incompatible Server Version"
+            "value" : "Incompatible Relay Server"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "服务器版本不兼容"
+            "value" : "中继服务器不兼容"
           }
         }
       }
@@ -5380,19 +5363,19 @@
         }
       }
     },
-    "Invalid Server Address" : {
+    "Invalid Relay Server Address" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Invalid Server Address"
+            "value" : "Invalid Relay Server Address"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "服务器地址无效"
+            "value" : "中继服务器地址无效"
           }
         }
       }
@@ -5414,19 +5397,19 @@
         }
       }
     },
-    "Invitation From Another Server" : {
+    "Invitation From Another Relay Server" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Invitation From Another Server"
+            "value" : "Invitation From Another Relay Server"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "邀请来自其他服务器"
+            "value" : "邀请来自其他中继服务器"
           }
         }
       }
@@ -5992,19 +5975,19 @@
         }
       }
     },
-    "Made on this device. Copy the public key to the server." : {
+    "Made on this device. Add its public key to the SSH host." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Made on this device. Copy the public key to the server."
+            "value" : "Made on this device. Add its public key to the SSH host."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在此设备上生成。将公钥复制到服务器。"
+            "value" : "在此设备上生成。将其公钥添加到 SSH 主机。"
           }
         }
       }
@@ -6655,6 +6638,23 @@
         }
       }
     },
+    "No Terminal Open" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Terminal Open"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未打开终端"
+          }
+        }
+      }
+    },
     "No Terminals" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6736,23 +6736,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "还没有已配对的设备。"
-          }
-        }
-      }
-    },
-    "No server named %@ was found. Check the spelling." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No server named %@ was found. Check the spelling."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "找不到名为 %@ 的服务器。请检查拼写。"
           }
         }
       }
@@ -6893,6 +6876,23 @@
         }
       }
     },
+    "Not checked yet." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not checked yet."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未检查。"
+          }
+        }
+      }
+    },
     "Not responding" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6923,6 +6923,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "尚未使用"
+          }
+        }
+      }
+    },
+    "Nothing named %@ was found. Check the spelling." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing named %@ was found. Check the spelling."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "找不到名为 %@ 的主机。请检查拼写。"
           }
         }
       }
@@ -7059,6 +7076,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在 %1$@ 上打开 Witerm，“%2$@”位于“终端 → %3$@”中。"
+          }
+        }
+      }
+    },
+    "On the other device, check that Terminals is on in Settings, then try again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On the other device, check that Terminals is on in Settings, then try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请在另一台设备的“设置”中确认“终端”已打开，然后重试。"
           }
         }
       }
@@ -8287,19 +8321,19 @@
         }
       }
     },
-    "RSA keys aren't supported because they would be signed with SHA-1." : {
+    "Reachable" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "RSA keys aren't supported because they would be signed with SHA-1."
+            "value" : "Reachable"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "不支持 RSA 密钥，因为它们会使用 SHA-1 签名。"
+            "value" : "可以访问"
           }
         }
       }
@@ -8406,19 +8440,19 @@
         }
       }
     },
-    "Reconnect to open a new SSH shell. Whether previous programs keep running depends on the remote host." : {
+    "Reconnecting opens a new shell." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reconnect to open a new SSH shell. Whether previous programs keep running depends on the remote host."
+            "value" : "Reconnecting opens a new shell."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "重新连接会打开新的 SSH Shell。之前的程序是否继续运行取决于远程主机。"
+            "value" : "重新连接会打开新的 Shell。"
           }
         }
       }
@@ -8542,6 +8576,74 @@
         }
       }
     },
+    "Relay Server Not Found" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Relay Server Not Found"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "找不到中继服务器"
+          }
+        }
+      }
+    },
+    "Relay Server Not Ready" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Relay Server Not Ready"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "中继服务器尚未就绪"
+          }
+        }
+      }
+    },
+    "Relay Server Timed Out" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Relay Server Timed Out"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "中继服务器响应超时"
+          }
+        }
+      }
+    },
+    "Relay Server Unavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Relay Server Unavailable"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "中继服务器暂不可用"
+          }
+        }
+      }
+    },
     "Relay Servers" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8555,6 +8657,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "中继服务器"
+          }
+        }
+      }
+    },
+    "Relay server reachable." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Relay server reachable."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "中继服务器可以访问。"
           }
         }
       }
@@ -9341,23 +9460,6 @@
         }
       }
     },
-    "SSH disconnected when the app went to the background. Reconnect to open a new shell; previous programs depend on the remote host." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SSH disconnected when the app went to the background. Reconnect to open a new shell; previous programs depend on the remote host."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "App 进入后台时已断开 SSH。重新连接会打开新的 Shell，之前的程序是否继续运行取决于远程主机。"
-          }
-        }
-      }
-    },
     "SSH hosts and paired devices can't be reached. Terminals on this Mac keep running. Reconnect when the network returns; earlier input is never resent." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9388,6 +9490,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无法访问 SSH 主机和你的其他设备。网络恢复后请重新连接；之前的输入不会被重新发送。"
+          }
+        }
+      }
+    },
+    "SSH stopped when Witerm went to the background. Reconnecting opens a new shell." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSH stopped when Witerm went to the background. Reconnecting opens a new shell."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Witerm 进入后台时 SSH 已停止。重新连接会打开新的 Shell。"
           }
         }
       }
@@ -9473,6 +9592,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "保存以后使用"
+          }
+        }
+      }
+    },
+    "Saves the host without connecting." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saves the host without connecting."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存主机，但不连接。"
           }
         }
       }
@@ -9745,74 +9881,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在发送请求…"
-          }
-        }
-      }
-    },
-    "Server Not Found" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Server Not Found"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "找不到服务器"
-          }
-        }
-      }
-    },
-    "Server Not Ready" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Server Not Ready"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "服务器尚未就绪"
-          }
-        }
-      }
-    },
-    "Server Timed Out" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Server Timed Out"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "服务器响应超时"
-          }
-        }
-      }
-    },
-    "Server Unavailable" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Server Unavailable"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "服务器暂不可用"
           }
         }
       }
@@ -11381,6 +11449,23 @@
         }
       }
     },
+    "The Keychain on this device can’t be used right now. Try again later." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Keychain on this device can’t be used right now. Try again later."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此设备的钥匙串暂时无法使用。请稍后重试。"
+          }
+        }
+      }
+    },
     "The QR code expired before a device used it." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11398,19 +11483,19 @@
         }
       }
     },
-    "The SSH session has ended." : {
+    "The SSH connection ended." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The SSH session has ended."
+            "value" : "The SSH connection ended."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "SSH 会话已结束。"
+            "value" : "SSH 连接已结束。"
           }
         }
       }
@@ -11483,19 +11568,19 @@
         }
       }
     },
-    "The host key has changed and the connection was blocked. Check with your server administrator first." : {
+    "The host key has changed, so the connection was blocked. Check with the host’s administrator first." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The host key has changed and the connection was blocked. Check with your server administrator first."
+            "value" : "The host key has changed, so the connection was blocked. Check with the host’s administrator first."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "主机密钥已变化，连接已阻止。请先向服务器管理员核实。"
+            "value" : "主机密钥已变化，因此已阻止连接。请先向该主机的管理员核实。"
           }
         }
       }
@@ -11721,6 +11806,23 @@
         }
       }
     },
+    "The relay server" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The relay server"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该中继服务器"
+          }
+        }
+      }
+    },
     "The request was rejected. Nothing was paired." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11751,40 +11853,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "将移除 %@ 的已记住密钥。请先核实主机变更；下次连接需重新核对指纹。"
-          }
-        }
-      }
-    },
-    "The server" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The server"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "该服务器"
-          }
-        }
-      }
-    },
-    "The server is reachable" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The server is reachable"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "服务器可以访问"
           }
         }
       }
@@ -12316,19 +12384,19 @@
         }
       }
     },
-    "This server is already in your list." : {
+    "This relay server is already in your list." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This server is already in your list."
+            "value" : "This relay server is already in your list."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此服务器已在列表中。"
+            "value" : "此中继服务器已在列表中。"
           }
         }
       }
@@ -12792,23 +12860,6 @@
         }
       }
     },
-    "Unable to Connect to Server" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Unable to Connect to Server"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无法连接服务器"
-          }
-        }
-      }
-    },
     "Unable to Perform This Action" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -12839,23 +12890,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无法读取设备身份"
-          }
-        }
-      }
-    },
-    "Unable to Recognize Server Response" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Unable to Recognize Server Response"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无法识别服务器响应"
           }
         }
       }
@@ -12924,23 +12958,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无法验证终端连接"
-          }
-        }
-      }
-    },
-    "Unable to access secure storage on this device. Try again later." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Unable to access secure storage on this device. Try again later."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无法访问本机安全存储，请稍后重试。"
           }
         }
       }
@@ -13421,19 +13438,36 @@
         }
       }
     },
-    "Unrecognized Server Response" : {
+    "Unrecognized Relay Server Response" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Unrecognized Server Response"
+            "value" : "Unrecognized Relay Server Response"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "服务器响应无法识别"
+            "value" : "无法识别中继服务器的响应"
+          }
+        }
+      }
+    },
+    "Unrecognized Response" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unrecognized Response"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "响应无法识别"
           }
         }
       }
@@ -13468,6 +13502,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "上方向键"
+          }
+        }
+      }
+    },
+    "Up to 8 SSH hosts can be connected at once. Disconnect one first." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Up to 8 SSH hosts can be connected at once. Disconnect one first."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最多可同时连接 8 台 SSH 主机。请先断开一台。"
           }
         }
       }
@@ -13693,6 +13744,23 @@
         }
       }
     },
+    "Use an HTTPS address for the relay server." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use an HTTPS address for the relay server."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请为中继服务器使用 HTTPS 地址。"
+          }
+        }
+      }
+    },
     "Use another relay server" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13723,23 +13791,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "请在“添加设备”中使用。它已包含服务器。"
-          }
-        }
-      }
-    },
-    "Use the server’s HTTP or HTTPS address." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Use the server’s HTTP or HTTPS address."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "使用服务器的 HTTP 或 HTTPS 地址。"
           }
         }
       }
@@ -13965,19 +14016,19 @@
         }
       }
     },
-    "Waiting for the server" : {
+    "Waiting for the relay server" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Waiting for the server"
+            "value" : "Waiting for the relay server"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "等待服务器响应"
+            "value" : "等待中继服务器响应"
           }
         }
       }
@@ -14271,19 +14322,19 @@
         }
       }
     },
-    "You can save up to 8 servers. Remove one to add another." : {
+    "You can save up to 8 relay servers. Remove one to add another." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You can save up to 8 servers. Remove one to add another."
+            "value" : "You can save up to 8 relay servers. Remove one to add another."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "最多可保存 8 台服务器。请先移除一台再添加。"
+            "value" : "最多可保存 8 台中继服务器。请先移除一台再添加。"
           }
         }
       }
@@ -14318,6 +14369,57 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "由设备密码保护。"
+          }
+        }
+      }
+    },
+    "Your passcode protects them. Face ID is off for Witerm in Settings." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your passcode protects them. Face ID is off for Witerm in Settings."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由设备密码保护。已在“设置”中为 Witerm 关闭面容 ID。"
+          }
+        }
+      }
+    },
+    "Your passcode protects them. Optic ID is off for Witerm in Settings." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your passcode protects them. Optic ID is off for Witerm in Settings."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由设备密码保护。已在“设置”中为 Witerm 关闭光学 ID。"
+          }
+        }
+      }
+    },
+    "Your passcode protects them. Touch ID is off for Witerm in Settings." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your passcode protects them. Touch ID is off for Witerm in Settings."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由设备密码保护。已在“设置”中为 Witerm 关闭触控 ID。"
           }
         }
       }
