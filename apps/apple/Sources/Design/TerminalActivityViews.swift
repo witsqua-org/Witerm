@@ -64,6 +64,7 @@ struct TerminalActivityCard: View {
                         .padding(.vertical, WitermMetrics.Space.xs)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(WitermTheme.statusFill, in: .rect(cornerRadius: WitermMetrics.Radius.s))
+                        .witermOutline(cornerRadius: WitermMetrics.Radius.s)
                 }
                 if let status {
                     StatusBadge(status, systemImage: WitermSymbols.disconnected)

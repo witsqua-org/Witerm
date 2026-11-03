@@ -60,7 +60,7 @@ struct RemoteTerminalIssue {
                 recovery = String(localized: "This device can only watch this terminal. Choose Watch.", bundle: .main)
             default:
                 title = String(localized: "Terminal Connection Interrupted", bundle: .main)
-                recovery = String(localized: "Check the terminal service on the device, then try again.", bundle: .main)
+                recovery = String(localized: "On the other device, check that Terminals is on in Settings, then try again.", bundle: .main)
             }
         } else {
             let issue = PairingIssue(error)

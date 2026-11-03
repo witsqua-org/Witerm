@@ -26,7 +26,7 @@ struct PairingIssue {
                 title = String(localized: "Pairing Requires a Secure Connection", bundle: .main)
                 recovery = String(localized: "Give the relay server an HTTPS address.", bundle: .main)
             case .invalidServer:
-                title = String(localized: "Invalid Server Address", bundle: .main)
+                title = String(localized: "Invalid Relay Server Address", bundle: .main)
                 recovery = String(localized: "Check the relay server’s address, then try again.", bundle: .main)
             case .invalidDeviceName:
                 title = String(localized: "Invalid Device Name", bundle: .main)
@@ -35,8 +35,8 @@ struct PairingIssue {
                 title = String(localized: "Invalid Invitation", bundle: .main)
                 recovery = String(localized: "Paste the entire pairing invitation copied from the other device.", bundle: .main)
             case .serverMismatch:
-                title = String(localized: "Invitation From Another Server", bundle: .main)
-                recovery = String(localized: "Check the server address, then get an invitation from the matching device.", bundle: .main)
+                title = String(localized: "Invitation From Another Relay Server", bundle: .main)
+                recovery = String(localized: "Get an invitation from a device that uses this relay server.", bundle: .main)
             case .identityUnavailable:
                 title = String(localized: "Unable to Read Device Identity", bundle: .main)
                 recovery = String(localized: "Unlock your device, then try again.", bundle: .main)
@@ -44,8 +44,8 @@ struct PairingIssue {
                 title = String(localized: "Unable to Verify Device Identity", bundle: .main)
                 recovery = String(localized: "Cancel pairing and get a new invitation from the other device.", bundle: .main)
             case .invalidResponse:
-                title = String(localized: "Unable to Recognize Server Response", bundle: .main)
-                recovery = String(localized: "Check that the server is up to date, then try again.", bundle: .main)
+                title = String(localized: "Unrecognized Relay Server Response", bundle: .main)
+                recovery = String(localized: "Check that the relay server is up to date, then try again.", bundle: .main)
             case .api(let code):
                 switch code {
                 case "pairing_unavailable", "not_found":
@@ -59,13 +59,13 @@ struct PairingIssue {
                     recovery = String(localized: "Refresh and try again.", bundle: .main)
                 case "unauthorized":
                     title = String(localized: "Device Verification Failed", bundle: .main)
-                    recovery = String(localized: "Check that the server is available, then try again.", bundle: .main)
+                    recovery = String(localized: "Check that the relay server is reachable, then try again.", bundle: .main)
                 case "forbidden":
                     title = String(localized: "Unable to Perform This Action", bundle: .main)
                     recovery = String(localized: "Perform this action on the corresponding device in the pairing.", bundle: .main)
                 default:
                     title = String(localized: "Pairing Unavailable", bundle: .main)
-                    recovery = String(localized: "Check your network and server, then try again.", bundle: .main)
+                    recovery = String(localized: "Check your network and the relay server, then try again.", bundle: .main)
                 }
             }
         } else {

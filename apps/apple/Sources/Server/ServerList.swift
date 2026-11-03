@@ -22,8 +22,8 @@ final class ServerList {
 
         var message: String {
             switch self {
-            case .duplicate: String(localized: "This server is already in your list.", bundle: .main)
-            case .full: String(localized: "You can save up to 8 servers. Remove one to add another.", bundle: .main)
+            case .duplicate: String(localized: "This relay server is already in your list.", bundle: .main)
+            case .full: String(localized: "You can save up to 8 relay servers. Remove one to add another.", bundle: .main)
             }
         }
     }

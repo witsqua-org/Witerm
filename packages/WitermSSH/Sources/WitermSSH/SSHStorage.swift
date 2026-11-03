@@ -442,12 +442,29 @@ public final class SSHUnlock: @unchecked Sendable {
         // The hardware's biometry type is set even with nothing enrolled;
         // only enrolled biometrics protect, otherwise the passcode does.
         guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil) else { return .passcode }
-        switch context.biometryType {
+        return biometry(context.biometryType)
+    }
+
+    private static func biometry(_ type: LABiometryType) -> Method {
+        switch type {
         case .faceID: return .faceID
         case .touchID: return .touchID
         case .opticID: return .opticID
         default: return .passcode
         }
+    }
+
+    /// The biometry this device has but that is turned off for this app (the
+    /// person declined it, or switched it off in Settings), so the passcode
+    /// protects saved credentials instead. Nil otherwise.
+    public static var biometryOffForApp: Method? {
+        let context = LAContext()
+        var error: NSError?
+        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: nil),
+              !context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error),
+              (error as? LAError)?.code == .biometryNotAvailable else { return nil }
+        let method = biometry(context.biometryType)
+        return method == .passcode ? nil : method
     }
 
     /// Asks once. Biometrics come first, with `fallbackTitle` (Enter Password)
@@ -462,11 +479,22 @@ public final class SSHUnlock: @unchecked Sendable {
             return .unlocked
         } catch let error as LAError {
             switch error.code {
-            case .userCancel, .appCancel, .systemCancel: return .cancelled
+            case .userCancel, .appCancel, .systemCancel, .notInteractive: return .cancelled
             case .userFallback: return .enterPassword
-            case .biometryLockout:
-                _ = try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason)
-                return .unlocked
+            // Locked out, declined for this app at its first prompt, or
+            // switched off since: the passcode protects the same items.
+            case .biometryLockout, .biometryNotAvailable, .biometryNotEnrolled:
+                do {
+                    _ = try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason)
+                    return .unlocked
+                } catch let error as LAError where [.userCancel, .appCancel, .systemCancel, .notInteractive].contains(error.code) {
+                    return .cancelled
+                } catch let error as LAError where error.code == .passcodeNotSet {
+                    return .enterPassword
+                }
+            // The passcode was removed: the system deleted the saved items
+            // with it, so type the password for this attempt.
+            case .passcodeNotSet: return .enterPassword
             default: throw SSHFailure.storageUnavailable
             }
         }

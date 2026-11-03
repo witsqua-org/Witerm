@@ -10,14 +10,14 @@ struct SSHTrustPrompt: Identifiable {
 enum SSHUIError {
     static func message(_ error: Error) -> String {
         switch error as? SSHFailure {
-        case .hostKeyChanged: String(localized: "The host key has changed and the connection was blocked. Check with your server administrator first.", bundle: .main)
+        case .hostKeyChanged: String(localized: "The host key has changed, so the connection was blocked. Check with the host’s administrator first.", bundle: .main)
         case .hostKeyRejected: String(localized: "This host was not trusted. Connection cancelled.", bundle: .main)
         case .missingCredential: String(localized: "Enter credentials for the target host and every jump host.", bundle: .main)
         case .unsupportedPrivateKey: String(localized: "Unable to use this private key. Check its format and passphrase.", bundle: .main)
         case .invalidConfiguration: String(localized: "Check the host address, port and username.", bundle: .main)
         case .invalidForward: String(localized: "Check the listening port and target address.", bundle: .main)
         case .backpressure: String(localized: "The connection could not keep up and was closed. Reconnect to continue.", bundle: .main)
-        case .storageUnavailable: String(localized: "Unable to access secure storage on this device. Try again later.", bundle: .main)
+        case .storageUnavailable: String(localized: "The Keychain on this device can’t be used right now. Try again later.", bundle: .main)
         case .transferTooLarge: String(localized: "The file exceeds the transfer limit.", bundle: .main)
         case .invalidPath: String(localized: "Unable to use this file path.", bundle: .main)
         case .cancelled: String(localized: "Operation cancelled.", bundle: .main)
@@ -52,6 +52,8 @@ enum SSHRecovery { case editConnection, tryAgain }
 /// read, and are removed when the window closes.
 struct RemovedSSHProfile {
     let profile: SSHProfile
+    /// Whether any hop had saved credentials, read from attributes only.
+    let hadCredentials: Bool
     fileprivate let favorite: Bool
     fileprivate let lastUsed: Double?
     fileprivate let hue: Int?
@@ -217,8 +219,9 @@ final class SSHWorkspaceModel {
     func removeProfile(_ profile: SSHProfile) async {
         if let session = session(for: profile.id) { disconnect(session) }
         if connectingProfile?.id == profile.id { cancelConnecting() }
+        let hadCredentials = await !savedCredentialHosts(for: profile).isEmpty
         let removed = RemovedSSHProfile(
-            profile: profile, favorite: isFavorite(profile),
+            profile: profile, hadCredentials: hadCredentials, favorite: isFavorite(profile),
             lastUsed: lastUsed[profile.id.uuidString], hue: IdentityHue.assignment(for: profile.id.uuidString))
         do {
             let store = try SSHProfileStore()
@@ -280,7 +283,7 @@ final class SSHWorkspaceModel {
         cancelConnecting()
         guard session(for: profile.id) == nil else { return }
         guard sessions.count < Self.sessionLimit else {
-            report(String(localized: "Disconnect another SSH session before opening a new one.", bundle: .main), profileID: profile.id)
+            report(String(localized: "Up to 8 SSH hosts can be connected at once. Disconnect one first.", bundle: .main), profileID: profile.id)
             return
         }
         let current = UUID()
@@ -399,7 +402,7 @@ final class SSHWorkspaceModel {
     }
 
     func disconnect(_ session: SSHSession) {
-        disconnected[session.id] = String(localized: "Reconnect to open a new SSH shell. Whether previous programs keep running depends on the remote host.", bundle: .main)
+        disconnected[session.id] = String(localized: "Reconnecting opens a new shell.", bundle: .main)
         sessions.removeAll { $0 === session }
         session.close()
     }
@@ -419,8 +422,8 @@ final class SSHWorkspaceModel {
         sessions = []
         for session in open {
             disconnected[session.id] = forBackground
-                ? String(localized: "SSH disconnected when the app went to the background. Reconnect to open a new shell; previous programs depend on the remote host.", bundle: .main)
-                : String(localized: "Reconnect to open a new SSH shell. Whether previous programs keep running depends on the remote host.", bundle: .main)
+                ? String(localized: "SSH stopped when Witerm went to the background. Reconnecting opens a new shell.", bundle: .main)
+                : String(localized: "Reconnecting opens a new shell.", bundle: .main)
         }
         open.forEach { $0.close() }
     }
@@ -429,8 +432,8 @@ final class SSHWorkspaceModel {
         guard let session = sessions.first(where: { $0.token == token }) else { return }
         disconnect(session)
         disconnected[session.id] = error.map(SSHUIError.message)
-            ?? String(localized: "The SSH session has ended.", bundle: .main)
-        report(error.map(SSHUIError.message) ?? String(localized: "The SSH session has ended.", bundle: .main),
+            ?? String(localized: "The SSH connection ended.", bundle: .main)
+        report(error.map(SSHUIError.message) ?? String(localized: "The SSH connection ended.", bundle: .main),
                profileID: session.id)
     }
 

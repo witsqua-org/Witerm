@@ -175,8 +175,26 @@ enum MobileKey: String, CaseIterable, Identifiable {
                                               name: UIContentSizeCategory.didChangeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(rebuildKeys),
                                               name: UserDefaults.didChangeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(applyOutline),
+                                              name: UIAccessibility.darkerSystemColorsStatusDidChangeNotification, object: nil)
+        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (row: MobileTerminalAccessory, _: UITraitCollection) in
+            row.applyOutline()
+        }
         frame.size.height = keyHeight + 8
         updateControl()
+    }
+
+    /// With Increase Contrast every key gets the shared outline
+    /// (`WitermTheme.outline`), so its shape reaches 3:1 on the keyboard.
+    @objc private func applyOutline() {
+        let outlined = UIAccessibility.isDarkerSystemColorsEnabled
+        let color = UIColor.label.withAlphaComponent(0.45).resolvedColor(with: traitCollection).cgColor
+        for key in keys.arrangedSubviews {
+            key.layer.borderWidth = outlined ? 1 : 0
+            key.layer.borderColor = color
+            key.layer.cornerRadius = 8
+            key.layer.cornerCurve = .continuous
+        }
     }
 
     required init?(coder: NSCoder) { nil }
@@ -199,6 +217,7 @@ enum MobileKey: String, CaseIterable, Identifiable {
         for key in wanted {
             keys.addArrangedSubview(key == .control ? control : key == .paste ? pasteControl() : button(for: key))
         }
+        applyOutline()
     }
 
     /// The system Paste control: pasting from it counts as the person's own

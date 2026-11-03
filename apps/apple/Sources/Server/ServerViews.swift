@@ -11,7 +11,7 @@ struct ConnectionFeedback: View {
         switch model.phase {
         case .idle:
             Label {
-                Text(model.hasAddress ? String(localized: "Check the server connection when you are ready.", bundle: .main) : String(localized: "Use the server’s HTTP or HTTPS address.", bundle: .main))
+                Text(model.hasAddress ? String(localized: "Not checked yet.", bundle: .main) : String(localized: "Enter the relay server’s address.", bundle: .main))
                     .font(.subheadline)
                     .fixedSize(horizontal: false, vertical: true)
             } icon: {
@@ -23,7 +23,7 @@ struct ConnectionFeedback: View {
                 ConnectionActivity()
                 VStack(alignment: .leading, spacing: WitermMetrics.Space.xs) {
                     Text(String(localized: "Checking connection…", bundle: .main)).font(.subheadline.weight(.medium))
-                    Text(String(localized: "Waiting for the server", bundle: .main)).font(WitermType.meta).foregroundStyle(WitermTheme.secondary)
+                    Text(String(localized: "Waiting for the relay server", bundle: .main)).font(WitermType.meta).foregroundStyle(WitermTheme.secondary)
                 }
             }
             .accessibilityElement(children: .combine)
@@ -34,7 +34,7 @@ struct ConnectionFeedback: View {
                     .foregroundStyle(WitermTheme.positive)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: WitermMetrics.Space.xs) {
-                    Text(String(localized: "The server is reachable", bundle: .main)).font(.subheadline.weight(.medium))
+                    Text(String(localized: "Reachable", bundle: .main)).font(.subheadline.weight(.medium))
                     Text(String(localized: "Checked at \(String(date.formatted(date: .omitted, time: .shortened)))", bundle: .main))
                         .font(WitermType.meta).foregroundStyle(WitermTheme.secondary)
                 }
@@ -48,13 +48,14 @@ struct ConnectionFeedback: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: WitermMetrics.Space.xs) {
                     Text(issue.title).font(.subheadline.weight(.medium))
-                    Text(issue.recovery)
+                    Text(issue.displayRecovery)
                         .font(.subheadline)
                         .foregroundStyle(WitermTheme.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .accessibilityElement(children: .combine)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(issue.spoken)
         }
     }
 }
@@ -99,8 +100,8 @@ struct ConnectionLifecycle: ViewModifier {
         let message: String?
         switch phase {
         case .checking: message = String(localized: "Checking connection", bundle: .main)
-        case .available: message = String(localized: "Connection checked. The server is reachable.", bundle: .main)
-        case .failed(let issue): message = "\(issue.title)。\(issue.recovery)"
+        case .available: message = String(localized: "Relay server reachable.", bundle: .main)
+        case .failed(let issue): message = issue.spoken
         case .idle: message = previous.isChecking ? String(localized: "Connection check cancelled", bundle: .main) : nil
         }
         guard let message else { return }

@@ -157,6 +157,7 @@ struct StatusBadge: View {
         .padding(.horizontal, WitermMetrics.Space.s)
         .padding(.vertical, WitermMetrics.Space.xs)
         .background(WitermTheme.tint(color), in: .capsule)
+        .witermOutline(Capsule())
         .accessibilityElement(children: .combine)
     }
 
@@ -362,6 +363,14 @@ extension View {
     }
 }
 
+extension String {
+    /// The same text with a zero-width space between characters, so a name
+    /// inside a sentence wraps between any two characters instead of being
+    /// hyphenated (a hyphen is a legal host-name character). Display only:
+    /// give VoiceOver and the pasteboard the original.
+    var breakingAnywhere: String { map(String.init).joined(separator: "\u{200B}") }
+}
+
 #if os(iOS)
 import UIKit
 
@@ -414,31 +423,54 @@ struct AddressText: UIViewRepresentable {
 #endif
 
 /// A card holds one live object. On iOS its outline appears only with
-/// Increase Contrast, like the system's grouped sections; the Mac keeps it.
+/// Increase Contrast (`WitermTheme.outline`), like the system's grouped
+/// sections; the Mac keeps its hairline.
 private struct WitermCard: ViewModifier {
     let padding: CGFloat
-    @Environment(\.colorSchemeContrast) private var contrast
 
     func body(content: Content) -> some View {
-        content
+        let card = content
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(padding)
             .background(WitermTheme.surface, in: .rect(cornerRadius: WitermMetrics.cardRadius, style: .continuous))
-            .overlay {
-                if showsOutline {
-                    RoundedRectangle(cornerRadius: WitermMetrics.cardRadius, style: .continuous)
-                        .strokeBorder(WitermTheme.hairline, lineWidth: 1)
-                        .allowsHitTesting(false)
-                }
+        #if os(iOS)
+        card.witermOutline(cornerRadius: WitermMetrics.cardRadius)
+        #else
+        card.overlay {
+            RoundedRectangle(cornerRadius: WitermMetrics.cardRadius, style: .continuous)
+                .strokeBorder(WitermTheme.hairline, lineWidth: 1)
+                .allowsHitTesting(false)
+        }
+        #endif
+    }
+}
+
+/// The edge of a card, field, chip or key: none normally (its fill carries
+/// the shape), `WitermTheme.outline` with Increase Contrast, so the shape
+/// reaches 3:1 against what's around it.
+private struct WitermOutline<S: InsettableShape>: ViewModifier {
+    let shape: S
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    func body(content: Content) -> some View {
+        content.overlay {
+            if contrast == .increased {
+                shape.strokeBorder(WitermTheme.outline(increasedContrast: true), lineWidth: 1)
+                    .allowsHitTesting(false)
             }
+        }
+    }
+}
+
+extension View {
+    /// See `WitermOutline`.
+    func witermOutline(cornerRadius: CGFloat) -> some View {
+        modifier(WitermOutline(shape: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)))
     }
 
-    private var showsOutline: Bool {
-        #if os(iOS)
-        contrast == .increased
-        #else
-        true
-        #endif
+    /// See `WitermOutline`.
+    func witermOutline<S: InsettableShape>(_ shape: S) -> some View {
+        modifier(WitermOutline(shape: shape))
     }
 }
 

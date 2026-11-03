@@ -204,6 +204,7 @@ struct ContinueFromDeviceFlow: View {
             .focused($fieldFocused)
             .padding(WitermMetrics.Space.m)
             .background(WitermTheme.surface, in: .rect(cornerRadius: WitermMetrics.Radius.m, style: .continuous))
+            .witermOutline(cornerRadius: WitermMetrics.Radius.m)
             .accessibilityIdentifier("sessionInvitationField")
             .onChange(of: text) { _, value in
                 guard value.contains(where: \.isNewline) else { return }
@@ -381,6 +382,7 @@ private struct ContinueWaitStep: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(WitermMetrics.Space.l)
                             .background(WitermTheme.surface, in: .rect(cornerRadius: WitermMetrics.Radius.m, style: .continuous))
+                            .witermOutline(cornerRadius: WitermMetrics.Radius.m)
                             .accessibilityLabel(String(localized: "This device’s code \(PairingFingerprint.display(publicKey: device.publicKey))", bundle: .main))
                         Text(String(localized: "On \(hostName ?? String(localized: "the other device", bundle: .main)), check that the same code appears, then choose Approve.", bundle: .main))
                             .font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)

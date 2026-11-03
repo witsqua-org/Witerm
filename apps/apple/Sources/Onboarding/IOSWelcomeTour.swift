@@ -96,6 +96,7 @@ struct IOSWelcomeTour: View {
                     .foregroundStyle(WitermTheme.ink)
                     .frame(width: 112, height: 112)
                     .background(WitermTheme.surface, in: .rect(cornerRadius: WitermMetrics.Radius.xl, style: .continuous))
+                    .witermOutline(cornerRadius: WitermMetrics.Radius.xl)
                     .accessibilityHidden(true)
                 VStack(spacing: WitermMetrics.Space.s) {
                     Text(item.title)
@@ -205,6 +206,7 @@ private struct WelcomeKeyRow: View {
                 .padding(.horizontal, WitermMetrics.Space.s)
                 .frame(minWidth: 40, minHeight: 36)
                 .background(Color(uiColor: .tertiarySystemFill), in: .rect(cornerRadius: WitermMetrics.Radius.s))
+                .witermOutline(cornerRadius: WitermMetrics.Radius.s)
         }
     }
 }

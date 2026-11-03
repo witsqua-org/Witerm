@@ -112,7 +112,7 @@ final class ConnectionFlowTests: XCTestCase {
         capture("03-devices", app: app)
         openServer(app)
         let feedback = app.descendants(matching: .any)["settingsConnectionFeedback"].firstMatch
-        let success = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "服务器可以访问"), object: feedback)
+        let success = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@ OR label CONTAINS %@", "可以访问", "Reachable"), object: feedback)
         wait(for: [success], timeout: 10)
         capture("03-success", app: app)
     }
@@ -191,7 +191,7 @@ final class ConnectionFlowTests: XCTestCase {
         XCTAssertTrue(app.buttons["settingsCheckConnection"].waitForExistence(timeout: 5))
         XCTAssertFalse(cancel.exists)
         let unexpectedSuccess = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "label CONTAINS %@", "服务器可以访问"),
+            predicate: NSPredicate(format: "label CONTAINS %@ OR label CONTAINS %@", "可以访问", "Reachable"),
             object: app.descendants(matching: .any)["settingsConnectionFeedback"].firstMatch
         )
         unexpectedSuccess.isInverted = true
@@ -235,7 +235,7 @@ final class ConnectionFlowTests: XCTestCase {
         // Another spelling of a saved server, with no scheme: the same server.
         field.typeText("LOCALHOST:37429")
         app.buttons["saveServerAddress"].tap()
-        XCTAssertTrue(app.staticTexts["This server is already in your list."].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["This relay server is already in your list."].waitForExistence(timeout: 5))
         app.buttons["Cancel"].tap()
 
         // Remove the second server from its own page; Settings returns to the list.

@@ -66,6 +66,8 @@ struct SSHProfileForm: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     /// How saved credentials are protected on this device, read once.
     @State private var protection = SSHUnlock.method
+    /// Face ID (or Touch ID) this device has but Witerm may not use.
+    @State private var biometryOff = SSHUnlock.biometryOffForApp
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(profile: SSHProfile?, credentials: [UUID: SSHCredential], purpose: SSHFormPurpose, address: String? = nil,
@@ -133,8 +135,10 @@ struct SSHProfileForm: View {
                             jumps.append(SSHHostDraft(SSHHost(hostname: "", username: "")))
                         }
                         .disabled(jumps.count >= 4)
-                        Text(String(localized: "Jump hosts are connected in list order, followed by the address above.", bundle: .main))
-                            .font(.footnote).foregroundStyle(.secondary)
+                        if !jumps.isEmpty {
+                            Text(String(localized: "Jump hosts are connected in list order, followed by the address above.", bundle: .main))
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
                     }
                 }
                 if let issue { Section { Text(issue).foregroundStyle(WitermTheme.warning) } }
@@ -165,6 +169,17 @@ struct SSHProfileForm: View {
             #if os(iOS)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(String(localized: "Cancel", bundle: .main)) { dismiss() }.disabled(saving) }
+                // Saving without connecting sits where iOS sheets keep Save,
+                // so the bar over the keyboard holds only Connect and the
+                // form keeps room for its fields.
+                if purpose == .new {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button(String(localized: "Save", bundle: .main)) { submit(connect: false) }
+                            .disabled(saving)
+                            .accessibilityHint(String(localized: "Saves the host without connecting.", bundle: .main))
+                            .accessibilityIdentifier("sshSaveOnly")
+                    }
+                }
             }
             #endif
             // The actions sit at the bottom, within reach of a thumb; on the
@@ -233,11 +248,13 @@ struct SSHProfileForm: View {
             .keyboardShortcut(.defaultAction)
             .disabled(saving)
         #endif
+        #if os(macOS)
         let later = Button { submit(connect: false) } label: {
             ContentActionLabel(String(localized: "Save for Later", bundle: .main), systemImage: "tray.and.arrow.down")
         }
             .accessibilityIdentifier("sshSaveOnly")
             .disabled(saving)
+        #endif
         return Group {
             #if os(macOS)
             // The sheet footer: Save for Later leading, Cancel and the
@@ -256,10 +273,7 @@ struct SSHProfileForm: View {
             }
             .controlSize(.regular)
             #else
-            VStack(spacing: WitermMetrics.Space.xs) {
-                primary
-                if purpose == .new { later.touchTarget() }
-            }
+            primary
             #endif
         }
     }
@@ -293,13 +307,13 @@ struct SSHProfileForm: View {
             Text(String(localized: "Password", bundle: .main)).tag(false)
             Text(String(localized: "Private Key", bundle: .main)).tag(true)
         }
-        .pickerStyle(.segmented)
+        .modifier(SignInPickerStyle(accessibilitySize: typeSize.isAccessibilitySize))
         .accessibilityIdentifier("sshAuthentication")
         if draft.wrappedValue.useKey {
             // Two ways to get a key, side by side; the chosen one is outlined.
             (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 10)) : AnyLayout(HStackLayout(alignment: .top, spacing: 10))) {
                 KeyChoiceCard(title: String(localized: "New Key", bundle: .main),
-                              detail: String(localized: "Made on this device. Copy the public key to the server.", bundle: .main),
+                              detail: String(localized: "Made on this device. Add its public key to the SSH host.", bundle: .main),
                               systemImage: "key.fill", selected: draft.wrappedValue.generatedPublicKey != nil) {
                     let day = Date.now.formatted(.iso8601.year().month().day())
                     let key = SSHKeyGenerator.ed25519(comment: "witerm-\(day)")
@@ -319,8 +333,12 @@ struct SSHProfileForm: View {
                 .accessibilityIdentifier("sshImportKey")
             }
             .buttonStyle(.plain)
-            Text(String(localized: "RSA keys aren't supported because they would be signed with SHA-1.", bundle: .main))
-                .font(.footnote).foregroundStyle(.secondary)
+            // Said when it applies, as soon as an RSA key is in the field.
+            if SSHKeyGenerator.isRSAPrivateKey(draft.wrappedValue.privateKey), errors[.credential(draft.wrappedValue.id)] == nil {
+                Label(Self.rsaMessage, systemImage: "exclamationmark.circle")
+                    .font(WitermType.meta).foregroundStyle(WitermTheme.warning)
+                    .accessibilityIdentifier("sshFieldError")
+            }
             if let publicKey = draft.wrappedValue.generatedPublicKey {
                 generatedKeyDetails(publicKey, remember: draft.wrappedValue.remember)
             }
@@ -353,16 +371,29 @@ struct SSHProfileForm: View {
             .disabled(protection == .unavailable)
         // Saved credentials always need Face ID, Touch ID, or the passcode.
         if protection == .unavailable || draft.wrappedValue.remember {
-            Text(Self.protectionNote(protection))
+            Text(Self.protectionNote(protection, biometryOff: biometryOff))
                 .font(WitermType.meta)
                 .foregroundStyle(WitermTheme.secondary)
                 .accessibilityIdentifier("sshCredentialProtection")
         }
     }
 
+    static let rsaMessage = String(localized: "This is an RSA key, which Witerm doesn't use. Generate a new Ed25519 key or load an existing one.", bundle: .main)
+
     /// One line, where saving is chosen, naming what protects saved credentials.
-    static func protectionNote(_ method: SSHUnlock.Method) -> String {
-        switch method {
+    static func protectionNote(_ method: SSHUnlock.Method, biometryOff: SSHUnlock.Method? = nil) -> String {
+        #if os(iOS)
+        // Honest about why it isn't Face ID, where the person can change it.
+        if method == .passcode, let biometryOff {
+            switch biometryOff {
+            case .faceID: return String(localized: "Your passcode protects them. Face ID is off for Witerm in Settings.", bundle: .main)
+            case .touchID: return String(localized: "Your passcode protects them. Touch ID is off for Witerm in Settings.", bundle: .main)
+            case .opticID: return String(localized: "Your passcode protects them. Optic ID is off for Witerm in Settings.", bundle: .main)
+            case .passcode, .unavailable: break
+            }
+        }
+        #endif
+        return switch method {
         case .faceID: String(localized: "Face ID protects them.", bundle: .main)
         case .touchID: String(localized: "Touch ID protects them.", bundle: .main)
         case .opticID: String(localized: "Optic ID protects them.", bundle: .main)
@@ -431,7 +462,7 @@ struct SSHProfileForm: View {
             let host = endpoint.host
             if case .failure(let problem) = endpoint.parsed { errors[.address(host.id)] = problem.message }
             if endpoint.useKey, SSHKeyGenerator.isRSAPrivateKey(endpoint.privateKey) {
-                errors[.credential(host.id)] = String(localized: "This is an RSA key, which Witerm doesn't use. Generate a new Ed25519 key or load an existing one.", bundle: .main)
+                errors[.credential(host.id)] = Self.rsaMessage
             } else if (connect || endpoint.remember), endpoint.credential == nil {
                 errors[.credential(host.id)] = String(localized: "Enter a password or load a private key.", bundle: .main)
                 if endpoint.useKey {
@@ -486,32 +517,50 @@ extension View {
     }
 }
 
+/// Segments side by side; at accessibility text sizes, where a segmented
+/// control keeps its small text, a menu that grows with it.
+private struct SignInPickerStyle: ViewModifier {
+    let accessibilitySize: Bool
+
+    func body(content: Content) -> some View {
+        if accessibilitySize { content.pickerStyle(.menu) } else { content.pickerStyle(.segmented) }
+    }
+}
+
 /// What the address field understood, as chips that read as one sentence.
 private struct AddressChips: View {
     let parsed: SSHAddressInput.Parsed
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
-            : AnyLayout(HStackLayout(spacing: 6))
-        layout {
-            chip(String(localized: "User", bundle: .main), parsed.username)
-            chip(String(localized: "Host", bundle: .main), parsed.hostname)
-            chip(String(localized: "Port", bundle: .main), String(parsed.port))
+        // One row when it fits; otherwise one chip per line, so the host,
+        // the thing to check, is never cut short.
+        ViewThatFits(in: .horizontal) {
+            if !typeSize.isAccessibilitySize {
+                HStack(spacing: 6) { chips(wrapping: false) }
+            }
+            VStack(alignment: .leading, spacing: 6) { chips(wrapping: true) }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(localized: "User \(parsed.username) · Host \(parsed.hostname) · Port \(String(parsed.port))", bundle: .main))
         .accessibilityIdentifier("sshAddressSummary")
     }
 
-    private func chip(_ label: String, _ value: String) -> some View {
-        (Text(label + " ").foregroundStyle(WitermTheme.secondary) + Text(verbatim: value).fontWeight(.semibold))
+    @ViewBuilder private func chips(wrapping: Bool) -> some View {
+        chip(String(localized: "User", bundle: .main), parsed.username, wrapping: wrapping)
+        chip(String(localized: "Host", bundle: .main), parsed.hostname, wrapping: wrapping)
+        chip(String(localized: "Port", bundle: .main), String(parsed.port), wrapping: wrapping)
+    }
+
+    /// A wrapping chip breaks between characters, never with a hyphen.
+    private func chip(_ label: String, _ value: String, wrapping: Bool) -> some View {
+        (Text(label + " ").foregroundStyle(WitermTheme.secondary) + Text(verbatim: value.breakingAnywhere).fontWeight(.semibold))
             .font(WitermType.meta)
-            .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
-            .truncationMode(.middle)
+            .fixedSize(horizontal: !wrapping, vertical: true)
             .padding(.horizontal, WitermMetrics.Space.s)
             .padding(.vertical, 3)
             .background(WitermTheme.statusFill, in: .capsule)
+            .witermOutline(Capsule())
     }
 }
 
