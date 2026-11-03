@@ -4,6 +4,7 @@ import UIKit
 import UIKit.UIGestureRecognizerSubclass
 import SwiftTerm
 import MetalKit
+import os
 import UniformTypeIdentifiers
 import WitermCore
 
@@ -95,6 +96,10 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         surface.updateAppearance(highContrast: highContrast, scheme: preferredColorScheme, palette: palette)
         surface.announceOutput = announceOutput
         surface.terminal.inputDestination = inputDestination ?? attachment.session.name
+        // A paired terminal shows the Mac service's own tmux client, which
+        // asks for the mouse by itself (tmux 3.6 and later default `mouse`
+        // to on, even with -f /dev/null). Its touches stay Witerm's.
+        surface.terminal.passesMouseToPrograms = false
         surface.terminal.focusesWhenShown = isInteractive && mode == .control
         surface.terminal.terminalDelegate = context.coordinator
         context.coordinator.start(surface.terminal)
@@ -1045,7 +1050,111 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             // Scrolling waits only until a drag is known not to start on a handle.
             panGestureRecognizer.require(toFail: handles)
             handleRecognizer = handles
-            allowMouseReporting = acceptsInput
+            let wheel = UIPanGestureRecognizer(target: self, action: #selector(wheelDragged(_:)))
+            wheel.maximumNumberOfTouches = 1
+            wheel.require(toFail: handles)
+            addGestureRecognizer(wheel)
+            wheelRecognizer = wheel
+            allowMouseReporting = acceptsInput && passesMouseToPrograms
+            #if DEBUG
+            observeGestures()
+            #endif
+        }
+
+        // MARK: Mouse wheel
+
+        /// Drags one finger for a program that asked for the mouse.
+        private(set) var wheelRecognizer: UIPanGestureRecognizer?
+        /// Points dragged that haven't made a whole row yet.
+        private var wheelRemainder: CGFloat = 0
+        private var wheelPoint: CGPoint = .zero
+        private var wheelMomentum: CADisplayLink?
+        private var wheelVelocity: CGFloat = 0
+
+        /// The program asked for the mouse (tmux `mouse on`, vim `mouse=a`,
+        /// htop, less with the mouse) and this view controls the terminal.
+        var reportsMouse: Bool { allowMouseReporting && getTerminal().mouseMode != .off }
+
+        /// Programs that ask for the mouse get wheel steps and clicks (SSH).
+        /// Off for paired terminals, whose stream comes from Witerm's own
+        /// tmux: there a swipe scrolls Witerm's scrollback and a tap stays a
+        /// tap, as when watching.
+        var passesMouseToPrograms = true {
+            didSet { allowMouseReporting = acceptsInput && passesMouseToPrograms }
+        }
+
+        /// A one-finger swipe never sends a button drag, which tmux and vim
+        /// turn into their own text selection: for a program that asked for
+        /// the mouse it sends wheel steps at the finger, one per row dragged,
+        /// and coasts like a scroll view after a fling, so the program scrolls
+        /// its own view. Without the mouse it scrolls Witerm's scrollback.
+        @objc private func wheelDragged(_ pan: UIPanGestureRecognizer) {
+            switch pan.state {
+            case .began:
+                stopWheelMomentum()
+                wheelRemainder = 0
+                wheelPoint = pan.location(in: self)
+                wheel(by: pan.translation(in: self).y)
+                pan.setTranslation(.zero, in: self)
+            case .changed:
+                wheel(by: pan.translation(in: self).y)
+                pan.setTranslation(.zero, in: self)
+            case .ended:
+                let velocity = pan.velocity(in: self).y
+                if abs(velocity) > Self.wheelStopSpeed { startWheelMomentum(velocity) }
+            default: break
+            }
+        }
+
+        /// Below this many points a second a fling's coast stops.
+        private static let wheelStopSpeed: CGFloat = 40
+
+        /// Sends a wheel step per whole row of `points` dragged: down (the
+        /// content following the finger toward older lines) is wheel up.
+        func wheel(by points: CGFloat) {
+            guard reportsMouse else {
+                stopWheelMomentum()
+                return
+            }
+            let height = cell.height
+            guard height > 0 else { return }
+            wheelRemainder += points
+            let rows = Int(wheelRemainder / height)
+            guard rows != 0 else { return }
+            wheelRemainder -= CGFloat(rows) * height
+            let core = getTerminal(), cell = cell
+            let screen = CGPoint(x: wheelPoint.x - bounds.minX, y: wheelPoint.y - bounds.minY)
+            let column = min(max(0, Int(screen.x / max(1, cell.width))), core.cols - 1)
+            let row = min(max(0, Int(screen.y / max(1, height))), core.rows - 1)
+            let flags = core.encodeButton(button: rows > 0 ? 4 : 5, release: false, shift: false, meta: false, control: false)
+            // At most a screenful per step, however fast the finger moved.
+            for _ in 0..<min(abs(rows), core.rows) {
+                core.sendEvent(buttonFlags: flags, x: column, y: row, pixelX: Int(screen.x), pixelY: Int(screen.y))
+            }
+        }
+
+        private func startWheelMomentum(_ velocity: CGFloat) {
+            wheelVelocity = velocity
+            guard wheelMomentum == nil else { return }
+            let link = CADisplayLink(target: self, selector: #selector(wheelCoast(_:)))
+            link.add(to: .main, forMode: .common)
+            wheelMomentum = link
+        }
+
+        /// UIScrollView's normal deceleration (0.998 per millisecond).
+        @objc private func wheelCoast(_ link: CADisplayLink) {
+            let elapsed = max(0, link.targetTimestamp - link.timestamp)
+            wheel(by: wheelVelocity * CGFloat(elapsed))
+            wheelVelocity *= CGFloat(pow(0.998, elapsed * 1000))
+            if abs(wheelVelocity) < Self.wheelStopSpeed { stopWheelMomentum() }
+        }
+
+        /// Stops a coast; `true` when one was running (the touch only stopped it).
+        @discardableResult func stopWheelMomentum() -> Bool {
+            guard let link = wheelMomentum else { return false }
+            link.invalidate()
+            wheelMomentum = nil
+            return true
         }
 
         /// The cell size, as the renderer lays out its rows.
@@ -1090,9 +1199,6 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         private var handleGrabOffset = CGVector.zero
         /// A scroll hid the edit menu; it returns when the scroll stops.
         private var editMenuHiddenForScroll = false
-        /// SwiftTerm's drag that reports the mouse to a program that asked
-        /// for it; any other drag of SwiftTerm's never begins.
-        private weak var mouseDrag: UIPanGestureRecognizer?
 
         /// How far SwiftTerm draws each handle's knob (a 12 pt dot) from the
         /// selection's corner: above the first character, below the last.
@@ -1203,19 +1309,12 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         }
 
         override func mouseModeChanged(source: Terminal) {
-            let before = Set((gestureRecognizers ?? []).map(ObjectIdentifier.init))
             super.mouseModeChanged(source: source)
-            if let added = gestureRecognizers?.first(where: { $0 is UIPanGestureRecognizer && !before.contains(ObjectIdentifier($0)) }) {
-                mouseDrag = added as? UIPanGestureRecognizer
-            }
-        }
-
-        /// Whether a drag of SwiftTerm's goes to the program as the mouse:
-        /// only its mouse drag, only while the program asks for the mouse
-        /// (tmux `mouse on`, vim `mouse=a`, htop) and this view controls
-        /// the terminal. A plain shell never asks, so its drags scroll.
-        func allowsMouseDrag(_ recognizer: UIGestureRecognizer) -> Bool {
-            recognizer === mouseDrag && allowMouseReporting && getTerminal().mouseMode != .off
+            if source.mouseMode == .off { stopWheelMomentum() }
+            #if DEBUG
+            observeGestures()
+            logGesture("mouseModeChanged", nil, mouseMode: source.mouseMode)
+            #endif
         }
 
         /// The buffer position under a point in this view's coordinates,
@@ -1267,19 +1366,77 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         /// The focus tap only clears a selection or brings up the keyboard;
         /// with the keyboard up, SwiftTerm's own tap handles links and mouse clicks.
         override func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
+            let begins = shouldBegin(recognizer)
+            #if DEBUG
+            logGesture("shouldBegin=\(begins)", recognizer)
+            #endif
+            return begins
+        }
+
+        private func shouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
             if recognizer === focusTapRecognizer { return selection.active || (acceptsInput && !isFirstResponder) }
             if let pan = recognizer as? UIPanGestureRecognizer, pan === handleRecognizer {
                 return selectionHandle(near: Self.touchDown(of: pan, in: self)) != nil
             }
             if recognizer === selectionPressRecognizer { return !isDragging && !isDecelerating }
-            // SwiftTerm's own selection drag (after a double tap) would move
-            // the selection's end from anywhere; here a drag away from the
-            // handles scrolls, as in other iOS text. Its mouse drag, for a
-            // program that asked for the mouse, still begins.
-            if recognizer is UIPanGestureRecognizer, recognizer !== panGestureRecognizer,
-               !allowsMouseDrag(recognizer) { return false }
+            // For a program that asked for the mouse a swipe is the wheel;
+            // otherwise it scrolls Witerm's scrollback.
+            if recognizer === wheelRecognizer { return reportsMouse }
+            if recognizer === panGestureRecognizer, reportsMouse { return false }
+            // SwiftTerm's other drags never begin: its selection drag (after
+            // a double tap) would move the selection's end from anywhere, and
+            // its mouse drag sent a held button that tmux and vim turned into
+            // their own selection ("swiping selects text" while typing).
+            if recognizer is UIPanGestureRecognizer, recognizer !== panGestureRecognizer { return false }
+            // Only Witerm's long press selects: SwiftTerm's (disabled) and any
+            // the system adds to a text-input view while it has the keyboard.
+            if recognizer is UILongPressGestureRecognizer { return false }
             return super.gestureRecognizerShouldBegin(recognizer)
         }
+
+        #if DEBUG
+        /// DEBUG only: each gesture on the terminal (which one, whether it
+        /// may begin, the mouse and focus state), never terminal content.
+        /// `log stream --predicate 'subsystem == "com.witerm" AND category == "terminal-gestures"'`.
+        private static let gestureLog = Logger(subsystem: "com.witerm", category: "terminal-gestures")
+        private var observedGestures = Set<ObjectIdentifier>()
+
+        private func gestureName(_ recognizer: UIGestureRecognizer?) -> String {
+            guard let recognizer else { return "-" }
+            let role = recognizer === panGestureRecognizer ? "scroll" : recognizer === wheelRecognizer ? "wheel"
+                : recognizer === handleRecognizer ? "handle" : recognizer === selectionPressRecognizer ? "selectionPress"
+                : recognizer === focusTapRecognizer ? "focusTap" : "other"
+            return "\(type(of: recognizer))[\(role)]"
+        }
+
+        func logGesture(_ event: String, _ recognizer: UIGestureRecognizer?, mouseMode: Terminal.MouseMode? = nil) {
+            let state = "mouseMode=\(mouseMode ?? getTerminal().mouseMode) allowMouseReporting=\(allowMouseReporting) firstResponder=\(isFirstResponder) acceptsInput=\(acceptsInput) selection=\(selection?.active ?? false)"
+            Self.gestureLog.notice("\(event, privacy: .public) \(self.gestureName(recognizer), privacy: .public) \(state, privacy: .public)")
+        }
+
+        /// Follows every recognizer on the view, SwiftTerm's and the system's included.
+        func observeGestures() {
+            for recognizer in gestureRecognizers ?? [] where observedGestures.insert(ObjectIdentifier(recognizer)).inserted {
+                recognizer.addTarget(self, action: #selector(gestureStateChanged(_:)))
+            }
+        }
+
+        @objc private func gestureStateChanged(_ recognizer: UIGestureRecognizer) {
+            switch recognizer.state {
+            case .began: logGesture("began", recognizer)
+            case .ended: logGesture("ended", recognizer)
+            case .cancelled: logGesture("cancelled", recognizer)
+            default: break
+            }
+        }
+
+        /// When a selection starts, which recognizers were running, here and on the window.
+        func logSelectionStarted(mouseMode: Terminal.MouseMode) {
+            let running = ((gestureRecognizers ?? []) + (window?.gestureRecognizers ?? []))
+                .filter { $0.state == .began || $0.state == .changed }.map(gestureName).joined(separator: ",")
+            logGesture("selectionStarted running=[\(running)]", nil, mouseMode: mouseMode)
+        }
+        #endif
 
         @objc private func focusTap(_ tap: UITapGestureRecognizer) {
             guard tap.state == .ended else { return }
@@ -1372,6 +1529,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
+            if window == nil { stopWheelMomentum() }
             #if DEBUG || WITERM_RENDERER_TRIAL
             // SwiftTerm's Metal renderer attaches once the view is in a window.
             if window != nil, RendererTrial.usesMetal, !isUsingMetalRenderer { startMetalTrial() }
@@ -1389,6 +1547,13 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             if !isFirstResponder { postFocus(true, will: true) }
             let became = super.becomeFirstResponder()
             if became { postFocus(true) } else if !isFirstResponder { postFocus(false) }
+            #if DEBUG
+            // The system may add text-input gestures to a view with the keyboard.
+            DispatchQueue.main.async { [weak self] in
+                self?.observeGestures()
+                self?.logGesture("becameFirstResponder=\(became) recognizers=\(self?.gestureRecognizers?.count ?? 0)", nil)
+            }
+            #endif
             return became
         }
 
@@ -1418,6 +1583,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         }
 
         func disableInput() {
+            stopWheelMomentum()
             inputEnabled = false
             allowMouseReporting = false
             controlModifier = false
@@ -1619,9 +1785,22 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
 
         override func selectionChanged(source: Terminal) {
             super.selectionChanged(source: source)
+            #if DEBUG
+            // Delegate callbacks can come while SwiftTerm is still setting up,
+            // before its selection and terminal exist: log from `source`.
+            let active = selection?.active ?? false
+            if active != loggedSelectionActive {
+                loggedSelectionActive = active
+                if active { logSelectionStarted(mouseMode: source.mouseMode) } else { logGesture("selectionEnded", nil, mouseMode: source.mouseMode) }
+            }
+            #endif
             updateMetalHandles()
             readingChanged?(false)
         }
+
+        #if DEBUG
+        private var loggedSelectionActive = false
+        #endif
 
         // MARK: Renderer trial
 
@@ -1764,16 +1943,18 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
     #endif
 
     /// A touch that lands while the output is still moving (a fling's
-    /// coast, here or in the grid's sideways scroll) only stops it, as
-    /// elsewhere in iOS; resting there never starts a selection.
+    /// coast, here, in the grid's sideways scroll, or a program's wheel
+    /// coast) only stops it, as elsewhere in iOS; resting there never
+    /// starts a selection.
     @MainActor final class SelectionPressGate: NSObject, UIGestureRecognizerDelegate {
-        private weak var terminal: UIScrollView?
+        private weak var terminal: TerminalInputView?
 
-        init(terminal: UIScrollView) { self.terminal = terminal }
+        init(terminal: TerminalInputView) { self.terminal = terminal }
 
         func gestureRecognizer(_ recognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
             guard let terminal else { return true }
-            return !terminal.isDecelerating && (terminal.superview as? UIScrollView)?.isDecelerating != true
+            let coasting = terminal.stopWheelMomentum()
+            return !coasting && !terminal.isDecelerating && (terminal.superview as? UIScrollView)?.isDecelerating != true
         }
     }
 

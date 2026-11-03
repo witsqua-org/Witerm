@@ -87,35 +87,90 @@ import XCTest
         XCTAssertLessThan(bounds.height, cell.height + 25, "One row, with its knobs")
     }
 
-    /// Round 15: only SwiftTerm's mouse drag may begin besides scrolling, and
-    /// only while the program asks for the mouse; a plain shell never does.
-    func testDragsReachTheProgramOnlyInMouseMode() throws {
+    /// Round 15: a one-finger drag never sends a held mouse button. In a
+    /// plain shell it scrolls Witerm's scrollback; for a program that asked
+    /// for the mouse it's the wheel, sent at the finger in the program's
+    /// encoding; a watched terminal only scrolls.
+    func testSwipesAreTheWheelInMouseModeAndScrollOtherwise() throws {
         let terminal = surface().terminal
-        func foreignPans() -> [UIPanGestureRecognizer] {
+        let spy = MouseSpy()
+        terminal.terminalDelegate = spy
+        let wheel = try XCTUnwrap(terminal.wheelRecognizer)
+        func beginning() -> [UIPanGestureRecognizer] {
             (terminal.gestureRecognizers ?? []).compactMap { $0 as? UIPanGestureRecognizer }
-                .filter { $0 !== terminal.panGestureRecognizer && !terminal.allowsMouseDrag($0) }
+                .filter { terminal.gestureRecognizerShouldBegin($0) }
         }
         XCTAssertEqual(terminal.getTerminal().mouseMode, .off)
-        let plain = (terminal.gestureRecognizers ?? []).compactMap { $0 as? UIPanGestureRecognizer }
-        XCTAssertFalse(plain.contains { terminal.allowsMouseDrag($0) }, "A plain shell has no mouse drag")
-        // A program turns on mouse reporting (as tmux `mouse on` does).
-        terminal.feed(text: "\u{1b}[?1002h")
+        XCTAssertEqual(beginning(), [terminal.panGestureRecognizer], "A plain shell's drag scrolls, and nothing else begins")
+        terminal.wheel(by: 200)
+        XCTAssertTrue(spy.bytes.isEmpty, "No wheel without the mouse")
+
+        // A program turns on mouse reporting with SGR coordinates, as tmux `mouse on` does.
+        terminal.feed(text: "\u{1b}[?1002h\u{1b}[?1006h")
         XCTAssertNotEqual(terminal.getTerminal().mouseMode, .off)
-        let pans = (terminal.gestureRecognizers ?? []).compactMap { $0 as? UIPanGestureRecognizer }
-        let mouse = try XCTUnwrap(pans.first { terminal.allowsMouseDrag($0) }, "SwiftTerm's mouse drag must be found")
-        XCTAssertTrue(terminal.gestureRecognizerShouldBegin(mouse))
+        XCTAssertEqual(beginning(), [wheel], "Only the wheel begins: no scrolling, and no SwiftTerm button drag")
+        let frame = terminal.getOptimalFrameSize(), core = terminal.getTerminal()
+        let row = frame.height / CGFloat(core.rows)
+        terminal.wheel(by: row * 2.5)
+        let text = String(decoding: spy.bytes, as: UTF8.self)
+        XCTAssertEqual(text.components(separatedBy: "\u{1b}[<64;").count - 1, 2, "Two rows down is two wheel-up steps: \(text.debugDescription)")
+        XCTAssertFalse(text.contains("\u{1b}[<0;") || text.contains("\u{1b}[<32;"), "Never a button press or a held-button drag")
+        spy.bytes.removeAll()
+        // Half a row is still carried from the 2.5 rows above.
+        terminal.wheel(by: -row * 1.6)
+        XCTAssertEqual(String(decoding: spy.bytes, as: UTF8.self).components(separatedBy: "\u{1b}[<65;").count - 1, 1, "Up a row is one wheel-down step")
+
         // Turned off again: the drag scrolls.
         terminal.feed(text: "\u{1b}[?1002l")
-        XCTAssertEqual(terminal.getTerminal().mouseMode, .off)
-        XCTAssertFalse(terminal.allowsMouseDrag(mouse))
-        // With no selection, nothing but scrolling begins.
-        let beginning = foreignPans().filter { terminal.gestureRecognizerShouldBegin($0) }
-        XCTAssertTrue(beginning.isEmpty, "No other drag begins in a plain shell: \(beginning)")
+        XCTAssertEqual(beginning(), [terminal.panGestureRecognizer])
         // A watched (view-only) terminal never sends the mouse.
         terminal.feed(text: "\u{1b}[?1002h")
         terminal.disableInput()
-        let again = (terminal.gestureRecognizers ?? []).compactMap { $0 as? UIPanGestureRecognizer }
-        XCTAssertFalse(again.contains { terminal.allowsMouseDrag($0) }, "Without control, drags never reach the program")
+        XCTAssertEqual(beginning(), [terminal.panGestureRecognizer], "Without control, a drag only scrolls")
+        spy.bytes.removeAll()
+        terminal.wheel(by: row * 3)
+        XCTAssertTrue(spy.bytes.isEmpty)
+    }
+
+    /// Round 15, the owner's report: in a paired terminal, typing at a plain
+    /// shell, a swipe selected text. The Mac service's tmux (3.6 and later
+    /// default `mouse` to on, even with -f /dev/null) asks for the mouse in
+    /// the very stream the phone draws, so SwiftTerm's drag sent a held
+    /// button and tmux made a copy-mode selection. A paired terminal's
+    /// touches stay Witerm's whatever the stream asks.
+    func testPairedTerminalsKeepTouchesWhenTheirTmuxAsksForTheMouse() {
+        let terminal = surface().terminal
+        terminal.passesMouseToPrograms = false
+        let spy = MouseSpy()
+        terminal.terminalDelegate = spy
+        // What tmux 3.8's client sent on attaching, as captured from the service's options.
+        terminal.feed(text: "\u{1b}[?1006l\u{1b}[?1000l\u{1b}[?1002l\u{1b}[?1003l\u{1b}[?1006h\u{1b}[?1000h\u{1b}[?1002h")
+        XCTAssertNotEqual(terminal.getTerminal().mouseMode, .off, "The stream itself turns mouse reporting on")
+        XCTAssertFalse(terminal.reportsMouse)
+        let beginning = (terminal.gestureRecognizers ?? []).compactMap { $0 as? UIPanGestureRecognizer }
+            .filter { terminal.gestureRecognizerShouldBegin($0) }
+        XCTAssertEqual(beginning, [terminal.panGestureRecognizer], "A swipe scrolls Witerm's scrollback, as when watching")
+        terminal.wheel(by: 200)
+        XCTAssertTrue(spy.bytes.isEmpty, "Nothing reaches the Mac's tmux as the mouse")
+    }
+
+    /// Round 15: SwiftTerm calls the view's delegate methods (the mouse mode,
+    /// the selection) while it's still being made, before it has a terminal;
+    /// the DEBUG gesture log once crashed there. Every mode must build, take
+    /// output that sets the mouse and a selection, and lay out.
+    func testTerminalsBuildInEveryModeWithTheGestureLog() {
+        for (mode, interactive) in [(LocalAttachmentMode.control, true), (.control, false), (.view, false)] {
+            let session = LocalSessionInfo(id: UUID().uuidString, name: "Modes", createdAt: .now, columns: 40, rows: 20)
+            let surface = RemoteNativeTerminalView.TerminalSurface(mode: mode, session: session, fontSize: 14, isInteractive: interactive)
+            surface.frame = CGRect(x: 0, y: 120, width: 402, height: 600)
+            window.rootViewController?.view.addSubview(surface)
+            surface.layoutIfNeeded()
+            surface.terminal.feed(text: "alpha bravo\r\n\u{1b}[?1002h\u{1b}[?1006h")
+            surface.terminal.beginSelection(at: CGPoint(x: 10, y: 5))
+            XCTAssertTrue(surface.terminal.selection.active, "\(mode) \(interactive)")
+            surface.terminal.feed(text: "\u{1b}[?1002l")
+            surface.removeFromSuperview()
+        }
     }
 
     /// Round 15: the long press takes UIKit's 0.5 s, not 0.35 s.
@@ -125,4 +180,19 @@ import XCTest
         XCTAssertEqual(presses.count, 1)
         XCTAssertEqual(presses.first?.minimumPressDuration ?? 0, 0.5, accuracy: 0.001)
     }
+}
+
+@MainActor private final class MouseSpy: NSObject, @preconcurrency TerminalViewDelegate {
+    var bytes = Data()
+    func send(source: TerminalView, data: ArraySlice<UInt8>) { bytes.append(contentsOf: data) }
+    func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {}
+    func setTerminalTitle(source: TerminalView, title: String) {}
+    func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
+    func scrolled(source: TerminalView, position: Double) {}
+    func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {}
+    func bell(source: TerminalView) {}
+    func clipboardCopy(source: TerminalView, content: Data) {}
+    func clipboardRead(source: TerminalView) -> Data? { nil }
+    func iTermContent(source: TerminalView, content: ArraySlice<UInt8>) {}
+    func rangeChanged(source: TerminalView, startY: Int, endY: Int) {}
 }

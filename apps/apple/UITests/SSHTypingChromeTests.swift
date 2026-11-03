@@ -899,6 +899,111 @@ import XCTest
         disconnectAndRemove(name, fingerprint: fingerprint)
     }
 
+    // MARK: Round 15: programs that ask for the mouse
+
+    /// The visible lines, trimmed.
+    private func lines() -> [String] {
+        text().split(separator: "\n", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }
+    }
+
+    /// tmux's copy-mode position, `[top/total]`, in the pane's corner.
+    private func tmuxPosition() -> String? {
+        guard let range = text().range(of: #"\[\d+/\d+\]"#, options: .regularExpression) else { return nil }
+        return String(text()[range])
+    }
+
+    /// vim's ruler, `line,column`, at the end of its last line.
+    private func vimRuler() -> String? {
+        guard let last = lines().last(where: { !$0.isEmpty }),
+              let range = last.range(of: #"\d+,\d+"#, options: [.regularExpression, .backwards]) else { return nil }
+        return String(last[range])
+    }
+
+    /// While typing, in tmux with `mouse on` and in vim with `mouse=a` (both
+    /// inside the fixture's shell, not Witerm's own tmux): a swipe scrolls the
+    /// program's view and starts no selection, a tap in vim moves its cursor,
+    /// and Witerm selects nothing. A held-button drag (what SwiftTerm sent
+    /// before) makes tmux select and copy, and vim enter Visual mode.
+    func testSwipesScrollProgramsThatAskForTheMouse() throws {
+        continueAfterFailure = true
+        executionTimeAllowance = 400
+        let (name, fingerprint) = try connectForGrid("R15 Mouse", more: [
+            ("Tmux", "echo set -g mouse on > ~/.tmux.conf && tmux -L r15 new -A -s r15"),
+            ("Fill", "seq 1 400"),
+            ("End tmux", "tmux -L r15 kill-server"),
+            // Without bracketed paste, so the snippet that quits is typed, not pasted.
+            ("Vim", "seq 1 400 > /tmp/r15.txt && vim -n -i NONE -c 'set mouse=a ruler t_BE=' /tmp/r15.txt"),
+            ("Leave vim", ":q!"),
+        ])
+        // A plain shell (no mouse) with the keyboard up: a swipe scrolls Witerm's scrollback.
+        runSnippet("Fill")
+        XCTAssertNotNil(until(15) { lines().contains("400") && lastLine().hasSuffix("~$") }, "seq must print")
+        _ = until(1) { false }
+        let shellTop = probe("yDisp") ?? -1
+        let shellStart = terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25))
+        shellStart.press(forDuration: 0.05, thenDragTo: shellStart.withOffset(CGVector(dx: 0, dy: 220)), withVelocity: .default, thenHoldForDuration: 0.3)
+        _ = until(2) { false }
+        print("PERF r15 shell_typing_swipe yDisp \(shellTop) -> \(probe("yDisp") ?? -1) selected=\(selected()) keyboard=\(keyboard.exists)")
+        XCTAssertLessThan(probe("yDisp") ?? 0, shellTop, "With the keyboard up, a swipe at a shell prompt scrolls Witerm's scrollback")
+        XCTAssertEqual(selected(), 0, "and selects nothing")
+        let latest = app.buttons["terminalJumpToLatest"]
+        if latest.waitForExistence(timeout: 3) { latest.tap() }
+        XCTAssertNotNil(until(5) { lastLine().hasSuffix("~$") })
+
+        // tmux, its status line at the bottom.
+        runSnippet("Tmux")
+        XCTAssertNotNil(until(15) { text().contains("[r15]") }, "tmux must start")
+        runSnippet("Fill")
+        XCTAssertNotNil(until(15) { lines().contains("400") && lastLine().contains("[r15]") }, "seq must print inside tmux")
+        _ = until(1) { false }
+        shot("r15-mouse-1-tmux")
+        let start = terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25))
+        start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 220)), withVelocity: .default, thenHoldForDuration: 0.3)
+        _ = until(2) { false }
+        let position = tmuxPosition()
+        print("PERF r15 tmux_swipe position=\(position ?? "none") selected=\(selected()) lastline=\(lastLine())")
+        shot("r15-mouse-2-tmux-swiped")
+        XCTAssertNotNil(position, "A swipe must scroll tmux's own view (copy mode's [top/total])")
+        XCTAssertFalse(lines().contains("400"), "The pane must show earlier output")
+        XCTAssertEqual(selected(), 0, "Witerm selects nothing")
+        // Ctrl+C leaves copy mode (a snippet arrives as a paste, which copy mode ignores).
+        app.buttons["terminalInterrupt"].tap()
+        XCTAssertNotNil(until(5) { tmuxPosition() == nil }, "Ctrl+C leaves copy mode")
+        runSnippet("End tmux")
+        XCTAssertNotNil(until(10) { lastLine().hasSuffix("~$") && !text().contains("[r15]") }, "tmux must end")
+
+        // vim on a long file, with its ruler.
+        runSnippet("Vim")
+        XCTAssertNotNil(until(15) { vimRuler() != nil && lines().first == "1" }, "vim must open at the top (it may put the cursor back where it was)")
+        _ = until(1) { false }
+        shot("r15-mouse-3-vim")
+        let lower = terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+        lower.press(forDuration: 0.05, thenDragTo: lower.withOffset(CGVector(dx: 0, dy: -220)), withVelocity: .default, thenHoldForDuration: 0.3)
+        _ = until(2) { false }
+        let top = lines().first ?? ""
+        print("PERF r15 vim_swipe top=\(top) ruler=\(vimRuler() ?? "none") visual=\(text().contains("VISUAL")) selected=\(selected())")
+        shot("r15-mouse-4-vim-swiped")
+        XCTAssertNotEqual(top, "1", "A swipe up must scroll vim's view down")
+        XCTAssertFalse(text().contains("VISUAL"), "A swipe must not start Visual mode")
+        XCTAssertEqual(selected(), 0, "Witerm selects nothing")
+        // A tap on a line puts vim's cursor there (keyboard up: taps are clicks).
+        if !keyboard.exists { app.buttons["sshKeyboard"].tap() }
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+        _ = until(1) { false }
+        let rows = lines()
+        let cell = probe("cell") ?? 17
+        let index = 5, target = rows.count > index ? rows[index] : ""
+        terminal.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 30, dy: (CGFloat(index) + 0.5) * cell)).tap()
+        XCTAssertNotNil(until(5) { vimRuler()?.hasPrefix(target + ",") == true }, "A tap must move vim's cursor to line \(target) (\(vimRuler() ?? "none"))")
+        shot("r15-mouse-5-vim-tapped")
+        // Escape first, in case a drag left vim in Visual mode.
+        let escape = app.buttons["terminalKey-escape"]
+        if escape.isHittable { escape.tap() }
+        runSnippet("Leave vim")
+        XCTAssertNotNil(until(10) { lastLine().hasSuffix("~$") }, "vim must quit")
+        disconnectAndRemove(name, fingerprint: fingerprint)
+    }
+
     // MARK: Round 15: renderer trial
 
     /// Changes Terminal Display, opened from the bar's actions menu: toggles

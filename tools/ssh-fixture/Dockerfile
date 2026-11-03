@@ -1,5 +1,5 @@
 FROM alpine:3.22
-RUN apk add --no-cache openssh-server python3 \
+RUN apk add --no-cache openssh-server python3 tmux vim \
     && adduser -D fixture \
     && echo 'fixture:witerm-fixture-only' | chpasswd \
     && mkdir -p /etc/ssh/authorized_keys /run/sshd
