@@ -100,7 +100,7 @@ import XCTest
         XCTAssertTrue(app.buttons["newSSHProfile"].waitForExistence(timeout: 10))
         // Leftovers of an interrupted run of these tests, by their unique prefix.
         if let fingerprint = ProcessInfo.processInfo.environment["WITERM_SSH_UI_FINGERPRINT"] {
-            let leftovers = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "sshProfileRow-", "R13 "))
+            let leftovers = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label MATCHES %@", "sshProfileRow-", "R1[3-5] .*"))
             for _ in 0..<5 where leftovers.firstMatch.exists { removeHost(named: leftovers.firstMatch.label, fingerprint: fingerprint) }
         }
     }
@@ -745,6 +745,150 @@ import XCTest
         _ = until(5) { !keyboard.exists && probedGrid() == gridBefore }
         XCTAssertEqual(probedGrid(), gridBefore, "With the keyboard down again, the grid it started with")
 
+        disconnectAndRemove(name, fingerprint: fingerprint)
+    }
+
+    // MARK: Round 15: selection and scrolling
+
+    /// One long word per line, so a selection is wide and its handles are far apart.
+    private static let word = "abcdefghijklmnopqrstuvwxyz0123456789"
+
+    /// Connects, fills the scrollback with `word` lines, and hides the keyboard.
+    private func connectWithWords(_ prefix: String) throws -> (name: String, fingerprint: String) {
+        let host = try connectForGrid(prefix, more: [("Long words", "yes \(Self.word) | head -400")])
+        runSnippet("Long words")
+        XCTAssertNotNil(until(30, poll: 0.5) { text().contains(Self.word) && lastLine().hasSuffix("~$") }, "The words must print")
+        app.buttons["sshKeyboard"].tap()
+        XCTAssertNotNil(until(5) { !keyboard.exists })
+        _ = until(1) { false }
+        return host
+    }
+
+    /// Characters selected, from the layout probe.
+    private func selected() -> Int { Int(probe("sel") ?? -1) }
+
+    /// The handle knobs' centers, in screen points, from the layout probe.
+    private func knobs() -> (start: CGPoint, end: CGPoint)? {
+        guard terminal.exists, let range = terminal.label.range(of: " knobs=") else { return nil }
+        let values = terminal.label[range.upperBound...].prefix { $0 != " " }.split(separator: ",").compactMap { Double($0) }
+        guard values.count == 4 else { return nil }
+        return (CGPoint(x: values[0], y: values[1]), CGPoint(x: values[2], y: values[3]))
+    }
+
+    private func screen(_ point: CGPoint) -> XCUICoordinate {
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: point.x, dy: point.y))
+    }
+
+    private var copyItem: XCUIElement { app.buttons["Copy"].exists ? app.buttons["Copy"] : app.menuItems["Copy"] }
+
+    /// A finger that rests a moment (0.4 s, under the system's 0.5 s long
+    /// press) and then swipes scrolls the output: no selection starts, and
+    /// no edit menu appears.
+    func testSlowStartSwipeScrollsWithoutSelecting() throws {
+        continueAfterFailure = true
+        executionTimeAllowance = 300
+        let (name, fingerprint) = try connectWithWords("R15 Rest")
+        for attempt in 0..<3 {
+            let top = probe("yDisp") ?? -1
+            let start = terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
+            start.press(forDuration: 0.4, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 200)),
+                        withVelocity: .default, thenHoldForDuration: 0.1)
+            _ = until(1.5) { false }
+            let chars = selected(), after = probe("yDisp") ?? -1
+            print("PERF r15 slow_start_swipe_\(attempt) selected=\(chars) yDisp \(top) -> \(after) menu=\(copyItem.exists)")
+            shot("r15-slow-start-\(attempt)")
+            XCTAssertEqual(chars, 0, "A swipe after the finger rests must not select")
+            XCTAssertFalse(copyItem.exists, "A swipe after the finger rests must not offer Copy")
+            XCTAssertLessThan(after, top, "A swipe after the finger rests must scroll back")
+            if chars > 0 { terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6)).tap(); _ = until(1) { false } }
+        }
+        disconnectAndRemove(name, fingerprint: fingerprint)
+    }
+
+    /// After a deliberate long press: a swipe that starts on the text about
+    /// 30 pt from a handle scrolls (the selection stays as it was), a drag
+    /// that starts on a handle's knob moves that end, and Copy copies exactly
+    /// what's selected (typed back with the key row's Paste key).
+    func testSwipesNearASelectionScrollAndItsHandlesStillDrag() throws {
+        continueAfterFailure = true
+        executionTimeAllowance = 300
+        let (name, fingerprint) = try connectWithWords("R15 Handles")
+
+        // A long press selects the word under the finger; lifting offers Copy.
+        terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.35)).press(forDuration: 0.8)
+        XCTAssertTrue(copyItem.waitForExistence(timeout: 5), "Lifting a long press must offer Copy")
+        _ = until(0.5) { false }
+        let word = selected()
+        XCTAssertEqual(word, Self.word.count, "A long press selects the word under it")
+        shot("r15-handles-1-selected")
+
+        // A swipe from the selected text about 30 pt from the start handle's
+        // knob (25 pt to its right, near the row's foot) scrolls. The edit
+        // menu sits beside the selection, so the row itself is free.
+        let knobsBefore = try XCTUnwrap(knobs(), "The probe must report the handles")
+        let top = probe("yDisp") ?? -1
+        let cell = probe("cell") ?? 17
+        let from = CGPoint(x: knobsBefore.start.x + 25, y: knobsBefore.start.y + 6 + cell * 0.8)
+        screen(from).press(forDuration: 0.05, thenDragTo: screen(from).withOffset(CGVector(dx: 0, dy: 120)),
+                           withVelocity: .slow, thenHoldForDuration: 0.3)
+        _ = until(1.5) { false }
+        let afterSwipe = selected(), scrolledTop = probe("yDisp") ?? -1
+        print("PERF r15 swipe_near_handle selected \(word) -> \(afterSwipe) yDisp \(top) -> \(scrolledTop) menu=\(copyItem.exists)")
+        shot("r15-handles-2-swiped")
+        XCTAssertEqual(afterSwipe, word, "A swipe that starts on the text must not move the selection")
+        XCTAssertLessThan(scrolledTop, top, "A swipe that starts on the text must scroll")
+        XCTAssertTrue(copyItem.waitForExistence(timeout: 3), "The edit menu returns once the scroll stops")
+        let knobsScrolled = try XCTUnwrap(knobs(), "The selection must still be there")
+        XCTAssertEqual(knobsScrolled.start.y - knobsBefore.start.y, 120, accuracy: 25, "The selection scrolls with its text")
+
+        // A swipe up from the text 30 pt below the end handle's knob, toward
+        // it, scrolls forward. (The old target was tested where the finger
+        // was once the drag was recognized, so this one took the handle.)
+        let below = CGPoint(x: knobsScrolled.end.x - 10, y: knobsScrolled.end.y + 30)
+        screen(below).press(forDuration: 0.05, thenDragTo: screen(below).withOffset(CGVector(dx: 0, dy: -80)),
+                            withVelocity: .slow, thenHoldForDuration: 0.3)
+        _ = until(1.5) { false }
+        let afterUp = selected(), forwardTop = probe("yDisp") ?? -1
+        print("PERF r15 swipe_toward_handle selected \(word) -> \(afterUp) yDisp \(scrolledTop) -> \(forwardTop) menu=\(copyItem.exists)")
+        shot("r15-handles-2b-swiped-up")
+        XCTAssertEqual(afterUp, word, "A swipe toward a handle that starts on the text must not move the selection")
+        XCTAssertGreaterThan(forwardTop, scrolledTop, "A swipe up that starts on the text must scroll forward")
+        XCTAssertTrue(copyItem.waitForExistence(timeout: 3), "The edit menu returns once the scroll stops")
+
+        // A drag that starts on the end handle's knob shortens the selection.
+        let knobsNow = try XCTUnwrap(knobs(), "The selection must still be there")
+        screen(knobsNow.end).press(forDuration: 0.05, thenDragTo: screen(knobsNow.end).withOffset(CGVector(dx: -100, dy: 0)),
+                                   withVelocity: .slow, thenHoldForDuration: 0.2)
+        XCTAssertTrue(copyItem.waitForExistence(timeout: 5), "Lifting a handle offers Copy again")
+        _ = until(0.5) { false }
+        let shorter = selected(), handleTop = probe("yDisp") ?? -1
+        print("PERF r15 handle_drag selected \(word) -> \(shorter) yDisp \(forwardTop) -> \(handleTop)")
+        shot("r15-handles-3-dragged")
+        XCTAssertGreaterThan(shorter, 0, "Dragging a handle keeps a selection")
+        XCTAssertLessThan(shorter, word, "Dragging the end handle left must shorten the selection")
+        XCTAssertEqual(handleTop, forwardTop, "Dragging a handle must not scroll")
+
+        // Copy, then the Paste key types exactly that back at the prompt.
+        copyItem.tap()
+        _ = until(1) { false }
+        XCTAssertEqual(selected(), 0, "Copy ends the selection")
+        app.buttons["terminalJumpToLatest"].tap()
+        XCTAssertNotNil(until(5) { lastLine().hasSuffix("~$") })
+        app.buttons["sshKeyboard"].tap()
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+        let paste = app.buttons["terminalKey-paste"]
+        XCTAssertTrue(paste.waitForExistence(timeout: 5))
+        for _ in 0..<6 where !paste.isHittable {
+            let escape = app.buttons["terminalKey-escape"]
+            let start = escape.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: -140, dy: 0)))
+        }
+        paste.tap()
+        let expected = String(Self.word.prefix(max(0, shorter)))
+        XCTAssertNotNil(until(5) { lastLine().hasSuffix("~$ " + expected) }, "Copy must copy exactly the selection (\(lastLine()))")
+        shot("r15-handles-4-pasted")
+        app.buttons["terminalInterrupt"].tap()
+        XCTAssertNotNil(until(5) { lastLine().hasSuffix("~$") })
         disconnectAndRemove(name, fingerprint: fingerprint)
     }
 }
