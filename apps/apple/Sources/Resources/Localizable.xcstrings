@@ -222,6 +222,23 @@
         }
       }
     },
+    "%@ · Until the invitation ends" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Until the invitation ends"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · 邀请结束前可用"
+          }
+        }
+      }
+    },
     "%@, so you’re watching." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1152,6 +1169,23 @@
         }
       }
     },
+    "Advanced" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Advanced"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "高级"
+          }
+        }
+      }
+    },
     "After the colon, use a port from 1 to 65535." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1607,57 +1641,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "响铃"
-          }
-        }
-      }
-    },
-    "Bell Off" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bell Off"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "响铃已关闭"
-          }
-        }
-      }
-    },
-    "Bell On" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bell On"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "响铃已打开"
-          }
-        }
-      }
-    },
-    "Bell and VoiceOver" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bell and VoiceOver"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "响铃与旁白"
           }
         }
       }
@@ -3001,23 +2984,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已取消检查"
-          }
-        }
-      }
-    },
-    "Connections" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Connections"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "连接"
           }
         }
       }
@@ -4909,6 +4875,23 @@
         }
       }
     },
+    "Hiding Keyboard…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hiding Keyboard…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在隐藏键盘…"
+          }
+        }
+      }
+    },
     "Home" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6706,23 +6689,6 @@
         }
       }
     },
-    "No Terminals" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No Terminals"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "没有终端"
-          }
-        }
-      }
-    },
     "No Terminals Yet" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7076,6 +7042,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "关闭时：只有在这台 Mac 上无人输入时它才能输入"
+          }
+        }
+      }
+    },
+    "Offline" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "离线"
+          }
+        }
+      }
+    },
+    "Offline. Its terminals appear here when it’s back online." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Offline. Its terminals appear here when it’s back online."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "离线。它重新上线后，终端会显示在这里。"
           }
         }
       }
@@ -7556,23 +7556,6 @@
         }
       }
     },
-    "Opens its terminal in Terminals." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Opens its terminal in Terminals."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在“终端”中打开它的终端。"
-          }
-        }
-      }
-    },
     "Operation cancelled." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7773,23 +7756,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已配对设备"
-          }
-        }
-      }
-    },
-    "Paired Devices · %@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Paired Devices · %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已配对设备 · %@"
           }
         }
       }
@@ -9885,19 +9851,19 @@
         }
       }
     },
-    "Search Hosts" : {
+    "Search Terminals" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Search Hosts"
+            "value" : "Search Terminals"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "搜索主机"
+            "value" : "搜索终端"
           }
         }
       }
@@ -10106,6 +10072,23 @@
         }
       }
     },
+    "Shared with You" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shared with You"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "与你共享"
+          }
+        }
+      }
+    },
     "Shared · Connecting…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10293,19 +10276,19 @@
         }
       }
     },
-    "Show Terminals" : {
+    "Showing Keyboard…" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Show Terminals"
+            "value" : "Showing Keyboard…"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "显示终端"
+            "value" : "正在显示键盘…"
           }
         }
       }
@@ -10340,23 +10323,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "显示已连接的终端。"
-          }
-        }
-      }
-    },
-    "Shows this device’s terminals." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Shows this device’s terminals."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "显示此设备的终端。"
           }
         }
       }
@@ -10701,6 +10667,23 @@
         }
       }
     },
+    "Starts typing in this terminal." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starts typing in this terminal."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始在这个终端中输入。"
+          }
+        }
+      }
+    },
     "Status" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10833,40 +10816,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "切换终端"
-          }
-        }
-      }
-    },
-    "Switching to Typing…" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Switching to Typing…"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在切换到可输入…"
-          }
-        }
-      }
-    },
-    "Switching to Watching…" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Switching to Watching…"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在切换到仅观看…"
           }
         }
       }
@@ -11275,23 +11224,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "终端文本"
-          }
-        }
-      }
-    },
-    "Terminal Text, Watching" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Terminal Text, Watching"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "终端文本，仅观看"
           }
         }
       }
@@ -12550,6 +12482,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "波浪号"
+          }
+        }
+      }
+    },
+    "To open another device’s terminals here, add it in Devices." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "To open another device’s terminals here, add it in Devices."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要在这里打开另一台设备的终端，请先在“设备”中添加它。"
           }
         }
       }
