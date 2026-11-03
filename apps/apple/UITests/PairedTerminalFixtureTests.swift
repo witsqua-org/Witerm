@@ -162,11 +162,22 @@ import XCTest
         waitForWatching()
         let menu = app.buttons["terminalActionsMenu"]
         XCTAssertTrue(menu.waitForExistence(timeout: 5))
+        // What's on screen without the menu, so only new menu items count.
+        let chrome = Set(app.buttons.allElementsBoundByIndex.map(\.label))
         menu.tap()
-        let larger = app.buttons["terminalLargerText"]
-        XCTAssertTrue(larger.waitForExistence(timeout: 3), "Larger text isn't in the menu itself")
+        // Menus drop the identifiers of a control group's buttons: by label too.
+        func item(_ id: String, _ label: String) -> XCUIElement {
+            app.buttons.matching(NSPredicate(format: "identifier == %@ OR label == %@", id, label)).firstMatch
+        }
+        let larger = item("terminalLargerText", "Increase Text Size")
+        if !larger.waitForExistence(timeout: 3) {
+            shot("b3-1-actions-menu-missing")
+            print("PROBE menu buttons: " + app.buttons.allElementsBoundByIndex.map { "\($0.identifier)|\($0.label)" }.joined(separator: ", "))
+        }
+        XCTAssertTrue(larger.exists, "Larger text isn't in the menu itself")
         shot("b3-1-actions-menu")
-        XCTAssertTrue(app.buttons["terminalSmallerText"].exists)
+        XCTAssertTrue(item("terminalSmallerText", "Decrease Text Size").exists)
+        XCTAssertTrue(item("terminalTextSize", "14 pt").exists, "The size, between Smaller and Larger")
         XCTAssertFalse(app.buttons["terminalTextAndColors"].exists, "Text and Colors is still a submenu")
         for scheme in ["System", "Graphite", "Paper", "Ocean"] {
             XCTAssertTrue(app.buttons[scheme].exists, "\(scheme) isn't in the menu itself")
@@ -175,12 +186,165 @@ import XCTest
         let before = Set(app.buttons.allElementsBoundByIndex.map(\.label))
         app.buttons["Ocean"].tap()
         RunLoop.current.run(until: Date().addingTimeInterval(0.8))
-        let opened = Set(app.buttons.allElementsBoundByIndex.filter(\.isHittable).map(\.label)).subtracting(before)
+        let opened = Set(app.buttons.allElementsBoundByIndex.filter(\.isHittable).map(\.label)).subtracting(before).subtracting(chrome)
         XCTAssertTrue(opened.isEmpty, "Choosing a color scheme opened \(opened)")
         XCTAssertFalse(larger.exists && larger.isHittable, "The menu stayed open after choosing a scheme")
         // Put the scheme back.
         menu.tap()
         XCTAssertTrue(app.buttons["System"].waitForExistence(timeout: 3))
         app.buttons["System"].tap()
+    }
+
+    // MARK: B2
+
+    /// Hide Keyboard is a 44 pt capsule like the keyboard button, and a
+    /// swipe down on the key row hides the keyboard (and so watches, with
+    /// the grid filling the screen).
+    func testSwipeDownOnTheKeyRowHidesTheKeyboard() {
+        launch()
+        open("fixture-s1")
+        waitForTyping()
+        XCTAssertEqual(hideKey.frame.width, hideKey.frame.height, accuracy: 1, "Hide Keyboard is round")
+        XCTAssertGreaterThanOrEqual(hideKey.frame.width, 44)
+        shot("b2-1-key-row")
+        let escape = app.buttons["terminalKey-escape"]
+        XCTAssertTrue(escape.exists)
+        let start = escape.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2))
+        start.press(forDuration: 0.02, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 60)), withVelocity: .fast, thenHoldForDuration: 0)
+        waitForWatching()
+        assertGridFillsTheScreen("after a swipe down on the key row")
+        // The swipe sent nothing: Esc would have shown as nothing, but the
+        // prompt is still the last line.
+        XCTAssertTrue((surface.value as? String ?? "").contains("fixture$"))
+    }
+
+    // MARK: A1
+
+    /// A Shared with You terminal can end its invitation from the phone:
+    /// a swipe or a long press, always confirmed, never a full swipe.
+    func testEndingAnInvitationAsksFirstAndRemovesTheRow() {
+        launch()
+        let row = app.buttons["remoteSession-fixture-a1"]
+        XCTAssertTrue(row.waitForExistence(timeout: 15))
+        row.swipeLeft()
+        let swipe = app.buttons["End Invitation…"]
+        XCTAssertTrue(swipe.waitForExistence(timeout: 3), "No End Invitation… swipe")
+        shot("a1-1-swipe")
+        swipe.tap()
+        let alert = app.alerts.firstMatch
+        XCTAssertTrue(alert.waitForExistence(timeout: 3))
+        XCTAssertEqual(alert.label, "End Invitation to “Demo”?")
+        XCTAssertTrue(alert.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "can’t be undone")).firstMatch.exists,
+                      "The confirmation must say it can't be undone")
+        shot("a1-2-confirm")
+        alert.buttons["Cancel"].tap()
+        XCTAssertTrue(row.waitForExistence(timeout: 3), "Cancel must keep it")
+        // A full swipe only reveals the action.
+        row.swipeLeft(velocity: .fast)
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        XCTAssertFalse(app.alerts.firstMatch.exists)
+        XCTAssertTrue(row.exists)
+        app.swipeDown()
+        row.press(forDuration: 1.2)
+        let menuItem = app.buttons["End Invitation…"]
+        XCTAssertTrue(menuItem.waitForExistence(timeout: 3), "No End Invitation… in the long-press menu")
+        menuItem.tap()
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 3))
+        app.alerts.firstMatch.buttons["End Invitation"].tap()
+        XCTAssertFalse(row.waitForExistence(timeout: 3) && row.exists, "The row stays after ending the invitation")
+        XCTAssertFalse(app.staticTexts["Shared with You"].exists, "An empty Shared with You stays")
+        shot("a1-3-ended")
+    }
+
+    // MARK: A2
+
+    /// Announce New Output is in Settings' Terminal group while VoiceOver
+    /// runs (DEBUG stand-in for VoiceOver), and only in Advanced otherwise.
+    func testAnnounceNewOutputFollowsVoiceOver() {
+        for voiceOver in [true, false] {
+            launch(extra: voiceOver ? ["-witerm.debug.voiceOverRunning", "YES"] : [])
+            app.tabBars.buttons.element(boundBy: 2).tap()
+            let toggle = app.switches["terminalAnnounceOutput"]
+            XCTAssertEqual(toggle.waitForExistence(timeout: 3), voiceOver, "In the main list: \(voiceOver)")
+            shot("a2-settings-voiceover-\(voiceOver)")
+            app.buttons["settingsAdvanced"].tap()
+            XCTAssertTrue(app.switches["terminalBell"].waitForExistence(timeout: 3))
+            XCTAssertEqual(app.switches["terminalAnnounceOutput"].exists, !voiceOver, "In Advanced: \(!voiceOver)")
+            app.terminate()
+        }
+    }
+
+    // MARK: B5
+
+    /// The seconds to stay away, from `WITERM_BG_SECONDS` (default 10 and 60).
+    private var awayTimes: [Double] {
+        (ProcessInfo.processInfo.environment["WITERM_BG_SECONDS"] ?? "10,60").split(separator: ",").compactMap { Double($0) }
+    }
+
+    /// Leaves for `seconds` and returns; then measures how long until the
+    /// terminal can be typed in again, whether anything said Disconnected
+    /// or Opening on the way, and whether its link was kept or resumed.
+    private func away(_ seconds: Double, label: String) -> (usable: Double?, links: Double?, covers: Double?, flashed: Bool) {
+        XCUIDevice.shared.press(.home)
+        RunLoop.current.run(until: Date().addingTimeInterval(seconds))
+        app.activate()
+        let start = Date()
+        var flashed = false, usable: Double?
+        let disconnected = app.descendants(matching: .any)["remoteDisconnectedStatus"].firstMatch
+        let activity = app.descendants(matching: .any)["remoteTerminalActivity"].firstMatch
+        while Date().timeIntervalSince(start) < 15 {
+            if disconnected.exists || activity.exists { flashed = true }
+            if usable == nil, probeText("mode") == "control", probeText("focused") == "1", hideKey.exists {
+                usable = Date().timeIntervalSince(start)
+            }
+            if usable != nil, Date().timeIntervalSince(start) > (usable ?? 0) + 2 { break }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        report("back after \(Int(seconds)) s")
+        print("PROBE b5 paired away=\(Int(seconds)) usable=\(usable.map { String(format: "%.2f", $0) } ?? "never") flashed=\(flashed) links=\(probeText("links") ?? "?") covers=\(probeText("covers") ?? "?") coverMs=\(probeText("coverMs") ?? "?")")
+        shot("b5-\(label)-back-\(Int(seconds))s")
+        return (usable, probe("links"), probe("covers"), flashed)
+    }
+
+    /// Returning within 3 minutes continues the same terminal: still typing,
+    /// keyboard up, no Disconnected or Opening on the way; a short absence
+    /// keeps the same link, a longer one resumes it under the old screen.
+    func testReturningWithinThreeMinutesContinuesTheTerminal() {
+        executionTimeAllowance = 900
+        launch()
+        open("fixture-s1")
+        waitForTyping()
+        for seconds in awayTimes {
+            let before = probe("links") ?? 0, rows = probe("rows")
+            let result = away(seconds, label: "paired")
+            XCTAssertNotNil(result.usable, "Not typing again after \(seconds) s away")
+            XCTAssertFalse(result.flashed, "Disconnected or Opening showed after \(seconds) s away")
+            XCTAssertEqual(probe("rows"), rows, "The grid changed")
+            if seconds < 20 {
+                XCTAssertEqual(result.links, before, "A short absence must keep the same link")
+            } else {
+                XCTAssertEqual(result.links, before + 1, "A longer absence resumes with one new link")
+                XCTAssertGreaterThan(probe("coverMs") ?? 0, 0, "The old screen must cover the redraw")
+            }
+            XCTAssertTrue((surface.value as? String ?? "").contains("fixture$"), "The screen is blank")
+        }
+    }
+
+    /// Past 3 minutes the terminal was let go: returning reconnects as before.
+    /// Opt-in (`WITERM_BG_LONG=1`): it waits 190 s.
+    func testReturningAfterThreeMinutesReconnects() throws {
+        guard ProcessInfo.processInfo.environment["WITERM_BG_LONG"] == "1" else { throw XCTSkip("Set WITERM_BG_LONG=1") }
+        executionTimeAllowance = 600
+        launch()
+        open("fixture-s1")
+        waitForTyping()
+        let before = probe("links") ?? 0
+        XCUIDevice.shared.press(.home)
+        RunLoop.current.run(until: Date().addingTimeInterval(190))
+        app.activate()
+        let start = Date()
+        XCTAssertTrue(until(20) { probeText("mode") == "control" && (probe("links") ?? 0) > before }, "Didn't reconnect")
+        print("PROBE b5 paired away=190 reconnected=\(String(format: "%.2f", Date().timeIntervalSince(start))) links=\(probeText("links") ?? "?")")
+        shot("b5-paired-back-190s")
     }
 }

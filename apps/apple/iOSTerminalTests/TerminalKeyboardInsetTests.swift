@@ -166,4 +166,39 @@ import XCTest
         XCTAssertEqual(surface.terminal.getTerminal().cols, 80)
         XCTAssertEqual(surface.terminal.getTerminal().rows, 24)
     }
+
+    /// Round 17, the black half screen: a typing view with the keyboard up
+    /// fits the rows above it, and hiding the keyboard switched to watching
+    /// the Mac's grid, still that size, so half the screen stayed empty. The
+    /// size this view watches at is the whole view less the keyboard
+    /// button's strip, whatever the keyboard does meanwhile, and a watched
+    /// grid of that size fills the text area.
+    func testWatchingFitIsTheKeyboardHiddenSizeAndFillsTheView() async throws {
+        let session = LocalSessionInfo(id: UUID().uuidString, name: "Fit", createdAt: .now, columns: 45, rows: 40)
+        let typing = RemoteNativeTerminalView.TerminalSurface(mode: .control, session: session, fontSize: 14, isInteractive: true)
+        let frame = CGRect(x: 0, y: 120, width: window.bounds.width, height: window.bounds.height - 154)
+        typing.frame = frame
+        window.rootViewController?.view.addSubview(typing)
+        await settle(typing)
+        postKeyboard(CGRect(x: 0, y: window.bounds.height - 336, width: window.bounds.width, height: 336))
+        await settle(typing)
+        let cell = cellHeight(typing)
+        let above = typing.terminal.getTerminal().rows
+        let fit = typing.watchingFit
+        XCTAssertEqual(fit.rows, Int((frame.height - 60) / cell), "The whole view less the 60 pt button strip")
+        XCTAssertGreaterThan(fit.rows, above + 10, "Not the rows above the keyboard")
+        XCTAssertEqual(fit.columns, typing.terminal.getTerminal().cols, "The keyboard never changes the width")
+
+        let watched = LocalSessionInfo(id: session.id, name: "Fit", createdAt: .now, columns: fit.columns, rows: fit.rows)
+        let watching = RemoteNativeTerminalView.TerminalSurface(mode: .view, session: watched, fontSize: 14, isInteractive: true)
+        watching.setKeyboardButton({}, identifier: "remoteKeyboard")
+        postKeyboard(CGRect(x: 0, y: window.bounds.height, width: window.bounds.width, height: 336))
+        watching.frame = frame
+        window.rootViewController?.view.addSubview(watching)
+        await settle(watching)
+        let blank = watching.readingView.frame.height - watching.terminal.frame.height
+        XCTAssertGreaterThanOrEqual(blank, -1, "The grid runs below the text area")
+        XCTAssertLessThan(blank, cell, "\(blank) pt blank under the watched grid")
+        typing.removeFromSuperview(); watching.removeFromSuperview()
+    }
 }

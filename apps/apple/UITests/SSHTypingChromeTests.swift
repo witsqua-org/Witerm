@@ -37,7 +37,12 @@ import XCTest
     private func report(_ name: String, _ value: Double, _ format: String = "%.2f") {
         print("PERF \(name) " + String(format: format, value))
     }
-    private var typeable: Bool { keyboard.exists && lastLine().hasSuffix("~$") }
+    private var typeable: Bool {
+        (keyboard.exists || app.buttons["terminalKey-hideKeyboard"].exists) && lastLine().hasSuffix("~$")
+    }
+    /// Round 17: the DEBUG stand-in for the software keyboard, on a simulator
+    /// that has a hardware keyboard.
+    private var standInKeyboard = false
 
     /// The system's offer to save the password, wherever iOS puts it.
     private var passwordOffer: XCUIElement? {
@@ -96,6 +101,7 @@ import XCTest
         let environment = ProcessInfo.processInfo.environment
         if let renderer = environment["WITERM_RENDERER"] { app.launchArguments += ["-witerm.debug.renderer", renderer] }
         if environment["WITERM_METAL_RAW"] == "1" { app.launchArguments += ["-witerm.debug.metalRaw", "YES"] }
+        if standInKeyboard { app.launchArguments += ["-witerm.debug.softwareKeyboard", "YES"] }
         addTeardownBlock { await MainActor.run { app.terminate() } }
         app.launch()
         XCUIDevice.shared.orientation = .portrait
@@ -105,7 +111,7 @@ import XCTest
         XCTAssertTrue(app.buttons["newSSHProfile"].waitForExistence(timeout: 10))
         // Leftovers of an interrupted run of these tests, by their unique prefix.
         if let fingerprint = ProcessInfo.processInfo.environment["WITERM_SSH_UI_FINGERPRINT"] {
-            let leftovers = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label MATCHES %@", "sshProfileRow-", "R1[3-5] .*"))
+            let leftovers = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label MATCHES %@", "sshProfileRow-", "R1[3-7] .*"))
             for _ in 0..<5 where leftovers.firstMatch.exists { removeHost(named: leftovers.firstMatch.label, fingerprint: fingerprint) }
         }
     }
@@ -558,6 +564,89 @@ import XCTest
 
     /// Larger and Smaller text from the actions menu reflow the grid at once
     /// to whole cells of the new size, and the host is told that size.
+    /// Round 17, with the software keyboard (or its DEBUG stand-in with
+    /// `WITERM_SOFT_KEYBOARD=1` where the simulator has a hardware keyboard):
+    /// hiding it gives every row back, with the key and with a swipe down on
+    /// the key row, and the host is told; nothing blank stays where the
+    /// keyboard was. A drag from the text into the keyboard (interactive
+    /// dismissal) is tried and reported, not required.
+    func testHidingTheSoftwareKeyboardGivesEveryRowBack() throws {
+        continueAfterFailure = true
+        standInKeyboard = ProcessInfo.processInfo.environment["WITERM_SOFT_KEYBOARD"] == "1"
+        let (name, fingerprint) = try connectForGrid("R17 Soft")
+        let hide = app.buttons["terminalKey-hideKeyboard"]
+        XCTAssertNotNil(until(5) { hide.isHittable })
+        _ = until(1) { false }
+        let up = Int(probe("rows") ?? -1)
+        print("PROBE r17 ssh keyboard up rows=\(up) label=\(keyboardDiagnostics())")
+        shot("r17-ssh-1-keyboard-up")
+        func assertRowsBack(_ step: String) {
+            XCTAssertNotNil(until(5) { Int(probe("rows") ?? -1) > up + 10 }, "\(step): the rows didn't come back (\(probedGrid()))")
+            _ = until(1) { false }
+            let gap = probe("gap") ?? -1, cell = probe("cell") ?? 0
+            print("PROBE r17 ssh \(step) grid=\(probedGrid()) gap=\(gap) overflow=\(probe("overflow") ?? -1) \(keyboardDiagnostics())")
+            XCTAssertLessThan(gap, cell, "\(step): \(gap) pt blank under the grid")
+            XCTAssertLessThan(probe("overflow") ?? 99, 1, "\(step): rows under the keyboard button")
+        }
+        hide.tap()
+        assertRowsBack("hide key")
+        shot("r17-ssh-2-hidden")
+        let full = probedGrid()
+        // Up again, then a drag from the text into the keyboard.
+        app.toggleTerminalKeyboard()
+        XCTAssertNotNil(until(5) { hide.isHittable && Int(probe("rows") ?? -1) == up }, "Keyboard up again: \(probedGrid())")
+        let start = terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+        start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 520)), withVelocity: .slow,
+                    thenHoldForDuration: 0.1)
+        let dismissed = until(3) { Int(probe("rows") ?? -1) > up + 10 } != nil
+        print("PROBE r17 ssh drag from text dismissed=\(dismissed) grid=\(probedGrid())")
+        if !dismissed {
+            // A swipe down on the key row.
+            let escape = app.buttons["terminalKey-escape"]
+            let key = escape.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2))
+            key.press(forDuration: 0.02, thenDragTo: key.withOffset(CGVector(dx: 0, dy: 60)), withVelocity: .fast, thenHoldForDuration: 0)
+        }
+        assertRowsBack("swipe down")
+        XCTAssertEqual(probedGrid(), full, "The same rows as with the key")
+        shot("r17-ssh-3-swiped-down")
+        let host = stty()
+        XCTAssertEqual(host.map { "\($0.columns)x\($0.rows)" }, up > 0 ? probedGrid() : nil, "The host's size")
+        disconnectAndRemove(name, fingerprint: fingerprint)
+    }
+
+    /// Round 17: returning within 3 minutes continues the same SSH
+    /// connection and shell (the same `$$`), with nothing to reconnect.
+    /// Away times from `WITERM_BG_SECONDS` (default 10 and 60). Prints
+    /// `PROBE b5 ssh` lines with the time until the terminal can type.
+    func testReturningWithinThreeMinutesKeepsTheSameShell() throws {
+        continueAfterFailure = true
+        executionTimeAllowance = 900
+        let (name, fingerprint) = try connectForGrid("R17 Back", more: [("Shell", "echo shell-$$")])
+        func shell() -> String? {
+            runSnippet("Shell")
+            _ = until(5) { text().contains("shell-") && lastLine().hasSuffix("~$") }
+            return text().split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
+                .last { $0.hasPrefix("shell-") }
+        }
+        let first = shell()
+        XCTAssertNotNil(first, "No shell id")
+        let times = (ProcessInfo.processInfo.environment["WITERM_BG_SECONDS"] ?? "10,60").split(separator: ",").compactMap { Double($0) }
+        for seconds in times {
+            XCUIDevice.shared.press(.home)
+            _ = until(seconds) { false }
+            app.activate()
+            let back = now()
+            let usable = until(15) { typeable && app.buttons["sshSessionActions"].exists }
+            let reconnect = app.buttons["sshReconnect"].exists
+            print("PROBE b5 ssh away=\(Int(seconds)) usable=\(usable.map { String(format: "%.2f", $0) } ?? "never") reconnectShown=\(reconnect) since=\(String(format: "%.2f", now() - back))")
+            shot("r17-ssh-back-\(Int(seconds))s")
+            XCTAssertNotNil(usable, "Not typeable after \(seconds) s away")
+            XCTAssertFalse(reconnect, "Reconnect showed after \(seconds) s away")
+            XCTAssertEqual(shell(), first, "Not the same shell after \(seconds) s away")
+        }
+        disconnectAndRemove(name, fingerprint: fingerprint)
+    }
+
     func testTextSizeReflowsTheGridAndResizesTheHost() throws {
         continueAfterFailure = true
         executionTimeAllowance = 300
