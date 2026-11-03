@@ -44,11 +44,27 @@ import XCTest
         element.tap()
     }
 
-    private func declinePasswordOffer() {
-        // iOS can offer to save the typed password, from the app or the system.
-        for offer in [app.buttons["Not Now"], springboard.buttons["Not Now"]] where offer.waitForExistence(timeout: 0.5) {
-            offer.tap()
+    private func declinePasswordOffer(timeout: TimeInterval = 0.5) {
+        // iOS can offer to save the typed password, from the app or the system,
+        // a moment after the form closes; a tap while it slides in is lost.
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            for offer in [app.buttons["Not Now"], springboard.buttons["Not Now"]] where offer.exists {
+                if offer.isHittable { offer.tap() }
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        } while Date() < deadline
+    }
+
+    /// The simulator's Face ID sheet can arm a moment after it appears, and
+    /// a match sent before that is lost; match again until the terminal opens.
+    private func matchUntilConnected() -> Bool {
+        let terminal = app.descendants(matching: .any)["sshTerminalSurface"].firstMatch
+        for _ in 0..<4 {
+            signal("match")
+            if terminal.waitForExistence(timeout: 5) { return true }
         }
+        return false
     }
 
     private func row(_ name: String) -> XCUIElement {
@@ -127,7 +143,7 @@ import XCTest
             declinePasswordOffer()
         }
         XCTAssertTrue(terminal.waitForExistence(timeout: 15), "The first connection didn't open")
-        declinePasswordOffer()
+        declinePasswordOffer(timeout: 3)
         app.buttons["sshShowHosts"].tap()
         disconnect(name)
 
@@ -136,8 +152,7 @@ import XCTest
         row(name).tap()
         RunLoop.current.run(until: Date().addingTimeInterval(1.5))
         shot("02-face-id-prompt")
-        signal("match")
-        XCTAssertTrue(terminal.waitForExistence(timeout: 20), "Face ID match didn't connect")
+        XCTAssertTrue(matchUntilConnected(), "Face ID match didn't connect")
         XCTAssertFalse(app.secureTextFields["sshHostPassword"].exists, "A match must not ask for the password")
         shot("03-connected-after-match")
         app.buttons["sshShowHosts"].tap()
@@ -165,8 +180,7 @@ import XCTest
         // The saved credential survived: a match connects.
         row(name).tap()
         RunLoop.current.run(until: Date().addingTimeInterval(1.5))
-        signal("match")
-        XCTAssertTrue(terminal.waitForExistence(timeout: 20), "The saved credential must survive a cancelled attempt")
+        XCTAssertTrue(matchUntilConnected(), "The saved credential must survive a cancelled attempt")
         app.buttons["sshShowHosts"].tap()
     }
 
