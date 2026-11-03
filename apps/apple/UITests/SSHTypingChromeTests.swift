@@ -209,6 +209,14 @@ import XCTest
     /// Runs the "Grid size" snippet (`stty size`) from the key row and
     /// returns what the host says its window is.
     private func stty() -> (rows: Int, columns: Int)? {
+        runSnippet("Grid size")
+        let marker = probe("rows")
+        _ = until(5) { grid() != nil && lastLine().hasSuffix("~$") && probe("rows") == marker }
+        return grid()
+    }
+
+    /// Runs a saved snippet from the key row's Snippets key.
+    private func runSnippet(_ name: String) {
         if !keyboard.waitForExistence(timeout: 1.5) { app.buttons["sshKeyboard"].tap() }
         XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
         let key = app.buttons["terminalKey-snippets"]
@@ -219,12 +227,9 @@ import XCTest
             start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: -140, dy: 0)))
         }
         key.tap()
-        let item = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Grid size")).firstMatch
+        let item = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch
         XCTAssertTrue(item.waitForExistence(timeout: 5))
         item.tap()
-        let marker = probe("rows")
-        _ = until(5) { grid() != nil && lastLine().hasSuffix("~$") && probe("rows") == marker }
-        return grid()
     }
 
     // MARK: Save Password
@@ -433,9 +438,9 @@ import XCTest
     // MARK: Round 14: layout
 
     /// Connects a new fixture host whose snippet prints the host's window size.
-    private func connectForGrid(_ prefix: String) throws -> (name: String, fingerprint: String) {
+    private func connectForGrid(_ prefix: String, more: [(String, String)] = []) throws -> (name: String, fingerprint: String) {
         let (port, fingerprint) = try fixture()
-        launch(snippets: [("Grid size", "stty size")])
+        launch(snippets: [("Grid size", "stty size")] + more)
         let name = prefix + " " + String(UUID().uuidString.prefix(4))
         fillForm(port: port, name: name, paste: false)
         app.buttons["sshConnect"].tap()
@@ -602,6 +607,143 @@ import XCTest
         XCTAssertEqual(probedGrid(), beforeGrid, "The original size gives the original grid")
         let restoredHost = try XCTUnwrap(stty())
         XCTAssertEqual("\(restoredHost.columns)x\(restoredHost.rows)", beforeGrid, "The host must see the original size again")
+
+        disconnectAndRemove(name, fingerprint: fingerprint)
+    }
+
+    // MARK: Round 14: smoothness
+
+    /// The probe's last motion: frames, hitches, drawing and layout from the
+    /// first movement of a scroll or pinch until 0.4 s after the last.
+    private func motion() -> [String: Double] {
+        guard let part = terminal.label.components(separatedBy: " motion=").last?.components(separatedBy: " ").first else { return [:] }
+        var values: [String: Double] = [:]
+        for pair in part.split(separator: ",") {
+            let kv = pair.split(separator: ":")
+            if kv.count == 2, let value = Double(kv[1]) { values[String(kv[0])] = value }
+        }
+        return values
+    }
+
+    private func motionLine() -> String {
+        terminal.label.components(separatedBy: " motion=").last?.components(separatedBy: " events=").first ?? ""
+    }
+
+    /// Waits for a motion that differs from `before` to be reported.
+    /// Every XCTest query snapshots the app's accessibility on its main
+    /// thread, which itself costs frames, so this waits without querying
+    /// until the motion (and a fling's coast) is over, then reads once.
+    private func nextMotion(after before: [String: Double], quiet: TimeInterval = 4) -> [String: Double] {
+        RunLoop.current.run(until: Date().addingTimeInterval(quiet))
+        var latest = motion()
+        for _ in 0..<5 where latest == before || latest.isEmpty {
+            RunLoop.current.run(until: Date().addingTimeInterval(1))
+            latest = motion()
+        }
+        return latest
+    }
+
+    /// Scrolling through `seq 1 100000` and through live output, and a pinch:
+    /// frame pacing from the app's own display-link probe, the main thread's
+    /// drawing and layout per frame, and how long a pinch takes to settle on
+    /// its new font and grid (with the host told that grid).
+    func testScrollingAndPinchStaySmooth() throws {
+        continueAfterFailure = true
+        executionTimeAllowance = 600
+        let (name, fingerprint) = try connectForGrid("R14 Smooth", more: [("Hundred thousand", "seq 1 100000"),
+                                                                         ("Three million", "seq 1 3000000")])
+        runSnippet("Hundred thousand")
+        XCTAssertNotNil(until(60, poll: 1) { text().contains("100000") && lastLine().hasSuffix("~$") }, "seq 1 100000 must finish")
+        app.buttons["sshKeyboard"].tap()
+        XCTAssertNotNil(until(5) { !keyboard.exists })
+        _ = until(1) { false }
+
+        // Flings back through the scrollback.
+        var worst = 0.0, hitches = 0.0, frames = 0.0, draws = 0.0, drawMs = 0.0, drawWorst = 0.0, readings = 0.0, layouts = 0.0
+        for index in 0..<3 {
+            let before = motion()
+            terminal.swipeDown(velocity: .fast)
+            let m = nextMotion(after: before)
+            print("PERF r14 scroll_fling_\(index) \(motionLine())")
+            worst = max(worst, m["worstms"] ?? 0); hitches += m["hitches"] ?? 0; frames += m["frames"] ?? 0
+            draws += m["draws"] ?? 0; drawMs += (m["drawms"] ?? 0) * (m["draws"] ?? 0); drawWorst = max(drawWorst, m["drawworstms"] ?? 0)
+            readings += m["readings"] ?? 0; layouts += m["layouts"] ?? 0
+        }
+        report("r14_scroll_frames", frames, "%.0f")
+        report("r14_scroll_hitches", hitches, "%.0f")
+        report("r14_scroll_worst_frame_ms", worst)
+        report("r14_scroll_draw_mean_ms", draws > 0 ? drawMs / draws : 0)
+        report("r14_scroll_draw_worst_ms", drawWorst)
+        report("r14_scroll_draws_per_frame", frames > 0 ? draws / frames : 0)
+        report("r14_scroll_readings_per_frame", frames > 0 ? readings / frames : 0)
+        report("r14_scroll_layouts_per_frame", frames > 0 ? layouts / frames : 0)
+        XCTAssertGreaterThan(frames, 0, "The probe must have seen the scroll")
+        XCTAssertLessThan(readings / max(1, frames), 0.1, "A touch scroll must not rebuild the reading page every frame")
+        shot("r14-smooth-1-scrolled-back")
+        let latest = app.buttons["terminalJumpToLatest"]
+        if latest.waitForExistence(timeout: 3) { latest.tap() }
+        XCTAssertNotNil(until(5) { lastLine().hasSuffix("~$") })
+
+        // A drag through live output (three million lines stream for several seconds).
+        runSnippet("Three million")
+        _ = until(1.5) { false }
+        let beforeLive = motion()
+        terminal.swipeDown(velocity: .slow)
+        let live = nextMotion(after: beforeLive)
+        print("PERF r14 scroll_live \(motionLine())")
+        report("r14_live_scroll_hitches", live["hitches"] ?? -1, "%.0f")
+        report("r14_live_scroll_worst_frame_ms", live["worstms"] ?? -1)
+        report("r14_live_scroll_draw_mean_ms", live["drawms"] ?? -1)
+        shot("r14-smooth-2-live-output")
+        if !keyboard.exists { app.buttons["sshKeyboard"].tap() }
+        let interrupt = app.buttons["terminalInterrupt"]
+        if interrupt.waitForExistence(timeout: 5) { interrupt.tap() }
+        XCTAssertNotNil(until(30, poll: 1) { lastLine().hasSuffix("~$") }, "Ctrl+C must stop the output")
+        if latest.exists { latest.tap() }
+        app.buttons["sshKeyboard"].tap()
+        XCTAssertNotNil(until(5) { !keyboard.exists })
+        _ = until(1) { false }
+
+        // A pinch: live scaling, then one font, one grid and one resize.
+        let cell = probe("cell") ?? 0
+        let gridBefore = probedGrid()
+        let beforePinch = motion()
+        terminal.pinch(withScale: 1.5, velocity: 1.5)
+        let pinch = nextMotion(after: beforePinch)
+        _ = until(1) { false }
+        let settle = terminal.label.components(separatedBy: " settle=").last?.components(separatedBy: " ").first ?? ""
+        print("PERF r14 pinch \(motionLine()) grid \(gridBefore) -> \(probedGrid()) cell \(cell) -> \(probe("cell") ?? 0)")
+        report("r14_pinch_steps", pinch["pinchsteps"] ?? -1, "%.0f")
+        report("r14_pinch_step_worst_ms", pinch["pinchstepworstms"] ?? -1)
+        report("r14_pinch_layouts", pinch["layouts"] ?? -1, "%.0f")
+        report("r14_pinch_readings", pinch["readings"] ?? -1, "%.0f")
+        report("r14_pinch_hitches", pinch["hitches"] ?? -1, "%.0f")
+        report("r14_pinch_worst_frame_ms", pinch["worstms"] ?? -1)
+        print("PERF r14 pinch_settle \(settle)")
+        XCTAssertGreaterThan(pinch["pinchsteps"] ?? 0, 0, "The probe must have seen the pinch")
+        XCTAssertLessThanOrEqual(pinch["layouts"] ?? 99, 2, "Pinching must not lay the terminal out at every step")
+        shot("r14-smooth-3-pinched")
+        XCTAssertGreaterThan(probe("cell") ?? 0, cell, "Pinching out must enlarge the text")
+        XCTAssertNotEqual(probedGrid(), gridBefore, "Pinching out must reflow the grid")
+        let host = try XCTUnwrap(stty())
+        XCTAssertEqual("\(host.columns)x\(host.rows)", probedGrid(), "The host must get the pinched grid")
+
+        // Back to the size it started with, from the actions menu.
+        let actions = app.buttons["sshSessionActions"]
+        for _ in 0..<12 where (probe("cell") ?? 0) > cell + 0.01 {
+            XCTAssertNotNil(until(5) { actions.isHittable })
+            actions.tap()
+            let smaller = app.buttons.matching(NSPredicate(format: "identifier == %@ OR label == %@", "terminalSmallerText", "Decrease Text Size")).firstMatch
+            XCTAssertTrue(smaller.waitForExistence(timeout: 5))
+            smaller.tap()
+            _ = until(1) { false }
+            if smaller.exists { terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap() }
+            _ = until(5) { !smaller.exists }
+        }
+        XCTAssertEqual(probe("cell") ?? 0, cell, accuracy: 0.01, "The text size must be back where it started")
+        if keyboard.exists { app.buttons["sshKeyboard"].tap() }
+        _ = until(5) { !keyboard.exists && probedGrid() == gridBefore }
+        XCTAssertEqual(probedGrid(), gridBefore, "With the keyboard down again, the grid it started with")
 
         disconnectAndRemove(name, fingerprint: fingerprint)
     }

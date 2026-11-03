@@ -185,7 +185,15 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             addGestureRecognizer(pinch)
             installLatestButton()
             installSizeReadout()
-            terminal.scrollStateChanged = { [weak self] output in self?.updateLatestButton(output: output) }
+            terminal.scrollStateChanged = { [weak self] output in
+                #if DEBUG
+                if !output { self?.probeMotion() }
+                #endif
+                self?.updateLatestButton(output: output)
+            }
+            #if DEBUG
+            terminal.drawObserver = { [weak self] in self?.probeDraw($0) }
+            #endif
             observeKeyboard()
         }
 
@@ -240,46 +248,128 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             UIAccessibility.post(notification: .layoutChanged, argument: readingView)
         }
 
-        /// Pinching scales the text live and shows the size it will set; the
-        /// saved size changes once the fingers lift, so a controlled session
-        /// is resized once rather than at every step.
+        /// Pinching scales what's already drawn, continuously and about the
+        /// point between the fingers, and shows the size it will set: no font,
+        /// grid or resize changes and no layout pass while the fingers move.
+        /// Lifting them sets that size once, so the grid reflows once and a
+        /// controlled session is resized once.
         @objc private func pinched(_ pinch: UIPinchGestureRecognizer) {
-            let defaults = UserDefaults.standard
-            let current = defaults.object(forKey: TerminalFontSize.key) as? Double ?? TerminalFontSize.standard
-            let next = TerminalFontSize.clamped((current * Double(pinch.scale)).rounded())
+            #if DEBUG
+            let started = CACurrentMediaTime()
+            probeMotion()
+            if pinch.state == .ended, Self.layoutProbe { pinchEndedAt = started; pinchSettle = "" }
+            defer { if pinch.state == .changed { probePinchStep(CACurrentMediaTime() - started) } }
+            #endif
             switch pinch.state {
-            case .began, .changed:
-                if pinchStartSize == nil { pinchStartSize = terminal.font.pointSize }
-                let scale = CGFloat(next / current)
-                scroll.transform = UIAccessibility.isReduceMotionEnabled ? .identity : CGAffineTransform(scaleX: scale, y: scale)
-                sizeReadout.text = String(localized: "\(Int(next)) pt", bundle: .main)
-                sizeReadout.isHidden = false
-                setNeedsLayout()
-            case .ended:
-                endPinch()
-                if next != current {
-                    defaults.set(next, forKey: TerminalFontSize.key)
-                    UIAccessibility.post(notification: .announcement, argument: String(localized: "\(Int(next)) pt", bundle: .main))
-                }
-                if next == TerminalFontSize.range.lowerBound || next == TerminalFontSize.range.upperBound {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                }
-            default:
-                endPinch()
+            case .began, .changed: pinchMoved(scale: pinch.scale, at: pinch.location(in: self))
+            case .ended: pinchEnded(scale: pinch.scale)
+            default: endPinch()
             }
         }
+
+        private var storedFontSize: Double {
+            UserDefaults.standard.object(forKey: TerminalFontSize.key) as? Double ?? TerminalFontSize.standard
+        }
+
+        /// The scale a pinch shows (continuous, within the sizes allowed) and
+        /// the whole size it sets.
+        static func pinchTarget(scale: CGFloat, stored: Double) -> (scale: CGFloat, size: Double) {
+            let range = TerminalFontSize.range
+            let live = min(CGFloat(range.upperBound / stored), max(CGFloat(range.lowerBound / stored), scale))
+            return (live, TerminalFontSize.clamped((stored * Double(live)).rounded()))
+        }
+
+        /// Where the pinch began, which stays under the fingers.
+        private var pinchAnchor: CGPoint = .zero
+
+        func pinchMoved(scale: CGFloat, at point: CGPoint) {
+            if pinchStartSize == nil {
+                pinchStartSize = terminal.font.pointSize
+                pinchAnchor = point
+            }
+            let target = Self.pinchTarget(scale: scale, stored: storedFontSize)
+            if UIAccessibility.isReduceMotionEnabled {
+                scroll.transform = .identity
+            } else {
+                // A view scales about its center; this keeps the anchor fixed.
+                let offset = CGPoint(x: pinchAnchor.x - scroll.center.x, y: pinchAnchor.y - scroll.center.y)
+                scroll.transform = CGAffineTransform(translationX: offset.x, y: offset.y)
+                    .scaledBy(x: target.scale, y: target.scale).translatedBy(x: -offset.x, y: -offset.y)
+            }
+            let text = String(localized: "\(Int(target.size)) pt", bundle: .main)
+            if sizeReadout.text != text || sizeReadout.isHidden {
+                sizeReadout.text = text
+                sizeReadout.isHidden = false
+                layoutSizeReadout()
+            }
+        }
+
+        /// Sets the new size in this same pass, under the scaled view, so no
+        /// frame shows the old size between the pinch and the new font.
+        func pinchEnded(scale: CGFloat) {
+            #if DEBUG
+            var marks = [CACurrentMediaTime()]
+            defer {
+                marks.append(CACurrentMediaTime())
+                let parts = zip(marks, marks.dropFirst()).map { String(format: "%.1f", ($1 - $0) * 1000) }
+                pinchLift = parts.joined(separator: "/")
+            }
+            #endif
+            let stored = storedFontSize
+            let next = Self.pinchTarget(scale: scale, stored: stored).size
+            if next != stored {
+                // The point size keeps the Dynamic Type factor the view has.
+                updateFontSize(terminal.font.pointSize * CGFloat(next / stored))
+                #if DEBUG
+                marks.append(CACurrentMediaTime())
+                #endif
+                UserDefaults.standard.set(next, forKey: TerminalFontSize.key)
+                UIAccessibility.post(notification: .announcement, argument: String(localized: "\(Int(next)) pt", bundle: .main))
+                #if DEBUG
+                marks.append(CACurrentMediaTime())
+                #endif
+            }
+            if next == TerminalFontSize.range.lowerBound || next == TerminalFontSize.range.upperBound {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            }
+            endPinch()
+            layoutIfNeeded()
+        }
+
+        #if DEBUG
+        /// Milliseconds the lift spent: font, saving the size, layout (reflow).
+        private var pinchLift = ""
+        #endif
 
         private func endPinch() {
             pinchStartSize = nil
             scroll.transform = .identity
             sizeReadout.isHidden = true
+            setNeedsLayout()
+        }
+
+        private func layoutSizeReadout() {
+            let content = contentBounds, readout = sizeReadout.intrinsicContentSize
+            sizeReadout.frame = CGRect(x: content.midX - (readout.width + 32) / 2, y: content.midY - (readout.height + 16) / 2,
+                                       width: readout.width + 32, height: readout.height + 16)
         }
 
         required init?(coder: NSCoder) { nil }
 
         func scrollViewDidScroll(_ scrollView: UIScrollView) {
             guard scrollView === scroll else { return }
+            // Panning a wide grid by touch: the reading page catches up when
+            // the pan stops, unless VoiceOver is reading it.
+            if scroll.isTracking || scroll.isDecelerating, !UIAccessibility.isVoiceOverRunning { return }
             refreshReadingDocument()
+        }
+
+        func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+            if scrollView === scroll { refreshReadingDocument() }
+        }
+
+        func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+            if scrollView === scroll, !decelerate { refreshReadingDocument() }
         }
 
         /// The area the text uses: the view without its side insets and
@@ -396,18 +486,22 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
 
         override func layoutSubviews() {
             super.layoutSubviews()
+            // While pinching, only the size readout moves (its text changing
+            // asks for layout); everything else waits for the fingers to lift.
+            guard pinchStartSize == nil else { return layoutSizeReadout() }
+            #if DEBUG
+            fullLayouts += 1
+            let started = CACurrentMediaTime()
+            defer { probeLayout(CACurrentMediaTime() - started) }
+            #endif
             if let measured = measuredKeyboardOverlap() { keyboardOverlap = measured }
             let content = contentBounds
-            if pinchStartSize == nil {
-                scroll.transform = .identity
-                scroll.frame = content
-            }
+            scroll.transform = .identity
+            scroll.frame = content
             readingView.frame = content
             let side: CGFloat = 44, margin: CGFloat = WitermMetrics.Space.m
             latestButton.frame = CGRect(x: content.maxX - side - margin, y: content.maxY - side - margin, width: side, height: side)
-            let readout = sizeReadout.intrinsicContentSize
-            sizeReadout.frame = CGRect(x: content.midX - (readout.width + 32) / 2, y: content.midY - (readout.height + 16) / 2,
-                                       width: readout.width + 32, height: readout.height + 16)
+            layoutSizeReadout()
             if let grid = fixedGrid {
                 preserveGrid(grid)
                 terminal.frame = fixedGridFrame()
@@ -488,7 +582,12 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         }
 
         func updateFontSize(_ size: CGFloat) {
-            guard terminal.font.pointSize != size else { return }
+            // A pinch sets the size itself; SwiftUI's update with the saved
+            // size then lands within a rounding error of it.
+            guard abs(terminal.font.pointSize - size) > 0.01 else { return }
+            #if DEBUG
+            defer { probePinchSettled(font: true) }
+            #endif
             // SwiftTerm's font setter resizes from the current frame and then
             // soft-resets the terminal, clearing the program's modes; with no
             // frame it changes only the cells. A fixed grid must keep its
@@ -598,6 +697,9 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         func refreshReadingDocument(outputChanged: Bool = false) {
             let core = terminal.getTerminal()
             guard !core.synchronizedOutputActive, !terminal.bounds.isEmpty else { return }
+            #if DEBUG
+            if motionLink != nil { motion.readings += 1 }
+            #endif
             let visible = terminal.convert(contentBounds, from: self).intersection(terminal.bounds)
             let origin = CGPoint(x: 0, y: CGFloat(core.getTopVisibleRow()) * cellSize.height)
             let page = TerminalAXViewport.cells(in: visible, origin: origin, cellSize: cellSize, columns: core.cols, rows: core.rows)
@@ -615,6 +717,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
                     cellSize.height, terminal.frame.height, bounds.height, terminal.contentOffset.y, terminal.contentSize.height,
                     Self.footprintMB()) + String(format: " burst=%.3f", terminal.probeBurst.last - terminal.probeBurst.start)
                     + probeKeyboardDiagnostics()
+                    + " motion=" + motionReport + " settle=" + pinchSettle + " lift=" + pinchLift
                     + " events=" + Self.probeEvents.joined(separator: ",")
                     + " gridlog=" + probeGridLog.joined(separator: ">")
             }
@@ -657,8 +760,91 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
                 probeLastGridTime = now
                 probeGridLog = Array((probeGridLog + ["\(grid.columns)x\(grid.rows)+\(gap)"]).suffix(6))
                 Self.probeEvent("g\(grid.columns)x\(grid.rows)")
+                probePinchSettled(font: false)
             }
             probeLastGrid = grid
+        }
+
+        /// Full layout passes, for tests.
+        private(set) var fullLayouts = 0
+
+        // MARK: Motion probe
+
+        /// Frame pacing and main-thread work while the view scrolls or is
+        /// pinched, measured from the first movement until 0.4 s after the
+        /// last, for UI tests that measure smoothness. A display link runs
+        /// only then, so XCTest still sees the app idle between gestures.
+        private struct MotionStats {
+            var frames = 0, hitches = 0, worst = 0.0, nominal = 0.0
+            var draws = 0, drawTotal = 0.0, drawWorst = 0.0
+            var layouts = 0, layoutTotal = 0.0, readings = 0
+            var pinchSteps = 0, pinchStepWorst = 0.0
+        }
+        private var motionLink: CADisplayLink?
+        private var motionLast: CFTimeInterval = 0
+        private var motionAt: CFTimeInterval = 0
+        private var motion = MotionStats()
+        private var motionReport = ""
+        private var pinchEndedAt: CFTimeInterval?
+        private var pinchSettle = ""
+
+        func probeMotion() {
+            guard Self.layoutProbe else { return }
+            motionAt = CACurrentMediaTime()
+            guard motionLink == nil else { return }
+            motion = MotionStats()
+            motionLast = 0
+            let link = CADisplayLink(target: self, selector: #selector(probeFrame(_:)))
+            link.add(to: .main, forMode: .common)
+            motionLink = link
+        }
+
+        @objc private func probeFrame(_ link: CADisplayLink) {
+            if motionLast > 0 {
+                let delta = link.timestamp - motionLast
+                motion.frames += 1
+                motion.worst = max(motion.worst, delta)
+                motion.nominal = link.duration
+                if delta > link.duration * 1.5 { motion.hitches += 1 }
+            }
+            motionLast = link.timestamp
+            guard link.timestamp - motionAt > 0.4, pinchStartSize == nil else { return }
+            link.invalidate()
+            motionLink = nil
+            let m = motion
+            motionReport = String(format: "frames:%d,hitches:%d,worstms:%.1f,nominalms:%.1f,draws:%d,drawms:%.2f,drawworstms:%.2f,layouts:%d,layoutms:%.2f,readings:%d,pinchsteps:%d,pinchstepworstms:%.2f",
+                                  m.frames, m.hitches, m.worst * 1000, m.nominal * 1000, m.draws, m.draws > 0 ? m.drawTotal / Double(m.draws) * 1000 : 0,
+                                  m.drawWorst * 1000, m.layouts, m.layouts > 0 ? m.layoutTotal / Double(m.layouts) * 1000 : 0, m.readings,
+                                  m.pinchSteps, m.pinchStepWorst * 1000)
+            refreshReadingDocument()
+        }
+
+        private func probeDraw(_ seconds: CFTimeInterval) {
+            guard motionLink != nil else { return }
+            motion.draws += 1
+            motion.drawTotal += seconds
+            motion.drawWorst = max(motion.drawWorst, seconds)
+        }
+
+        private func probeLayout(_ seconds: CFTimeInterval) {
+            guard motionLink != nil else { return }
+            motion.layouts += 1
+            motion.layoutTotal += seconds
+        }
+
+        private func probePinchStep(_ seconds: CFTimeInterval) {
+            motion.pinchSteps += 1
+            motion.pinchStepWorst = max(motion.pinchStepWorst, seconds)
+        }
+
+        /// From the fingers lifting to the new font, and to the new grid.
+        private func probePinchSettled(font: Bool) {
+            guard let ended = pinchEndedAt else { return }
+            let ms = Int(((CACurrentMediaTime() - ended) * 1000).rounded())
+            if font { pinchSettle = "font:\(ms)" } else {
+                pinchSettle += ",grid:\(ms)"
+                pinchEndedAt = nil
+            }
         }
 
         static var probeEvents: [String] = []
@@ -1087,6 +1273,9 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         var keyRowMoved: (() -> Void)?
         private var readingRefreshQueued = false
         private var readingRefreshHasOutput = false
+        private var readingRefreshDeferred = false
+        /// From a finger starting a scroll until it (and its fling) stops.
+        private var touchScrolling = false
 
         /// Rebuilds the reading page (what VoiceOver reads) once per run-loop
         /// turn, however many output chunks or scroll steps arrived in it,
@@ -1097,6 +1286,16 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             if output { probeOutputArrived() }
             #endif
             readingRefreshHasOutput = readingRefreshHasOutput || output
+            // While a finger scrolls the view (or its fling coasts) and
+            // VoiceOver isn't running, nothing reads the page, and it was
+            // rebuilt every frame; it catches up once the scroll stops. (A
+            // flag of our own: asking UIScrollView, per output chunk, walks
+            // the focus system.)
+            if touchScrolling, !UIAccessibility.isVoiceOverRunning {
+                if !readingRefreshDeferred { confirmScrollingLater() }
+                readingRefreshDeferred = true
+                return
+            }
             guard !readingRefreshQueued else { return }
             readingRefreshQueued = true
             DispatchQueue.main.async { [weak self] in
@@ -1109,6 +1308,16 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         }
 
         #if DEBUG
+        /// How long each frame's drawing took, for the motion probe.
+        var drawObserver: ((CFTimeInterval) -> Void)?
+
+        override func draw(_ layer: CALayer, in ctx: CGContext) {
+            guard let drawObserver else { return super.draw(layer, in: ctx) }
+            let started = CACurrentMediaTime()
+            super.draw(layer, in: ctx)
+            drawObserver(CACurrentMediaTime() - started)
+        }
+
         /// The latest run of output, for the performance probe: when its
         /// first and last deliveries reached the renderer. A pause of a
         /// second starts a new run.
@@ -1125,10 +1334,31 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         /// as back at the live screen in SwiftTerm, but the view stayed a few
         /// points short, cutting off the foot of the last row (the prompt)
         /// and leaving it off the reading page. Finish the trip.
-        @objc func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) { snapToBottomIfFollowing() }
+        @objc func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) { scrollEnded() }
 
         @objc func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
-            if !decelerate { snapToBottomIfFollowing() }
+            if !decelerate { scrollEnded() }
+        }
+
+        /// Also brings the reading page up to date after a touch scroll.
+        @objc func scrollViewWillBeginDragging(_ scrollView: UIScrollView) { touchScrolling = true }
+
+        /// A scroll stopped another way (such as Jump to Latest during a
+        /// fling) may not say it ended; check twice a second while deferred.
+        private func confirmScrollingLater() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self, self.touchScrolling, self.readingRefreshDeferred else { return }
+                if self.isTracking || self.isDecelerating { self.confirmScrollingLater() } else { self.scrollEnded() }
+            }
+        }
+
+        /// Also brings the reading page up to date after a touch scroll.
+        private func scrollEnded() {
+            touchScrolling = false
+            snapToBottomIfFollowing()
+            guard readingRefreshDeferred else { return }
+            readingRefreshDeferred = false
+            requestReadingRefresh(output: false)
         }
 
         private func snapToBottomIfFollowing() {
@@ -1353,8 +1583,10 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         func clipboardRead(source: TerminalView) -> Data? { nil }
         func setTerminalTitle(source: TerminalView, title: String) {}
         func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
-        func scrolled(source: TerminalView, position: Double) { (source as? TerminalInputView)?.readingChanged?(false) }
-        func rangeChanged(source: TerminalView, startY: Int, endY: Int) { (source as? TerminalInputView)?.readingChanged?(false) }
+        // Coalesced, as for SSH: SwiftTerm reports these for every scroll
+        // step and redrawn range, which rebuilt the reading page each time.
+        func scrolled(source: TerminalView, position: Double) { (source as? TerminalInputView)?.requestReadingRefresh(output: false) }
+        func rangeChanged(source: TerminalView, startY: Int, endY: Int) { (source as? TerminalInputView)?.requestReadingRefresh(output: false) }
         func bell(source: TerminalView) { TerminalBell.ring() }
         func iTermContent(source: TerminalView, content: ArraySlice<UInt8>) {}
 
