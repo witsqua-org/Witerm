@@ -20,6 +20,7 @@ struct MacDevicesView: View {
     @State private var managingServers = false
     @State private var pairingDevice = false
     @State private var editingDevice: PairedDevice?
+    @State private var unpairing: DeviceGrant?
     @State private var editing: ServerEditRequest?
     /// What the background service reports for each server with remote access on.
     @State private var relays: [LocalRelayStatus] = []
@@ -35,7 +36,7 @@ struct MacDevicesView: View {
                         Section { OfflineBanner() }
                     }
                     serverSection(server)
-                    if server.supportsPairing {
+                    if server.supportsPairing || PairingFixture.isActive {
                         devicesSection
                         if !guests.isEmpty { invitationsSection(server) }
                     }
@@ -86,6 +87,15 @@ struct MacDevicesView: View {
             refresh()
         }
         .onChange(of: pairing?.grants.map(\.id)) { _, _ in Task { await reload() } }
+        .alert(String(localized: "Unpair “\(unpairing?.client.name ?? "")”?", bundle: .main), isPresented: Binding(
+            get: { unpairing != nil }, set: { if !$0 { unpairing = nil } })) {
+            Button(String(localized: "Cancel", bundle: .main), role: .cancel) {}
+            Button(String(localized: "Unpair", bundle: .main), role: .destructive) {
+                if let grant = unpairing { pairing?.revoke(grant) }
+            }
+        } message: {
+            Text(String(localized: "It can no longer open terminals on this Mac. Pairing again restores it.", bundle: .main))
+        }
     }
 
     // MARK: Server
@@ -171,7 +181,14 @@ struct MacDevicesView: View {
     private var pairedGrants: [DeviceGrant] {
         guard let pairing, let me = pairing.device else { return [] }
         let invited = Set(guests.map(\.pairingID))
+        // By name, then oldest first, so two pairings with one name sit together.
         return pairing.grants.filter { $0.host.id == me.id && !invited.contains($0.pairingID) }
+            .sorted { first, second in
+                switch first.client.name.localizedStandardCompare(second.client.name) {
+                case .orderedSame: first.createdAt < second.createdAt
+                case let order: order == .orderedAscending
+                }
+            }
     }
 
     private var devicesSection: some View {
@@ -196,6 +213,13 @@ struct MacDevicesView: View {
                         .help(String(localized: "Change what \(device.name) can open and do, or unpair it", bundle: .main))
                         .accessibilityIdentifier("editDevice-\(device.id)")
                 }
+                .contentShape(Rectangle())
+                .contextMenu {
+                    Button(String(localized: "Edit…", bundle: .main)) { editingDevice = device }
+                    Divider()
+                    Button(String(localized: "Unpair…", bundle: .main), role: .destructive) { unpairing = grant }
+                        .accessibilityIdentifier("unpairDeviceMenu-\(device.id)")
+                }
             }
             if pairing?.device != nil, pairedGrants.isEmpty {
                 Text(String(localized: "No paired devices yet.", bundle: .main))
@@ -215,7 +239,15 @@ struct MacDevicesView: View {
         let access = accesses[grant.client.id] ?? .default(for: grant.client.id)
         let typing = grant.permission == .control && access.permission == .control
         let mode = typing ? PermissionPicker.canType : PermissionPicker.watchOnly
-        return "\(mode) · \(Self.reachSummary(access, sessions: sessions))"
+        let base = "\(mode) · \(Self.reachSummary(access, sessions: sessions))"
+        // Two pairings with one name (a device set up again) tell themselves apart by date.
+        guard pairedGrants.contains(where: { $0.id != grant.id && $0.client.name == grant.client.name }) else { return base }
+        return base + " · " + Self.pairedDate(grant)
+    }
+
+    /// "Paired 3 Nov 2026", for telling two pairings with one name apart.
+    static func pairedDate(_ grant: DeviceGrant) -> String {
+        String(localized: "Paired \(grant.createdAt.formatted(date: .abbreviated, time: .omitted))", bundle: .main)
     }
 
     /// What a device may open, in words: all, one named terminal, or a count.
@@ -248,22 +280,28 @@ struct MacDevicesView: View {
                             .font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
                     }
                     Spacer()
-                    Button(String(localized: "End Invitation", bundle: .main), role: .destructive) {
-                        guard let agent else { return }
-                        let model = SessionInviteModel(serverAddress: server.address, sessionID: invite.sessionID)
-                        model.end(invite, agent: agent)
-                        guests.removeAll { $0.pairingID == invite.pairingID }
-                    }
-                    .accessibilityIdentifier("endInvite-\(invite.pairingID)")
+                    Button(String(localized: "End Invitation", bundle: .main), role: .destructive) { end(invite, server: server) }
+                        .accessibilityIdentifier("endInvite-\(invite.pairingID)")
+                }
+                .contentShape(Rectangle())
+                .contextMenu {
+                    Button(String(localized: "End Invitation", bundle: .main), role: .destructive) { end(invite, server: server) }
                 }
             }
         }
     }
 
+    private func end(_ invite: LocalGuestInvite, server: ConnectionModel) {
+        guard let agent else { return }
+        let model = SessionInviteModel(serverAddress: server.address, sessionID: invite.sessionID)
+        model.end(invite, agent: agent)
+        guests.removeAll { $0.pairingID == invite.pairingID }
+    }
+
     // MARK: Loading
 
     private func connectPairing() {
-        guard let server, server.supportsPairing else { pairing = nil; return }
+        guard let server, server.supportsPairing || PairingFixture.isActive else { pairing = nil; return }
         if pairing?.serverAddress != server.address {
             pairing?.suspend()
             pairing = DevicePairingModel(serverAddress: server.address)
@@ -283,6 +321,9 @@ struct MacDevicesView: View {
         if let stored = try? await agent.deviceAccess() {
             accesses = Dictionary(stored.map { ($0.deviceID, $0) }, uniquingKeysWith: { $1 })
         }
+        #if DEBUG
+        accesses.merge(PairingFixture.accesses) { $1 }
+        #endif
         if let invites = try? await agent.guests() { guests = invites.filter { $0.expiresAt > Date() } }
     }
 }
@@ -348,6 +389,7 @@ struct MacDeviceEditSheet: View {
                         Text(PairingFingerprint.display(publicKey: device.publicKey))
                             .font(WitermType.code).textSelection(.enabled)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(WitermMetrics.Space.xs)
                 }
             }
@@ -392,6 +434,9 @@ struct MacDeviceEditSheet: View {
         guard next != access else { return }
         let previous = access
         access = next
+        #if DEBUG
+        if PairingFixture.isActive { PairingFixture.accesses[device.id] = next; stored(next); return }
+        #endif
         Task {
             do {
                 _ = try await agent.deviceAccess(next)
@@ -481,6 +526,13 @@ struct ManageServersSheet: View {
         }
         .padding(.vertical, WitermMetrics.Space.s)
         .padding(.horizontal, WitermMetrics.Space.xs)
+        .contentShape(Rectangle())
+        .contextMenu {
+            Button(String(localized: "Edit…", bundle: .main)) { editing = .edit(server) }
+            Button(String(localized: "Check Now", bundle: .main), action: server.check)
+            Divider()
+            Button(String(localized: "Remove…", bundle: .main), role: .destructive) { removing = server }
+        }
         .accessibilityElement(children: .contain)
     }
 }

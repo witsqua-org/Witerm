@@ -36,6 +36,9 @@ struct ServerAddressSheet: View {
     private var input: ServerAddressInput { ServerAddressInput(draft) }
 
     var body: some View {
+        #if os(macOS)
+        macBody
+        #else
         NavigationStack {
             Form {
                 Section {
@@ -102,10 +105,48 @@ struct ServerAddressSheet: View {
         .presentationDetents([.medium, .large])
         #endif
         .presentationDragIndicator(.visible)
-        #if os(macOS)
-        .frame(minWidth: 520, minHeight: 340)
         #endif
     }
+
+    #if os(macOS)
+    /// The Mac sheet shape: the field, what it will connect to or how to fix
+    /// it, then Cancel and the action trailing.
+    private var macBody: some View {
+        SheetScaffold(title, subtitle: String(localized: "The server your devices use to reach each other.", bundle: .main),
+                      width: .form, onEscape: { dismiss() }) {
+            VStack(alignment: .leading, spacing: WitermMetrics.Space.s) {
+                TextField(String(localized: "Relay Server Address", bundle: .main), text: $draft, prompt: Text(verbatim: "witerm.example.com"))
+                    .textFieldStyle(.roundedBorder)
+                    .labelsHidden()
+                    .font(WitermType.code)
+                    .focused($addressFocused)
+                    .textContentType(.URL)
+                    .accessibilityIdentifier("serverAddressField")
+                    .onSubmit(save)
+                    .onChange(of: draft) { rejection = nil; submitted = false }
+                interpretation
+                if let problem = input.problem, problem != .empty, (submitted || problem != .invalid) {
+                    problemView
+                }
+                if let rejection {
+                    Label(rejection, systemImage: "exclamationmark.circle")
+                        .font(WitermType.rowDetail)
+                        .foregroundStyle(WitermTheme.warning)
+                        .accessibilityIdentifier("serverListError")
+                }
+            }
+        } trailing: {
+            Button(String(localized: "Cancel", bundle: .main), role: .cancel) { dismiss() }
+                .keyboardShortcut(.cancelAction)
+            Button(actionTitle, action: save)
+                .buttonStyle(.borderedProminent)
+                .disabled(input.address == nil)
+                .keyboardShortcut(.defaultAction)
+                .accessibilityIdentifier("saveServerAddress")
+        }
+        .onAppear { addressFocused = true }
+    }
+    #endif
 
     /// What will be used, once the text is a usable address.
     @ViewBuilder private var interpretation: some View {

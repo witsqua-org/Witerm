@@ -13,6 +13,9 @@ struct SSHForwardingView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
+        #if os(macOS)
+        macBody
+        #else
         NavigationStack {
             Form {
                 Section(String(localized: "New Forward", bundle: .main)) {
@@ -55,10 +58,107 @@ struct SSHForwardingView: View {
             .task { await refresh() }
             .overlay { if busy { ProgressView().padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)) } }
         }
-        #if os(macOS)
-        .frame(minWidth: 440, idealWidth: 520, minHeight: 580)
         #endif
     }
+
+    #if os(macOS)
+    private var explanation: String {
+        kind == .local
+            ? String(localized: "Accept connections at 127.0.0.1 on this device and reach the target through the SSH host.", bundle: .main)
+            : String(localized: "Accept connections at 127.0.0.1 on the SSH host and reach the target through this device.", bundle: .main)
+    }
+
+    /// The Mac sheet shape: a new forward, the active ones with Stop, and
+    /// Done (Esc) and Start Forwarding (Return) trailing.
+    private var macBody: some View {
+        SheetScaffold(String(localized: "Port Forwarding", bundle: .main), width: .form, onEscape: { dismiss() }) {
+            VStack(alignment: .leading, spacing: WitermMetrics.Space.m) {
+                GroupBox {
+                    VStack(alignment: .leading, spacing: WitermMetrics.Space.s) {
+                        Picker(String(localized: "Direction", bundle: .main), selection: $kind) {
+                            Text(String(localized: "Local Forward", bundle: .main)).tag(SSHForward.Kind.local)
+                            Text(String(localized: "Remote Forward", bundle: .main)).tag(SSHForward.Kind.remote)
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .accessibilityLabel(String(localized: "Direction", bundle: .main))
+                        Text(explanation)
+                            .font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: WitermMetrics.Space.s,
+                             verticalSpacing: WitermMetrics.Space.s) {
+                            portRow(String(localized: "Listening Port", bundle: .main), text: $listenPort,
+                                    identifier: "sshForwardListenPort")
+                            portRow(String(localized: "Target Host", bundle: .main), text: $targetHost)
+                            portRow(String(localized: "Target Port", bundle: .main), text: $targetPort)
+                        }
+                        if let issue {
+                            Label(issue, systemImage: "exclamationmark.circle")
+                                .font(WitermType.rowDetail).foregroundStyle(WitermTheme.warning)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .padding(WitermMetrics.Space.xs)
+                } label: {
+                    Text(String(localized: "New Forward", bundle: .main)).font(WitermType.cardTitle).accessibilityAddTraits(.isHeader)
+                }
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 0) {
+                        if forwards.isEmpty {
+                            Text(String(localized: "No Forwards Yet", bundle: .main))
+                                .font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
+                                .padding(.vertical, WitermMetrics.Space.xs)
+                        }
+                        ForEach(forwards) { item in
+                            if item.id != forwards.first?.id { Divider() }
+                            HStack {
+                                VStack(alignment: .leading, spacing: WitermMetrics.Space.xxs) {
+                                    Text(item.kind == .local ? String(localized: "Local Forward", bundle: .main)
+                                         : String(localized: "Remote Forward", bundle: .main))
+                                    Text(verbatim: "127.0.0.1:\(item.listenPort) → \(item.targetHost):\(item.targetPort)")
+                                        .font(WitermType.codeInline).foregroundStyle(WitermTheme.secondary).textSelection(.enabled)
+                                }
+                                Spacer()
+                                Button(String(localized: "Stop Forwarding", bundle: .main), role: .destructive) {
+                                    Task { await connection.stopForward(id: item.id); await refresh() }
+                                }
+                                .disabled(busy)
+                            }
+                            .padding(.vertical, WitermMetrics.Space.s)
+                            .accessibilityElement(children: .contain)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, WitermMetrics.Space.xs)
+                } label: {
+                    Text(String(localized: "Active Forwards", bundle: .main)).font(WitermType.cardTitle).accessibilityAddTraits(.isHeader)
+                }
+            }
+        } trailing: {
+            if busy { ProgressView().controlSize(.small) }
+            Button(String(localized: "Done", bundle: .main)) { dismiss() }
+                .keyboardShortcut(.cancelAction)
+            Button(String(localized: "Start Forwarding", bundle: .main), action: start)
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(busy)
+                .accessibilityIdentifier("sshStartForward")
+        }
+        .task { await refresh() }
+    }
+
+    private func portRow(_ title: String, text: Binding<String>, identifier: String? = nil) -> some View {
+        GridRow {
+            Text(title).gridColumnAlignment(.trailing)
+            TextField(title, text: text)
+                .textFieldStyle(.roundedBorder)
+                .labelsHidden()
+                .font(WitermType.code)
+                .autocorrectionDisabled()
+                .accessibilityIdentifier(identifier ?? "")
+        }
+    }
+    #endif
 
     private func start() {
         guard let listen = Int(listenPort), let target = Int(targetPort) else {

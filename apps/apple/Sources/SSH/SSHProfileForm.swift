@@ -149,9 +149,21 @@ struct SSHProfileForm: View {
                 #endif
             }
             .formStyle(.grouped)
-            .navigationTitle(purpose == .new ? String(localized: "Add SSH Host", bundle: .main)
-                             : purpose == .edit ? String(localized: "Edit SSH Host", bundle: .main)
-                             : String(localized: "Connect With SSH", bundle: .main))
+            #if os(macOS)
+            // The Mac sheet shape: the title in the content's inset, as
+            // SheetScaffold does, rather than in a toolbar band.
+            .safeAreaInset(edge: .top, spacing: 0) {
+                Text(title)
+                    .font(WitermType.pageTitle)
+                    .foregroundStyle(WitermTheme.ink)
+                    .accessibilityAddTraits(.isHeader)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, WitermMetrics.sheetInset)
+                    .padding(.top, WitermMetrics.Space.xl)
+            }
+            #else
+            .navigationTitle(title)
+            #endif
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {
@@ -202,6 +214,12 @@ struct SSHProfileForm: View {
         #if os(macOS)
         .frame(minWidth: 440, idealWidth: 520, minHeight: 640)
         #endif
+    }
+
+    private var title: String {
+        purpose == .new ? String(localized: "Add SSH Host", bundle: .main)
+            : purpose == .edit ? String(localized: "Edit SSH Host", bundle: .main)
+            : String(localized: "Connect With SSH", bundle: .main)
     }
 
     private var primaryTitle: String {

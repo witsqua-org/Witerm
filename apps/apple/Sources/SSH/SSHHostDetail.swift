@@ -46,6 +46,10 @@ struct SSHHostDetail: View {
         .navigationTitle(profile.name)
         // The address while not connected; where typing goes while it does.
         .navigationSubtitle(profile.endpointSummary)
+        // Terminal ▸ Disconnect, with the same confirmation as the toolbar.
+        .onReceive(NotificationCenter.default.publisher(for: .witermDisconnectSSH)) { note in
+            if note.object as? UUID == profile.id, let session = model.session(for: profile.id) { disconnect(session) }
+        }
         .alert(String(localized: "Disconnect from “\(String(profile.name))”?", bundle: .main),
                isPresented: Binding(get: { confirmingDisconnect != nil }, set: { if !$0 { confirmingDisconnect = nil } })) {
             Button(String(localized: "Cancel", bundle: .main), role: .cancel) {}

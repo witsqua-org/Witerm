@@ -20,7 +20,8 @@ struct PairingQRCode: View {
         }
         .frame(width: 168, height: 168)
         .padding(12)
-        .background(.white, in: .rect(cornerRadius: 14, style: .continuous))
+        .background(.white, in: .rect(cornerRadius: WitermMetrics.Radius.xl, style: .continuous))
+        .witermOutline(cornerRadius: WitermMetrics.Radius.xl, hairline: true)
         .accessibilityHidden(true)
         .task(id: value) {
             image = makeImage()

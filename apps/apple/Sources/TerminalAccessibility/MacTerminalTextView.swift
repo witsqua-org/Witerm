@@ -25,6 +25,8 @@ import WitermCore
         setAccessibilityLabel(mode == .view ? String(localized: "Terminal, Watching", bundle: .main) : String(localized: "Terminal", bundle: .main))
         setAccessibilityHelp(String(localized: "Read by line, word or character. Text selection is only used for local reading.", bundle: .main))
         notifyUpdateChanges = true
+        // Files dropped from Finder type their paths, as in Terminal.
+        registerForDraggedTypes([.fileURL])
         setAccessibilityCustomActions([
             NSAccessibilityCustomAction(name: String(localized: "Previous Page", bundle: .main)) { [weak self] in self?.pageReading(forward: false) ?? false },
             NSAccessibilityCustomAction(name: String(localized: "Next Page", bundle: .main)) { [weak self] in self?.pageReading(forward: true) ?? false },
@@ -279,6 +281,58 @@ import WitermCore
         if [#selector(setAccessibilityValue(_:)), #selector(setAccessibilitySelectedText(_:)),
             #selector(setAccessibilityInsertionPointLineNumber(_:))].contains(selector) { return false }
         return super.isAccessibilitySelectorAllowed(selector)
+    }
+
+    // MARK: Context menu and file drops
+
+    /// Right-click: Copy (with a selection), Paste (only while typing),
+    /// Select All, and Find…, the same commands as the Edit menu.
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let menu = NSMenu()
+        menu.addItem(withTitle: String(localized: "Copy", bundle: .main), action: #selector(copy(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: String(localized: "Paste", bundle: .main), action: #selector(paste(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: String(localized: "Select All", bundle: .main), action: #selector(selectAll(_:)), keyEquivalent: "")
+        menu.addItem(.separator())
+        let find = NSMenuItem(title: String(localized: "Find…", bundle: .main), action: #selector(performTextFinderAction(_:)), keyEquivalent: "")
+        find.tag = NSTextFinder.Action.showFindInterface.rawValue
+        menu.addItem(find)
+        for item in menu.items { item.target = self }
+        return menu
+    }
+
+    /// Paste types into the terminal, so it's off while watching.
+    override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        if item.action == #selector(paste(_:)), !inputEnabled { return false }
+        return super.validateUserInterfaceItem(item)
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        inputEnabled && !Self.droppedPaths(sender).isEmpty ? .copy : []
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation { draggingEntered(sender) }
+
+    /// Types each file's path, quoted for the shell and separated by spaces,
+    /// without pressing Return.
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let paths = Self.droppedPaths(sender)
+        guard inputEnabled, !paths.isEmpty else { return false }
+        window?.makeFirstResponder(self)
+        insertText(paths.map(Self.shellQuoted).joined(separator: " ") + " ", replacementRange: NSRange(location: NSNotFound, length: 0))
+        return true
+    }
+
+    private static func droppedPaths(_ info: NSDraggingInfo) -> [String] {
+        let urls = info.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]
+        return (urls ?? []).map(\.path)
+    }
+
+    /// A path as one shell word: bare when it's only safe characters,
+    /// otherwise in single quotes (a quote inside becomes '\'').
+    static func shellQuoted(_ path: String) -> String {
+        let safe = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "/._-+,:@%"))
+        if !path.isEmpty, path.unicodeScalars.allSatisfy({ $0.isASCII && safe.contains($0) }) { return path }
+        return "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }
 #endif

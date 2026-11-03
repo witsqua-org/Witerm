@@ -250,7 +250,10 @@ struct NativeTerminalView: NSViewRepresentable {
                     self.onEnded()
                 } catch {
                     guard !Task.isCancelled else { return }
-                    self?.fail(error)
+                    // Output, not typing, outran the window here.
+                    let code = error as? LocalAgentClientError
+                    let backpressure = code == .backpressure || code == .rejected(.backpressure)
+                    self?.fail(backpressure ? LocalOutputOverflow() : error)
                 }
             }
         }

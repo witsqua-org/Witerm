@@ -339,6 +339,7 @@ private struct LocalDependencyView: View {
                     .padding(.horizontal, WitermMetrics.Space.m)
                     .padding(.vertical, WitermMetrics.Space.s)
                     .background(WitermTheme.statusFill, in: .rect(cornerRadius: WitermMetrics.Radius.m, style: .continuous))
+                    .witermOutline(cornerRadius: WitermMetrics.Radius.m)
                 PrimaryButton(String(localized: "Check Again", bundle: .main)) { model.refresh(using: client) }
             }
         }

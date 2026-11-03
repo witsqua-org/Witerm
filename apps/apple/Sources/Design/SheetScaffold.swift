@@ -18,7 +18,9 @@ enum SheetWidth {
 /// footer. Destructive and secondary actions go in `leading`; Cancel (with
 /// `.cancelAction`) and the primary (with `.defaultAction`, unless it's a
 /// trust decision) go in `trailing`, primary last. Esc always cancels: give
-/// a sheet without a Cancel button an `onEscape`. Footer controls keep the
+/// a sheet without a Cancel button an `onEscape`, and one whose Cancel only
+/// closes it one too: a focused text field can keep Esc from the Cancel
+/// button's shortcut (the snippet editor did). Footer controls keep the
 /// system's regular size and bezel, and the sheet adds no tint, so switches,
 /// radios and checkboxes keep the system accent. iOS shows the same parts in
 /// a navigation stack.

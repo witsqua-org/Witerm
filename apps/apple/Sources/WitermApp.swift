@@ -201,8 +201,14 @@ struct WorkspaceActions {
     var setTyping: ((Bool) -> Void)? = nil
     /// Stops showing the terminal here; it keeps running (Mac).
     var leave: (() -> Void)? = nil
-    /// Closes the shown SSH connection (iOS).
+    /// Closes the shown SSH connection (iOS; on the Mac it asks first while
+    /// a program runs).
     var disconnect: (() -> Void)? = nil
+    /// The selected SSH host's commands (Mac): Connect while it isn't
+    /// connected; SFTP Files and Port Forwarding while it is.
+    var connect: (() -> Void)? = nil
+    var sshFiles: (() -> Void)? = nil
+    var sshForwarding: (() -> Void)? = nil
     /// Shows the find bar in the shown terminal (iOS; the Mac routes Find itself).
     var find: (() -> Void)? = nil
 }
@@ -210,6 +216,9 @@ struct WorkspaceActions {
 extension Notification.Name {
     /// Asks the terminal on screen to show its find bar.
     static let witermFindInTerminal = Notification.Name("witerm.findInTerminal")
+    /// Asks the SSH host page whose profile ID is `object` to disconnect,
+    /// confirming first while a program runs (Mac).
+    static let witermDisconnectSSH = Notification.Name("witerm.disconnectSSH")
 }
 
 extension FocusedValues {
@@ -264,15 +273,18 @@ struct WitermCommands: Commands {
         #if os(macOS)
         // Routed to the focused terminal, whose find bar overlays the text and
         // only scrolls this view; the session's grid is never resized.
+        // Edit ▸ Find ▸, as in every Mac app.
         CommandGroup(replacing: .textEditing) {
-            Button(String(localized: "Find…", bundle: .main)) { TerminalFind.send(.showFindInterface) }
-                .keyboardShortcut("f", modifiers: .command)
-            Button(String(localized: "Find Next", bundle: .main)) { TerminalFind.send(.nextMatch) }
-                .keyboardShortcut("g", modifiers: .command)
-            Button(String(localized: "Find Previous", bundle: .main)) { TerminalFind.send(.previousMatch) }
-                .keyboardShortcut("g", modifiers: [.command, .shift])
-            Button(String(localized: "Use Selection for Find", bundle: .main)) { TerminalFind.send(.setSearchString) }
-                .keyboardShortcut("e", modifiers: .command)
+            Menu(String(localized: "Find", bundle: .main)) {
+                Button(String(localized: "Find…", bundle: .main)) { TerminalFind.send(.showFindInterface) }
+                    .keyboardShortcut("f", modifiers: .command)
+                Button(String(localized: "Find Next", bundle: .main)) { TerminalFind.send(.nextMatch) }
+                    .keyboardShortcut("g", modifiers: .command)
+                Button(String(localized: "Find Previous", bundle: .main)) { TerminalFind.send(.previousMatch) }
+                    .keyboardShortcut("g", modifiers: [.command, .shift])
+                Button(String(localized: "Use Selection for Find", bundle: .main)) { TerminalFind.send(.setSearchString) }
+                    .keyboardShortcut("e", modifiers: .command)
+            }
         }
         #endif
         CommandMenu(String(localized: "Terminal", bundle: .main)) {
@@ -317,6 +329,16 @@ struct WitermCommands: Commands {
                 .disabled(actions?.setTyping == nil)
             Button(String(localized: "Leave", bundle: .main)) { actions?.leave?() }
                 .disabled(actions?.leave == nil)
+            // The selected SSH host's commands, the same as its toolbar.
+            if let connect = actions?.connect {
+                Divider()
+                Button(String(localized: "Connect", bundle: .main), action: connect)
+            } else if let disconnect = actions?.disconnect {
+                Divider()
+                Button(String(localized: "SFTP Files…", bundle: .main)) { actions?.sshFiles?() }
+                Button(String(localized: "Port Forwarding…", bundle: .main)) { actions?.sshForwarding?() }
+                Button(String(localized: "Disconnect", bundle: .main), action: disconnect)
+            }
             Divider()
             if let openOn = actions?.openOn {
                 Menu(String(localized: "Open On", bundle: .main)) {

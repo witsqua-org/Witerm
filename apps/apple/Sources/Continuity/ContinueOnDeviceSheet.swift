@@ -285,8 +285,8 @@ struct ContinueOnDeviceSheet: View {
     /// The last step's name, "where it opens": its own key, so it can't be
     /// translated as a state ("Opened").
     static var openStepTitle: String {
-        String(localized: "step.open", defaultValue: "Open", bundle: .main,
-               comment: "Step name in the Open On sheet: the step where the terminal opens on the other device")
+        // "terminal.open" (Open, 打开): the catalog's English for "step.open" was its key.
+        String(localized: "terminal.open", defaultValue: "Open", bundle: .main)
     }
 
     private func title(for step: Step) -> String {
@@ -360,6 +360,8 @@ struct ContinueOnDeviceSheet: View {
     private var blocker: Blocker? {
         guard let server else { return .noServer }
         if service.state != .ready { return .serviceOff }
+        // UI tests: the fixture needs no relay server.
+        if PairingFixture.isActive { return nil }
         switch server.phase {
         case .checking: return .checking
         case .idle: return .unchecked
@@ -452,9 +454,13 @@ struct ContinueOnDeviceSheet: View {
     }
 
     private func deviceDetail(_ device: PairedDevice) -> String {
-        guard reaches(device) else { return String(localized: "Can’t open “\(sessionName)” yet", bundle: .main) }
-        return typing(device) ? String(localized: "Can watch and type in “\(sessionName)”", bundle: .main)
+        let detail = !reaches(device) ? String(localized: "Can’t open “\(sessionName)” yet", bundle: .main)
+            : typing(device) ? String(localized: "Can watch and type in “\(sessionName)”", bundle: .main)
             : String(localized: "Can only watch “\(sessionName)”", bundle: .main)
+        // Two pairings with one name (a device set up again) tell themselves apart by date.
+        guard pairedDevices.contains(where: { $0.id != device.id && $0.name == device.name }),
+              let grant = grant(for: device) else { return detail }
+        return detail + " · " + MacDevicesView.pairedDate(grant)
     }
 
     private func choosePairedDefault() {
@@ -502,6 +508,7 @@ struct ContinueOnDeviceSheet: View {
                     // The tile's own size (168 + 2 × 12), blank.
                     RoundedRectangle(cornerRadius: WitermMetrics.Radius.xl, style: .continuous)
                         .fill(WitermTheme.statusFill)
+                        .witermOutline(cornerRadius: WitermMetrics.Radius.xl)
                         .frame(width: 192, height: 192)
                         .accessibilityHidden(true)
                 }
@@ -584,6 +591,7 @@ struct ContinueOnDeviceSheet: View {
                 .padding(.horizontal, WitermMetrics.Space.m).padding(.vertical, WitermMetrics.Space.s)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(WitermTheme.statusFill, in: .rect(cornerRadius: WitermMetrics.Radius.m, style: .continuous))
+                .witermOutline(cornerRadius: WitermMetrics.Radius.m)
                 .accessibilityLabel(String(localized: "Device code \(PairingFingerprint.display(publicKey: client.publicKey))", bundle: .main))
             if pairing?.existingGrantForRequest != nil {
                 IconText(String(localized: "Already paired. Approving replaces its current access.", bundle: .main), systemImage: "arrow.triangle.2.circlepath")
@@ -658,12 +666,17 @@ struct ContinueOnDeviceSheet: View {
                 }
             }
             .background(WitermTheme.statusFill, in: .rect(cornerRadius: WitermMetrics.Radius.m, style: .continuous))
-            note(sessionID != nil && live == nil && pairing?.pairing?.status != .approved
-                 ? String(localized: "On \(continuing.name), open Witerm. “\(sessionName)” is under Terminals → \(pairing?.device?.name ?? String(localized: "this Mac", bundle: .main)).", bundle: .main)
-                 : String(localized: "Change what it can open in Settings → Devices.", bundle: .main))
+            .witermOutline(cornerRadius: WitermMetrics.Radius.m)
+            // Without a terminal the subtitle already says where to change it.
+            if sessionID != nil {
+                note(live == nil && pairing?.pairing?.status != .approved
+                     ? String(localized: "On \(continuing.name), open Witerm. “\(sessionName)” is under Terminals → \(pairing?.device?.name ?? String(localized: "this Mac", bundle: .main)).", bundle: .main)
+                     : String(localized: "Change what it can open in Settings → Devices.", bundle: .main))
+            }
         } else if case .joined = invite?.phase {
             checkRow(String(localized: "They can open “\(sessionName)” until the invitation ends.", bundle: .main))
                 .background(WitermTheme.statusFill, in: .rect(cornerRadius: WitermMetrics.Radius.m, style: .continuous))
+                .witermOutline(cornerRadius: WitermMetrics.Radius.m)
             note(String(localized: "End their access at any time in Settings → Devices.", bundle: .main))
         }
     }
@@ -756,6 +769,7 @@ struct ContinueOnDeviceSheet: View {
                 .padding(.horizontal, WitermMetrics.Space.m).padding(.vertical, WitermMetrics.Space.s)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(WitermTheme.statusFill, in: .rect(cornerRadius: WitermMetrics.Radius.m, style: .continuous))
+                .witermOutline(cornerRadius: WitermMetrics.Radius.m)
             note(String(localized: "They can watch and type in this terminal until the invitation ends.", bundle: .main))
         }
     }
@@ -875,6 +889,13 @@ struct ContinueOnDeviceSheet: View {
         let access = LocalDeviceAccess(deviceID: client.id, scope: reach == .all ? .all : .shared,
                                        permission: permission == .view ? .view : .control, sessionIDs: listed)
         let older = unpairOlder ? olderPairings : []
+        #if DEBUG
+        if PairingFixture.isActive {
+            PairingFixture.accesses[client.id] = access
+            pairing.approve(permission: permission, alsoUnpair: older)
+            return
+        }
+        #endif
         Task {
             do {
                 _ = try await agent.deviceAccess(access)
@@ -890,6 +911,15 @@ struct ContinueOnDeviceSheet: View {
         guard let agent, let session else { return }
         autoAdvance = false
         let current = policy(for: device)
+        #if DEBUG
+        if PairingFixture.isActive {
+            PairingFixture.accesses[device.id] = current.reaching(current.scope, sessions: current.sessionIDs + [session.id])
+            accesses[device.id] = PairingFixture.accesses[device.id]
+            continuing = device
+            step = .open
+            return
+        }
+        #endif
         Task {
             do {
                 if session.sharing?.keepPrivate == true { _ = try await agent.configure(sessionID: session.id, keepPrivate: false) }
@@ -946,6 +976,9 @@ struct ContinueOnDeviceSheet: View {
         if let stored = try? await agent.deviceAccess() {
             accesses = Dictionary(stored.map { ($0.deviceID, $0) }, uniquingKeysWith: { $1 })
         }
+        #if DEBUG
+        accesses.merge(PairingFixture.accesses) { $1 }
+        #endif
         if let invites = try? await agent.guests() { guestPairings = Set(invites.map(\.pairingID)) }
     }
 

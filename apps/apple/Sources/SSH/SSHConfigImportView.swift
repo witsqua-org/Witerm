@@ -19,6 +19,9 @@ struct SSHConfigImportView: View {
     }
 
     var body: some View {
+        #if os(macOS)
+        macBody
+        #else
         NavigationStack {
             Form {
                 if let issue {
@@ -55,10 +58,88 @@ struct SSHConfigImportView: View {
             }
         }
         .witermTint()
-        #if os(macOS)
-        .frame(minWidth: 440, idealWidth: 520, minHeight: 420)
         #endif
     }
+
+    #if os(macOS)
+    /// The Mac sheet shape. Before a file is read: Choose File… leading,
+    /// Cancel and Read ~/.ssh/config trailing. After: the hosts as
+    /// checkboxes, and Import trailing.
+    private var macBody: some View {
+        SheetScaffold(String(localized: "Import SSH Hosts", bundle: .main),
+                      subtitle: String(localized: "Keys and passwords aren’t imported.", bundle: .main),
+                      width: .form, maxHeight: 520, onEscape: { dismiss() }) {
+            VStack(alignment: .leading, spacing: WitermMetrics.Space.s) {
+                if let issue { IssueBanner(issue) }
+                if let entries { macList(entries) }
+            }
+        } leading: {
+            Button(String(localized: "Choose File…", bundle: .main)) { choosingFile = true }
+                .accessibilityIdentifier("sshImportChooseFile")
+        } trailing: {
+            Button(String(localized: "Cancel", bundle: .main)) { dismiss() }
+                .keyboardShortcut(.cancelAction)
+            if entries != nil {
+                Button(String(localized: "Import \(selected.count) Hosts", bundle: .main)) { Task { await save() } }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(selected.isEmpty || saving)
+                    .keyboardShortcut(.defaultAction)
+                    .accessibilityIdentifier("sshImportConfirm")
+            } else {
+                Button(String(localized: "Read ~/.ssh/config", bundle: .main)) {
+                    read(FileManager.default.homeDirectoryForCurrentUser.appending(path: ".ssh/config"), scoped: false)
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .accessibilityIdentifier("sshImportDefaultConfig")
+            }
+        }
+        .fileImporter(isPresented: $choosingFile, allowedContentTypes: [.data, .plainText, .text]) { result in
+            guard case .success(let url) = result else { return }
+            read(url, scoped: true)
+        }
+    }
+
+    @ViewBuilder private func macList(_ entries: [SSHConfigImport.Entry]) -> some View {
+        if entries.isEmpty {
+            Text(String(localized: "No hosts were found in this file.", bundle: .main))
+                .font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
+        } else {
+            GroupBox {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(entries) { entry in
+                        if entry.id != entries.first?.id { Divider() }
+                        Group {
+                            if let profile = entry.profile, !alreadySaved(entry) {
+                                Toggle(isOn: Binding(get: { selected.contains(entry.alias) },
+                                                     set: { if $0 { selected.insert(entry.alias) } else { selected.remove(entry.alias) } })) {
+                                    VStack(alignment: .leading, spacing: WitermMetrics.Space.xxs) {
+                                        Text(verbatim: entry.alias)
+                                        Text(verbatim: profile.endpointSummary
+                                             + (profile.jumpHosts.isEmpty ? "" : " · " + String(localized: "via \(profile.jumpHosts.map(\.hostname).joined(separator: ", "))", bundle: .main)))
+                                            .font(WitermType.codeInline)
+                                            .foregroundStyle(WitermTheme.secondary)
+                                    }
+                                }
+                                .toggleStyle(.checkbox)
+                                .accessibilityValue(profile.accessibilitySummary)
+                            } else {
+                                LabeledContent {
+                                    Text(reason(entry)).font(WitermType.meta).foregroundStyle(WitermTheme.secondary)
+                                } label: {
+                                    Text(verbatim: entry.alias).foregroundStyle(WitermTheme.secondary)
+                                }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, WitermMetrics.Space.s)
+                        .padding(.horizontal, WitermMetrics.Space.xs)
+                    }
+                }
+            }
+        }
+    }
+    #endif
 
     private var source: some View {
         Section {
