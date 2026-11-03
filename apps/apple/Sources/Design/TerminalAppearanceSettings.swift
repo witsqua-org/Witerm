@@ -210,39 +210,3 @@ extension Color {
                   blue: Double(value & 255) / 255)
     }
 }
-
-/// Terminal display presented from within a terminal.
-struct TerminalAppearanceSettings: View {
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                TerminalDisplaySections()
-                // On iOS the key row, snippets, bell and VoiceOver live in
-                // Settings only; this sheet is just text and colors.
-                #if os(macOS)
-                TerminalFeedbackSections()
-                #endif
-            }
-                .formStyle(.grouped)
-                .navigationTitle("Terminal Display")
-                #if os(iOS)
-                .navigationBarTitleDisplayMode(.inline)
-                #endif
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Done") { dismiss() }.accessibilityIdentifier("closeTerminalAppearance")
-                    }
-                }
-        }
-        .witermTint()
-        #if os(iOS)
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
-        #endif
-        #if os(macOS)
-        .frame(minWidth: 400, idealWidth: 440, minHeight: 400)
-        #endif
-    }
-}

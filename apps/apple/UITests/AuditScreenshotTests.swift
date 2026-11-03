@@ -82,8 +82,10 @@ import XCTest
 
     /// Scrolls until the element can be tapped, then taps it.
     private func reveal(_ element: XCUIElement, tap: Bool = true) {
-        XCTAssertTrue(element.waitForExistence(timeout: 8), "Missing \(element)")
-        for _ in 0..<8 where !element.isHittable { app.swipeUp() }
+        // Lists create rows lazily: scroll until the row exists and can be tapped.
+        _ = element.waitForExistence(timeout: 4)
+        for _ in 0..<10 where !element.exists || !element.isHittable { app.swipeUp() }
+        XCTAssertTrue(element.exists, "Missing \(element)")
         if tap { element.tap() }
     }
 
@@ -379,7 +381,7 @@ import XCTest
         }
         RunLoop.current.run(until: Date().addingTimeInterval(1.5))
         shot("04-terminal-output-keyboard")
-        app.buttons["sshKeyboard"].tap()
+        app.toggleTerminalKeyboard()
         RunLoop.current.run(until: Date().addingTimeInterval(1))
         shot("05-terminal-keyboard-hidden")
         terminal.swipeDown(); terminal.swipeDown()

@@ -50,10 +50,10 @@ import XCTest
         // A new connection is ready to type into: the keyboard is already up,
         // and the keyboard button hides and shows it again.
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "The keyboard must be up when the terminal connects")
-        tapVisibleControl(app.buttons["sshKeyboard"], in: app)
+        app.toggleTerminalKeyboard()
         let hidden = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.keyboards.firstMatch)
         wait(for: [hidden], timeout: 5)
-        tapVisibleControl(app.buttons["sshKeyboard"], in: app)
+        app.toggleTerminalKeyboard()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "The keyboard control must focus the real SSH input view")
         let marker = "~$ z"
         XCTAssertFalse((terminal.value as? String ?? terminal.label).contains(marker))
@@ -266,7 +266,7 @@ import XCTest
         RunLoop.current.run(until: Date().addingTimeInterval(1))
         let ranShot = XCTAttachment(screenshot: app.screenshot())
         ranShot.name = "ios-ssh-snippet"; ranShot.lifetime = .keepAlways; add(ranShot)
-        tapVisibleControl(app.buttons["sshKeyboard"], in: app)
+        app.toggleTerminalKeyboard()
 
         // Find counts both lines and reports no match for anything else. On
         // iPhone it lives in the terminal's actions menu.
@@ -372,7 +372,7 @@ import XCTest
             }
         }
         func run(_ name: String) {
-            if !keyboard.exists { tapVisibleControl(app.buttons["sshKeyboard"], in: app) }
+            if !keyboard.exists { app.toggleTerminalKeyboard() }
             XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
             let key = app.buttons["terminalKey-snippets"]
             reveal(key)
@@ -401,7 +401,7 @@ import XCTest
         // 2. Hiding the keyboard keeps the width, gives back the rows, and
         // leaves no band under the terminal.
         run("Grid later")
-        tapVisibleControl(app.buttons["sshKeyboard"], in: app)
+        app.toggleTerminalKeyboard()
         let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: keyboard)
         wait(for: [gone], timeout: 5)
         RunLoop.current.run(until: Date().addingTimeInterval(7))
@@ -410,15 +410,21 @@ import XCTest
         print("TERMINAL_GRID keyboard-up \(up) keyboard-down \(down) frame \(downFrame) \(terminal.label)")
         XCTAssertEqual(down.columns, up.columns, "The keyboard must never change the width")
         XCTAssertGreaterThan(down.rows, up.rows, "Hidden keyboard gives the rows back")
-        XCTAssertGreaterThan(terminal.frame.maxY, window.maxY - 60, "The terminal must fill the screen again")
+        // Down to the keyboard button's strip (Round 16), which the text never runs under.
+        let keyboardButton = app.buttons["sshKeyboard"]
+        XCTAssertTrue(keyboardButton.waitForExistence(timeout: 5), "The keyboard button shows while the keyboard is hidden")
+        XCTAssertGreaterThan(terminal.frame.maxY, window.maxY - 120, "The terminal must fill the screen again")
+        XCTAssertGreaterThanOrEqual(keyboardButton.frame.minY, terminal.frame.maxY, "The keyboard button never covers the text")
+        XCTAssertGreaterThan(keyboardButton.frame.midX, window.midX, "The keyboard button is at the bottom right")
+        XCTAssertGreaterThanOrEqual(keyboardButton.frame.width, 44)
         shot("terminal-keyboard-down")
 
         // 3. Showing and hiding it again lands on the same grid: the view is restored.
-        tapVisibleControl(app.buttons["sshKeyboard"], in: app)
+        app.toggleTerminalKeyboard()
         XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
         shot("terminal-keyboard-again")
         run("Grid later")
-        tapVisibleControl(app.buttons["sshKeyboard"], in: app)
+        app.toggleTerminalKeyboard()
         wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: keyboard)], timeout: 5)
         RunLoop.current.run(until: Date().addingTimeInterval(7))
         let restored = try XCTUnwrap(grid())
@@ -434,7 +440,7 @@ import XCTest
         run("Long output")
         waitFor({ $0.contains("3000\n") || $0.contains("\n3000") }, timeout: 30, "The view must follow output to its end")
         print("TERMINAL_SEQ_3000_SECONDS " + String(format: "%.1f", Date().timeIntervalSince(streaming)))
-        tapVisibleControl(app.buttons["sshKeyboard"], in: app)
+        app.toggleTerminalKeyboard()
         wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: keyboard)], timeout: 5)
         for _ in 0..<3 { terminal.swipeDown(velocity: .fast) }
         RunLoop.current.run(until: Date().addingTimeInterval(1.5))
@@ -466,7 +472,7 @@ import XCTest
         copy.tap()
         RunLoop.current.run(until: Date().addingTimeInterval(1))
         XCTAssertEqual(text(), before, "Selecting and copying must not type into the shell")
-        tapVisibleControl(app.buttons["sshKeyboard"], in: app)
+        app.toggleTerminalKeyboard()
         XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
         let paste = app.buttons["terminalKey-paste"]
         reveal(paste)
@@ -493,7 +499,7 @@ import XCTest
         // back at the bottom, it follows again.
         run("Ticks")
         waitFor({ $0.contains("tick3") }, "The slow output never started")
-        tapVisibleControl(app.buttons["sshKeyboard"], in: app)
+        app.toggleTerminalKeyboard()
         wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: keyboard)], timeout: 5)
         for _ in 0..<2 { terminal.swipeDown(velocity: .fast) }
         RunLoop.current.run(until: Date().addingTimeInterval(0.8))
@@ -534,6 +540,12 @@ import XCTest
             guard next.exists else { break }
             next.tap()
         }
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "letter-not-typed"; attachment.lifetime = .keepAlways; add(attachment)
+        if let directory = ProcessInfo.processInfo.environment["WITERM_SHOTS_DIR"] {
+            try? app.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: directory).appendingPathComponent("letter-not-typed.png"))
+        }
+        print("TERMINAL_TEXT", (terminal.value as? String ?? terminal.label).suffix(300))
         XCTFail("The letter \(letter) never reached the shell")
     }
 

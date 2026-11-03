@@ -26,7 +26,6 @@ final class SSHWorkspaceUI {
     /// The session whose files or forwards are shown; sheets follow it.
     var files: SSHSession?
     var forwarding: SSHSession?
-    var appearance = false
     var importing = false
     /// A connected host a keyboard command asked to show; the workspace shows it and clears this.
     var requestedSession: UUID?
@@ -164,7 +163,6 @@ struct SSHPresentations: ViewModifier {
             .sheet(item: $ui.files) { session in SSHFilesView(connection: session.connection) }
             #endif
             .sheet(item: $ui.forwarding) { session in SSHForwardingView(connection: session.connection) }
-            .sheet(isPresented: $ui.appearance) { TerminalAppearanceSettings() }
             .sheet(isPresented: $ui.importing) { SSHConfigImportView(model: model) }
             .sheet(item: $ui.inspectingKeys) { profile in SSHHostKeysView(profile: profile) }
             // Deleting is immediate and undoable, rather than confirmed up front.
@@ -622,15 +620,8 @@ struct SSHWorkspaceView<Home: View>: View {
                     ToolbarItem(placement: .principal) { compactTitle(session) }
                 }
             }
-            // The keyboard comes first and the actions menu last, as on a
-            // paired terminal.
-            ToolbarItem(placement: .primaryAction) {
-                if let session = shown {
-                    TerminalKeyboardButton(terminal: { session.terminal.surface.terminal }) { keyboardRequest &+= 1 }
-                        .id(session.token)
-                        .accessibilityIdentifier("sshKeyboard")
-                }
-            }
+            // Only the actions menu: the keyboard button is at the
+            // terminal's bottom right, as on a paired terminal.
             ToolbarItem(placement: .primaryAction) {
                 if let session = shown {
                     Menu { sessionActions(session, find: sizeClass != .regular) } label: { Label(String(localized: "Terminal Actions", bundle: .main), systemImage: WitermSymbols.more) }
@@ -648,14 +639,13 @@ struct SSHWorkspaceView<Home: View>: View {
     /// The terminal's actions, in the bar's menu or, while the bar is hidden
     /// for typing, on the key row. iPad's header has its own Find button.
     @ViewBuilder private func sessionActions(_ session: SSHSession, find: Bool) -> some View {
-        TerminalTextSizeControls()
+        TerminalTextAndColorsMenu()
         if find {
             Button(String(localized: "Find in Terminal", bundle: .main), systemImage: "magnifyingglass") { finding = true }
                 .accessibilityIdentifier("terminalFind")
         }
         Button(String(localized: "SFTP Files", bundle: .main), systemImage: "folder") { ui.files = session }
         Button(String(localized: "Port Forwarding", bundle: .main), systemImage: "arrow.left.arrow.right") { ui.forwarding = session }
-        Button(String(localized: "Terminal Display", bundle: .main), systemImage: "paintpalette") { ui.appearance = true }
         Divider()
         Button(String(localized: "Disconnect", bundle: .main), systemImage: WitermSymbols.disconnect, role: .destructive) { model.disconnect(session) }
     }

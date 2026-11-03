@@ -318,7 +318,11 @@ final class RemoteTerminalModel {
             sessions = terminals[grant.id] ?? []
         }
         if !sessions.contains(where: { $0.id == session.id }) { sessions.append(session) }
-        attach(session, mode: requestedMode)
+        automaticAttempts = 0
+        notice = false
+        // Opening types when allowed; when someone else is typing it opens
+        // with the keyboard down instead, and says who (never by force).
+        attach(session, mode: requestedMode, automatic: requestedMode == nil)
     }
 
     /// What `grant`'s device lets this one do in `session`, as listed.
@@ -412,7 +416,8 @@ final class RemoteTerminalModel {
         reconnectMode = targetMode
         let switching = previous != nil
         connectionState = switching ? .switching : .connecting
-        busy = changingMode ? (targetMode == .view ? String(localized: "Switching to Watching…", bundle: .main) : String(localized: "Switching to Typing…", bundle: .main)) : String(localized: "Opening terminal…", bundle: .main)
+        // The keyboard is the switch: shown types, hidden watches.
+        busy = changingMode ? (targetMode == .view ? String(localized: "Hiding Keyboard…", bundle: .main) : String(localized: "Showing Keyboard…", bundle: .main)) : String(localized: "Opening terminal…", bundle: .main)
         issue = nil
         do {
             let pairing = try pairingClient()
@@ -449,11 +454,6 @@ final class RemoteTerminalModel {
                     self.busy = nil
                     self.work = nil
                     self.automaticAttempts = 0
-                    // The title bar shows the new state; VoiceOver hears it.
-                    if changingMode {
-                        UIAccessibility.post(notification: .announcement, argument: targetMode == .view
-                            ? String(localized: "Watching", bundle: .main) : String(localized: "Typing", bundle: .main))
-                    }
                 } catch {
                     guard let self, self.generation == token, !Task.isCancelled else { return }
                     // Coming back never takes control by force: when another
@@ -476,7 +476,9 @@ final class RemoteTerminalModel {
 
     func switchMode() {
         guard isInteractive, canRequestControl, let session = selectedSession else { return }
-        attach(session, mode: mode == .control ? .view : .control)
+        // Asking to type while someone else does falls back to watching and
+        // says who (the automatic path); it never takes typing by force.
+        attach(session, mode: mode == .control ? .view : .control, automatic: true)
     }
 
     func reconnect(as requestedMode: LocalAttachmentMode? = nil) {

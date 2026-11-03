@@ -155,7 +155,8 @@ import XCTest
         let terminal = input()
         let accessory = try XCTUnwrap(terminal.inputAccessoryView)
         func identifiers() -> [String] {
-            visibleButtons(accessory).compactMap(\.accessibilityIdentifier)
+            // Hide Keyboard is pinned after the saved keys, not one of them.
+            visibleButtons(accessory).compactMap(\.accessibilityIdentifier).filter { $0 != "terminalKey-hideKeyboard" }
         }
         XCTAssertEqual(identifiers(), ["terminalInterrupt", "terminalKey-escape"])
         // The Snippets key waits for a snippet, then takes its saved place.
@@ -165,23 +166,26 @@ import XCTest
         XCTAssertEqual(identifiers(), ["terminalControlModifier", "terminalKey-snippets", "terminalKey-home"])
     }
 
-    /// Esc, Ctrl, Tab and the four arrows fit an iPhone's width without
-    /// scrolling the row, each still a 44 pt target.
+    /// Esc, Ctrl, Tab and the four arrows fit a 6.3-inch iPhone's width
+    /// (402 pt) beside the pinned Hide Keyboard key without scrolling the
+    /// row, each still a 44 pt target.
     func testFirstSevenKeysFitAnIPhoneWidth() throws {
         let defaults = UserDefaults.standard
         let previous = defaults.string(forKey: MobileKey.key)
         defer { defaults.set(previous, forKey: MobileKey.key) }
         defaults.removeObject(forKey: MobileKey.key)
         let accessory = try XCTUnwrap(input().inputAccessoryView)
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 700))
         window.addSubview(accessory)
-        accessory.frame = CGRect(x: 0, y: 600, width: 390, height: accessory.intrinsicContentSize.height)
+        accessory.frame = CGRect(x: 0, y: 600, width: 402, height: accessory.intrinsicContentSize.height)
         accessory.setNeedsLayout()
         accessory.layoutIfNeeded()
         let keys = visibleButtons(accessory)
         let right = try XCTUnwrap(keys.first { $0.accessibilityIdentifier == "terminalKey-right" })
         let edge = right.convert(right.bounds, to: accessory).maxX
-        XCTAssertLessThanOrEqual(edge, 390, "Widths: \(keys.prefix(7).map { Int($0.bounds.width) })")
+        let hide = try XCTUnwrap(keys.first { $0.accessibilityIdentifier == "terminalKey-hideKeyboard" })
+        XCTAssertLessThanOrEqual(edge, hide.convert(hide.bounds, to: accessory).minX,
+                                 "Widths: \(keys.prefix(7).map { Int($0.bounds.width) })")
         for key in keys { XCTAssertGreaterThanOrEqual(key.bounds.width, 44); XCTAssertGreaterThanOrEqual(key.bounds.height, 44) }
     }
 
@@ -190,10 +194,11 @@ import XCTest
         return (view as? UIButton).map { [$0] } ?? view.subviews.flatMap(visibleButtons)
     }
 
-    /// While the bar is hidden for typing, the key row ends with Hide
-    /// Keyboard and the bar's actions, pinned outside the scrolling keys;
-    /// otherwise neither is there.
-    func testBarKeysJoinTheRowOnlyWhileTheBarIsHidden() throws {
+    /// The key row always ends with Hide Keyboard, pinned outside the
+    /// scrolling keys (Round 16: the keyboard button shows only while the
+    /// keyboard is hidden); the bar's actions join it only while the bar is
+    /// hidden for typing.
+    func testHideKeyboardAlwaysEndsTheRowAndActionsJoinWhileTheBarIsHidden() throws {
         let terminal = input()
         let accessory = try XCTUnwrap(terminal.inputAccessoryView as? MobileTerminalAccessory)
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 874, height: 402))
@@ -204,7 +209,8 @@ import XCTest
             accessory.layoutIfNeeded()
         }
         layOut()
-        XCTAssertFalse(visibleButtons(accessory).contains { $0.accessibilityIdentifier == "terminalKey-hideKeyboard" })
+        XCTAssertTrue(visibleButtons(accessory).contains { $0.accessibilityIdentifier == "terminalKey-hideKeyboard" })
+        let actionsCount = visibleButtons(accessory).count
         terminal.setBarActions(AnyView(TerminalKeyRowActions { Button("Item") {} }))
         layOut()
         let hide = try XCTUnwrap(visibleButtons(accessory).first { $0.accessibilityIdentifier == "terminalKey-hideKeyboard" })
@@ -216,7 +222,8 @@ import XCTest
         XCTAssertGreaterThan(frame.minX, 874 - 160, "Pinned at the row's end, not scrolled with the keys")
         terminal.setBarActions(nil)
         layOut()
-        XCTAssertFalse(visibleButtons(accessory).contains { $0.accessibilityIdentifier == "terminalKey-hideKeyboard" })
+        XCTAssertTrue(visibleButtons(accessory).contains { $0.accessibilityIdentifier == "terminalKey-hideKeyboard" })
+        XCTAssertEqual(visibleButtons(accessory).count, actionsCount, "The actions key leaves with the bar's return")
     }
 
     /// The bar steps aside only in a compact terminal on iPhone in landscape,

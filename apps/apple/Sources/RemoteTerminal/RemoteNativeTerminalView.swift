@@ -81,6 +81,10 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
     var inputDestination: String? = nil
     /// The bar's actions for the key row while the bar is hidden for typing.
     var barActions: AnyView? = nil
+    /// The bottom-right keyboard button: shows the keyboard, or asks to
+    /// type when watching. Nil: no button (the terminal can only watch, or
+    /// isn't connected).
+    var keyboardButton: (() -> Void)? = nil
     let onFailure: (Error) -> Void
     let onEnded: () -> Void
 
@@ -114,6 +118,8 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         view.updateAppearance(highContrast: highContrast, scheme: preferredColorScheme, palette: palette)
         view.announceOutput = announceOutput
         view.terminal.setBarActions(barActions)
+        view.setKeyboardButton(keyboardButton, identifier: "remoteKeyboard",
+                               hint: String(localized: "Starts typing in this terminal.", bundle: .main))
         context.coordinator.requestKeyboardToggle(keyboardRequest, terminal: view.terminal)
     }
 
@@ -144,6 +150,12 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         static let edgeInset: CGFloat = 6
         /// Back to the newest output, shown while scrolled back.
         private let latestButton = UIButton(type: .system)
+        /// Bottom right, within the thumb's reach, only while the keyboard
+        /// is hidden; the key row's Hide Keyboard takes its place while the
+        /// keyboard is up. It sits in a strip of its own below the text, so
+        /// it never covers the cursor line or Jump to Latest.
+        private let keyboardButton = UIButton(type: .system)
+        private var keyboardButtonAction: (() -> Void)?
         /// The size a pinch would set, shown while pinching.
         private let sizeReadout = UILabel()
         private var pinchStartSize: CGFloat?
@@ -170,7 +182,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             terminal.contentInsetAdjustmentBehavior = .never
             terminal.isAccessibilityElement = false
             terminal.accessibilityElementsHidden = true
-            readingView.accessibilityLabel = mode == .view ? String(localized: "Terminal Text, Watching", bundle: .main) : String(localized: "Terminal Text", bundle: .main)
+            readingView.accessibilityLabel = String(localized: "Terminal Text", bundle: .main)
             scroll.addSubview(terminal)
             scroll.alwaysBounceHorizontal = false
             scroll.alwaysBounceVertical = false
@@ -191,6 +203,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             let pinch = UIPinchGestureRecognizer(target: self, action: #selector(pinched(_:)))
             addGestureRecognizer(pinch)
             installLatestButton()
+            installKeyboardButton()
             installSizeReadout()
             terminal.scrollStateChanged = { [weak self] output in
                 #if DEBUG
@@ -220,6 +233,80 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             addInteraction(UILargeContentViewerInteraction())
         }
 
+        private func installKeyboardButton() {
+            var configuration: UIButton.Configuration
+            if #available(iOS 26.0, *), !UIAccessibility.isReduceTransparencyEnabled { configuration = .glass() }
+            else { configuration = .gray() }
+            configuration.image = UIImage(systemName: "keyboard")
+            configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(textStyle: .body)
+            configuration.cornerStyle = .capsule
+            configuration.baseForegroundColor = .label
+            keyboardButton.configuration = configuration
+            let label = String(localized: "Show Keyboard", bundle: .main)
+            keyboardButton.accessibilityLabel = label
+            keyboardButton.showsLargeContentViewer = true
+            keyboardButton.largeContentTitle = label
+            keyboardButton.largeContentImage = UIImage(systemName: "keyboard")
+            keyboardButton.isHidden = true
+            keyboardButton.addAction(UIAction { [weak self] _ in self?.keyboardButtonAction?() }, for: .touchUpInside)
+            addSubview(keyboardButton)
+            NotificationCenter.default.addObserver(self, selector: #selector(keyboardFocusChanged),
+                                                   name: .witermTerminalFocusChanged, object: terminal)
+        }
+
+        /// The keyboard button's action, or nil for no button. A paired
+        /// terminal passes one only while watching one it may type in.
+        func setKeyboardButton(_ action: (() -> Void)?, identifier: String, hint: String? = nil) {
+            keyboardButtonAction = action
+            keyboardButton.accessibilityIdentifier = identifier
+            keyboardButton.accessibilityHint = hint
+            updateKeyboardButton()
+        }
+
+        @objc private func keyboardFocusChanged() {
+            holdsStripForKeyboard = terminal.isFirstResponder && keyboardButtonAction != nil && keyboardOverlap == 0
+            if holdsStripForKeyboard {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+                    guard let self, self.holdsStripForKeyboard else { return }
+                    self.holdsStripForKeyboard = false
+                    self.setNeedsLayout()
+                }
+            }
+            updateKeyboardButton()
+        }
+
+        private func updateKeyboardButton() {
+            let hidden = keyboardButtonAction == nil || terminal.isFirstResponder
+            guard keyboardButton.isHidden != hidden else { return }
+            keyboardButton.isHidden = hidden
+            updateAccessibilityElements()
+            setNeedsLayout()
+        }
+
+        /// The text first, then Jump to Latest and the keyboard button when shown.
+        private func updateAccessibilityElements() {
+            accessibilityElements = [readingView] + (latestButton.isHidden ? [] : [latestButton])
+                + (keyboardButton.isHidden ? [] : [keyboardButton])
+        }
+
+        /// The strip under the text that holds the keyboard button: there
+        /// whenever nothing covers the bottom, and gone in the same layout as
+        /// the keyboard's own inset arrives, so showing or hiding the keyboard
+        /// still changes the grid once (not once for focus, once for the
+        /// keyboard).
+        private var keyboardButtonStrip: CGFloat {
+            guard keyboardButtonAction != nil, keyboardOverlap == 0,
+                  !terminal.isFirstResponder || holdsStripForKeyboard else { return 0 }
+            return Self.keyboardButtonSide + 2 * WitermMetrics.Space.s
+        }
+
+        /// Just focused: the strip stays until the keyboard's inset arrives
+        /// (or a moment passes), so the grid changes once. While focused, a
+        /// keyboard frame in flux (rotating) never brings the strip back.
+        private var holdsStripForKeyboard = false
+
+        static let keyboardButtonSide: CGFloat = 44
+
         private func installSizeReadout() {
             sizeReadout.font = .preferredFont(forTextStyle: .headline)
             sizeReadout.adjustsFontForContentSizeCategory = true
@@ -244,7 +331,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             else if output { latestButton.accessibilityValue = String(localized: "New output", bundle: .main) }
             guard latestButton.isHidden != hidden else { return }
             latestButton.isHidden = hidden
-            accessibilityElements = hidden ? [readingView] : [readingView, latestButton]
+            updateAccessibilityElements()
             setNeedsLayout()
         }
 
@@ -391,7 +478,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         /// without the part the keyboard covers.
         private var contentBounds: CGRect {
             let left = max(Self.edgeInset, safeAreaInsets.left), right = max(Self.edgeInset, safeAreaInsets.right)
-            return bounds.inset(by: UIEdgeInsets(top: 0, left: left, bottom: keyboardOverlap, right: right))
+            return bounds.inset(by: UIEdgeInsets(top: 0, left: left, bottom: keyboardOverlap + keyboardButtonStrip, right: right))
         }
 
         // MARK: Keyboard
@@ -510,12 +597,16 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             defer { probeLayout(CACurrentMediaTime() - started) }
             #endif
             if let measured = measuredKeyboardOverlap() { keyboardOverlap = measured }
+            if keyboardOverlap > 0 { holdsStripForKeyboard = false }
             let content = contentBounds
             scroll.transform = .identity
             scroll.frame = content
             readingView.frame = content
             let side: CGFloat = 44, margin: CGFloat = WitermMetrics.Space.m
             latestButton.frame = CGRect(x: content.maxX - side - margin, y: content.maxY - side - margin, width: side, height: side)
+            let keySide = Self.keyboardButtonSide
+            keyboardButton.frame = CGRect(x: bounds.maxX - max(WitermMetrics.Space.l, safeAreaInsets.right) - keySide,
+                                          y: content.maxY + WitermMetrics.Space.s, width: keySide, height: keySide)
             layoutSizeReadout()
             if let grid = fixedGrid {
                 preserveGrid(grid)

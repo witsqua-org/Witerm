@@ -65,7 +65,7 @@ import XCTest
     private func runSnippet(_ name: String) {
         // After a rotation the keyboard may still be settling; toggling it
         // then would hide it.
-        if !app.keyboards.firstMatch.waitForExistence(timeout: 1.5) { app.buttons["sshKeyboard"].tap() }
+        if !app.keyboards.firstMatch.waitForExistence(timeout: 1.5) { app.toggleTerminalKeyboard() }
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         let key = app.buttons["terminalKey-snippets"]
         XCTAssertTrue(key.waitForExistence(timeout: 5))
@@ -210,7 +210,7 @@ import XCTest
         shot("perf-02-seq100k")
 
         // 3. Scrolling back through it, then back to the prompt with Jump to Latest.
-        app.buttons["sshKeyboard"].tap()
+        app.toggleTerminalKeyboard()
         XCTAssertNotNil(until(5) { !app.keyboards.firstMatch.exists })
         // Hitches while a fling decelerates, as UIKit's scroll signposts count them.
         let options = XCTMeasureOptions()
@@ -235,9 +235,9 @@ import XCTest
         let downFrame = terminal.frame
         var worstShow = 0.0, worstHide = 0.0
         for _ in 0..<5 {
-            app.buttons["sshKeyboard"].tap()
+            app.toggleTerminalKeyboard()
             worstShow = max(worstShow, until(5) { typeable } ?? 99)
-            app.buttons["sshKeyboard"].tap()
+            app.toggleTerminalKeyboard()
             worstHide = max(worstHide, until(5) { !app.keyboards.firstMatch.exists && abs(terminal.frame.maxY - downFrame.maxY) < 1 } ?? 99)
         }
         report("keyboard_show_prompt_worst_s", worstShow)

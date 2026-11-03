@@ -18,7 +18,6 @@ struct RemoteTerminalWorkspace: View {
     @AppStorage("witerm.terminalHighContrast") private var terminalHighContrast = false
     @AppStorage(TerminalColorScheme.key) private var terminalPalette = TerminalColorScheme.system
     @AppStorage("witerm.terminalAnnounceOutput") private var terminalAnnounceOutput = false
-    @State private var showingAppearance = false
     @State private var keyboardRequest = 0
     @State private var finder = TerminalFinder()
     @State private var finding = false
@@ -31,10 +30,10 @@ struct RemoteTerminalWorkspace: View {
 
     var body: some View {
         Group {
+            // Shown only while a terminal (or its kept last frame) is
+            // displayed: each device's terminals are listed in Terminals.
             if let attachment = model.displayAttachment {
                 terminal(attachment)
-            } else {
-                browser
             }
         }
         .background(model.displayAttachment != nil && compactTerminal ? terminalBackground : WitermTheme.canvas)
@@ -76,10 +75,9 @@ struct RemoteTerminalWorkspace: View {
             // the terminal gets the screen instead of a second header.
             if compactTerminal, let attachment = model.displayAttachment {
                 ToolbarItem(placement: .principal) { compactTitle(attachment) }
-                // Two buttons leave the title room; switching between typing
-                // and watching is rarer now that devices type together.
+                // One button leaves the title room; the keyboard button is at
+                // the terminal's bottom right, under the thumb.
                 ToolbarItemGroup(placement: .primaryAction) {
-                    terminalKeyboardButton
                     Menu(String(localized: "Terminal Actions", bundle: .main), systemImage: WitermSymbols.more) {
                         terminalSecondaryActions
                     }
@@ -95,7 +93,13 @@ struct RemoteTerminalWorkspace: View {
         // Going back to the device list has already cleared the selection and
         // started reloading devices; suspending then would cancel that load.
         .onDisappear { if model.selectedGrant != nil { model.suspend() } }
-        .sheet(isPresented: $showingAppearance) { TerminalAppearanceSettings() }
+        // Hiding the keyboard stops typing: the Mac's grid is authoritative
+        // again and this device no longer resizes it.
+        .onReceive(NotificationCenter.default.publisher(for: .witermTerminalFocusChanged)) { note in
+            guard (note.object as AnyObject?) === finder.terminal, note.userInfo?["focused"] as? Bool == false else { return }
+            stopTypingIfKeyboardStaysHidden()
+        }
+        .onChange(of: finding) { _, open in if !open { stopTypingIfKeyboardStaysHidden() } }
         // Typing and watching switch with a tick, as well as the title change.
         .sensoryFeedback(.selection, trigger: model.isInteractive ? model.mode : nil)
     }
@@ -165,124 +169,6 @@ struct RemoteTerminalWorkspace: View {
                                palette: terminalPalette)
     }
 
-    /// The device's terminals: a standard list, with banners above it.
-    private var browser: some View {
-        List {
-            OfflineBanner()
-                .listRowInsets(EdgeInsets())
-                .listRowBackground(Color.clear)
-            if let busy = model.busy {
-                ActivityRow(busy) { model.cancelWork() }
-                    .accessibilityIdentifier("remoteTerminalActivity")
-            }
-            if let issue = model.issue {
-                IssueBanner(title(of: issue), message: issue.recovery, systemImage: WitermSymbols.unpaired) {
-                    if issue.canViewReadOnly, let session = model.selectedSession {
-                        Button { model.attach(session, mode: .view) } label: {
-                            ContentActionLabel(String(localized: "Watch", bundle: .main), systemImage: WitermSymbols.watching)
-                        }
-                        .touchTarget().disabled(model.busy != nil)
-                    }
-                }
-                .listRowInsets(EdgeInsets())
-                .listRowBackground(Color.clear)
-                .accessibilityIdentifier("remoteTerminalError")
-            }
-            if let grant = model.selectedGrant {
-                sessions(for: grant)
-            }
-        }
-        .listStyle(.insetGrouped)
-        .overlay {
-            if model.loaded, model.sessions.isEmpty, model.busy == nil, model.selectedSession == nil {
-                ContentUnavailableView(String(localized: "No Terminals", bundle: .main), systemImage: WitermSymbols.sshHost, description: Text(String(localized: "On the other device, choose Open On ▸ \(PairingDeviceName.current).", bundle: .main)))
-                    .accessibilityElement(children: .contain)
-                    .accessibilityIdentifier("remoteSessionsEmpty")
-            }
-        }
-        // Pull down to list the Mac's sessions again; the list also reloads
-        // when it appears and when the app returns.
-        .refreshable {
-            model.refreshSessions()
-            while model.busy != nil, !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(100))
-            }
-        }
-        .accessibilityIdentifier("remoteSessionsList")
-    }
-
-    @ViewBuilder private func sessions(for grant: DeviceGrant) -> some View {
-        // A terminal that didn't open (the banner above says why), or
-        // whose opening was cancelled: it never connected, so try again.
-        if let session = model.selectedSession, model.busy == nil {
-            Section {
-                VStack(alignment: .leading, spacing: WitermMetrics.Space.m) {
-                    Label(session.name, systemImage: WitermSymbols.sshHost).font(WitermType.cardTitle)
-                    PrimaryButton(String(localized: "Try Again", bundle: .main), systemImage: "arrow.clockwise") {
-                        model.reconnect()
-                    }
-                    .accessibilityIdentifier("reconnectRemoteTerminal")
-                }
-                .padding(.vertical, WitermMetrics.Space.xs)
-            }
-        }
-        Section {
-            ForEach(model.sessions) { session in
-                let access = model.access(for: session)
-                Button { model.attach(session) } label: {
-                    HStack(spacing: WitermMetrics.Space.m) {
-                        IconTile(systemImage: WitermSymbols.sshHost, tint: grant.host.identityHue)
-                        VStack(alignment: .leading, spacing: WitermMetrics.Space.xxs) {
-                            Text(session.name).font(WitermType.rowTitle).foregroundStyle(WitermTheme.ink)
-                            // Who else types there, as of this list; the
-                            // header already covers a device that can only watch.
-                            let detail = [TypingElsewhere.summary(session.writers, hostName: grant.host.name),
-                                          access == .view && grant.permission != .view
-                                            ? String(localized: "Can only watch", bundle: .main) : nil].compactMap { $0 }
-                            if !detail.isEmpty {
-                                Text(detail.joined(separator: " · "))
-                                    .font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
-                            }
-                        }
-                        Spacer(minLength: WitermMetrics.Space.s)
-                        Image(systemName: "chevron.right")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(WitermTheme.secondary)
-                            .accessibilityHidden(true)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("remoteSession-\(session.id)")
-                .accessibilityValue(access == .control ? String(localized: "Can watch and type", bundle: .main) : String(localized: "Can only watch", bundle: .main))
-                // Watching a session you could type in is rare: a swipe, a
-                // long press, or a VoiceOver action, not a button on every row.
-                .swipeActions(edge: .trailing) {
-                    if access == .control {
-                        Button(String(localized: "Watch", bundle: .main), systemImage: WitermSymbols.watching) { model.attach(session, mode: .view) }
-                    }
-                }
-                .contextMenu {
-                    if access == .control {
-                        Button(String(localized: "Watch", bundle: .main), systemImage: WitermSymbols.watching) { model.attach(session, mode: .view) }
-                    }
-                }
-                .accessibilityActions {
-                    if access == .control {
-                        Button(String(localized: "Watch", bundle: .main)) { model.attach(session, mode: .view) }
-                    }
-                }
-                .disabled(model.busy != nil)
-            }
-        } header: {
-            // Typing is the norm, so only its absence is stated.
-            if grant.permission == .view {
-                Label(String(localized: "Can only watch", bundle: .main), systemImage: WitermSymbols.watching)
-                    .textCase(nil)
-            }
-        }
-    }
-
     private func terminal(_ attachment: RemoteTerminalAttachment) -> some View {
         let id = model.attachmentID
         return VStack(spacing: 0) {
@@ -295,7 +181,8 @@ struct RemoteTerminalWorkspace: View {
             } else {
                 // The navigation bar already names the Mac.
                 TerminalHeader(attachment.session.name,
-                               status: [terminalStatus, typingWhileWatching].compactMap { $0 }.joined(separator: " · "),
+                               status: [terminalStatus, typingWhileWatching].compactMap { $0 }.joined(separator: " · ")
+                                   .nilIfEmpty ?? String(localized: "Connected", bundle: .main),
                                statusImage: terminalStatusImage,
                                live: model.isInteractive, hue: model.selectedGrant?.host.identityHue) {
                     terminalActions
@@ -334,6 +221,7 @@ struct RemoteTerminalWorkspace: View {
                     finder: finder,
                     inputDestination: model.selectedGrant.map { $0.host.name + " · " + attachment.session.name },
                     barActions: typingBarHidden ? keyRowActions : nil,
+                    keyboardButton: startTyping,
                     onFailure: { model.attachmentFailed($0, id: id) },
                     onEnded: { model.attachmentEnded(id: id) }
                 )
@@ -341,7 +229,9 @@ struct RemoteTerminalWorkspace: View {
                 // The renderer leaves the keyboard's space itself (see
                 // `TerminalKeyboardOverlap`).
                 .ignoresSafeArea(.keyboard, edges: .bottom)
-                if !model.isInteractive { connectionOverlay }
+                // Showing or hiding the keyboard switches without covering
+                // the terminal; the title says it's under way.
+                if !model.isInteractive, model.connectionState != .switching { connectionOverlay }
             }
             // While watching a terminal this device could type in, list it
             // again every 10 seconds so the title keeps saying who types.
@@ -383,11 +273,13 @@ struct RemoteTerminalWorkspace: View {
         return TypingElsewhere.busyTitle(model.openWriters, hostName: grant.host.name)
     }
 
-    /// Your own view of the terminal: Typing or Watching, or what is
-    /// happening instead (switching, leaving, disconnected, ended).
-    private var terminalStatus: String {
+    /// Plain facts only, never a mode: Can only watch when that's the
+    /// grant, or what is happening instead (the keyboard switching, leaving,
+    /// disconnected, ended). Nil while connected otherwise; the keyboard
+    /// itself shows whether you're typing.
+    private var terminalStatus: String? {
         if model.isInteractive {
-            return model.mode == .view ? String(localized: "Watching", bundle: .main) : String(localized: "Typing", bundle: .main)
+            return model.canRequestControl ? nil : String(localized: "Can only watch", bundle: .main)
         }
         if let busy = model.busy { return busy }
         if model.connectionState == .ended { return String(localized: "Terminal Ended", bundle: .main) }
@@ -396,15 +288,13 @@ struct RemoteTerminalWorkspace: View {
 
     private var terminalStatusImage: String {
         guard model.isInteractive else { return model.busy != nil ? "arrow.triangle.2.circlepath" : WitermSymbols.disconnected }
-        return model.mode == .view ? WitermSymbols.watching : WitermSymbols.typing
+        return model.canRequestControl ? WitermSymbols.connected : WitermSymbols.watching
     }
 
-    /// iPad's header: the actions menu and the keyboard. Typing or watching
-    /// lives in the menu, as on iPhone, since devices now type together.
+    /// iPad's header: the actions menu. The keyboard button is at the
+    /// terminal's bottom right, as on iPhone.
     private var terminalActions: some View {
-        // The keyboard first and the actions menu last, as on iPhone.
         HStack(spacing: typeSize.isAccessibilitySize ? WitermMetrics.Space.m : WitermMetrics.Space.s) {
-            terminalKeyboardButton
             Menu(String(localized: "Terminal Actions", bundle: .main), systemImage: WitermSymbols.more) { terminalSecondaryActions }
                 .labelStyle(.iconOnly)
                 .touchTarget(square: true)
@@ -418,50 +308,46 @@ struct RemoteTerminalWorkspace: View {
         AnyView(TerminalKeyRowActions { terminalSecondaryActions }.tint(model.selectedGrant?.host.identityHue))
     }
 
-    /// Text size first (the most frequent), then find and display, typing or
-    /// watching, and Leave last. The back button already lists the sessions.
+    /// Text and Colors first (the most frequent), then Find, and Leave last.
+    /// Typing follows the keyboard, so there's no switch here.
     @ViewBuilder private var terminalSecondaryActions: some View {
-        TerminalTextSizeControls()
+        TerminalTextAndColorsMenu()
         Button(String(localized: "Find in Terminal", bundle: .main), systemImage: "magnifyingglass") { finding = true }
             .accessibilityIdentifier("terminalFind")
-        Button(String(localized: "Terminal Display", bundle: .main), systemImage: "paintpalette") { showingAppearance = true }
-            .accessibilityIdentifier("terminalAppearance")
-        terminalControlButton
         if model.isInteractive {
             Divider()
-            // Back to the device's terminals, where this one is still listed:
-            // leaving never looks like a dropped connection.
+            // Back to Terminals, where this one is still listed in its
+            // device's section: leaving never looks like a dropped connection.
             Button(String(localized: "Leave", bundle: .main), systemImage: WitermSymbols.leave) { model.showSessions() }
                 .accessibilityHint(String(localized: "The terminal keeps running.", bundle: .main))
                 .accessibilityIdentifier("detachRemoteTerminal")
         }
     }
 
-    /// The title says what tapping does from the current state, and the
-    /// title bar shows the switch at once. A terminal this device can only
-    /// watch says so here, where someone looking for typing would look.
-    @ViewBuilder private var terminalControlButton: some View {
-        if model.isInteractive, model.canRequestControl {
-            Button(model.mode == .control ? String(localized: "Stop Typing", bundle: .main) : String(localized: "Start Typing", bundle: .main), systemImage: model.mode == .control ? WitermSymbols.watching : WitermSymbols.typing) {
-                model.switchMode()
-            }
-            .accessibilityIdentifier("switchRemoteControl")
-        } else if model.isInteractive {
-            Button {} label: {
-                Label(String(localized: "Start Typing", bundle: .main), systemImage: WitermSymbols.typing)
-                Text(String(localized: "Can only watch", bundle: .main))
-            }
-            .disabled(true)
-            .accessibilityIdentifier("switchRemoteControl")
-        }
+    /// The keyboard button's action while watching a terminal this device
+    /// may type in: the Mac is asked for typing (after the detach ACK of the
+    /// watching connection), and the keyboard rises once it accepts. Taking
+    /// typing is always this explicit tap; a refusal leaves the keyboard
+    /// down and says who is typing. Nil hides the button: while typing (the
+    /// key row's Hide Keyboard takes its place), and when this device can
+    /// only watch.
+    private var startTyping: (() -> Void)? {
+        guard model.isInteractive, model.mode == .view, model.canRequestControl else { return nil }
+        return { model.switchMode() }
     }
 
-    @ViewBuilder private var terminalKeyboardButton: some View {
-        if model.isInteractive, model.mode == .control {
-            TerminalKeyboardButton(terminal: { [finder] in finder.terminal }) { keyboardRequest += 1 }
-                .id(model.attachmentID)
-                .touchTarget(square: true)
-                .accessibilityIdentifier("remoteKeyboard")
+    /// The keyboard went down (Hide Keyboard, a swipe on the keyboard, or
+    /// the find bar closing without it): stop typing, after a moment in
+    /// which focus may come straight back. Not while finding, while a sheet
+    /// such as the paste review is up, or in the background, where the
+    /// keyboard is down for another reason.
+    private func stopTypingIfKeyboardStaysHidden() {
+        let id = model.attachmentID
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            guard model.attachmentID == id, model.isInteractive, model.mode == .control, !finding,
+                  scenePhase == .active, finder.terminal?.isFirstResponder == false,
+                  finder.terminal?.window?.rootViewController?.presentedViewController == nil else { return }
+            model.switchMode()
         }
     }
 
@@ -505,13 +391,6 @@ struct RemoteTerminalWorkspace: View {
                     VStack(alignment: .leading, spacing: WitermMetrics.Space.m) {
                         PrimaryButton(String(localized: "Reconnect", bundle: .main), systemImage: "arrow.clockwise") { model.reconnect() }
                             .accessibilityIdentifier("reconnectRemoteTerminal")
-                        if model.reconnectMode == .control {
-                            Button { model.reconnect(as: .view) } label: {
-                                ContentActionLabel(String(localized: "Watch", bundle: .main), systemImage: WitermSymbols.watching)
-                            }
-                            .touchTarget()
-                            .accessibilityIdentifier("reconnectRemoteReadOnly")
-                        }
                     }
                 } else {
                     PrimaryButton(String(localized: "Back to Terminals", bundle: .main), systemImage: "list.bullet") { model.showSessions() }
@@ -523,4 +402,7 @@ struct RemoteTerminalWorkspace: View {
 
 }
 
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
+}
 #endif

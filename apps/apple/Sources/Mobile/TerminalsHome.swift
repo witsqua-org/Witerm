@@ -243,14 +243,7 @@ struct TerminalsHome: View {
             } else {
                 if let issue = model.issue {
                     IssueBanner(issue.typingElsewhere ? TypingElsewhere.busyTitle(model.openWriters, hostName: section.grant.host.name) : issue.title,
-                                message: issue.recovery, systemImage: WitermSymbols.unpaired) {
-                        if issue.canViewReadOnly, let session = model.selectedSession {
-                            Button { model.attach(session, mode: .view) } label: {
-                                ContentActionLabel(String(localized: "Watch", bundle: .main), systemImage: WitermSymbols.watching)
-                            }
-                            .touchTarget()
-                        }
-                    }
+                                message: issue.recovery, systemImage: WitermSymbols.unpaired)
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
                     .accessibilityIdentifier("remoteTerminalError")
@@ -305,23 +298,8 @@ struct TerminalsHome: View {
         .accessibilityAddTraits(shown ? [.isButton, .isSelected] : .isButton)
         .accessibilityIdentifier("remoteSession-\(session.id)")
         .listRowBackground(sizeClass == .regular && shown ? WitermTheme.tint(grant.host.identityHue) : nil)
-        // Watching a terminal you could type in is rare: a swipe, a long
-        // press, or a VoiceOver action, not a button on every row. There's
-        // no delete: ending a terminal is the other device's decision.
-        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            if access == .control {
-                Button(String(localized: "Watch", bundle: .main), systemImage: WitermSymbols.watching) {
-                    openTerminal(section.server, grant, session, .view)
-                }
-            }
-        }
-        .contextMenu {
-            if access == .control {
-                Button(String(localized: "Watch", bundle: .main), systemImage: WitermSymbols.watching) {
-                    openTerminal(section.server, grant, session, .view)
-                }
-            }
-        }
+        // No swipe: there's no watching mode to pick (the keyboard decides)
+        // and no delete (ending a terminal is the other device's decision).
     }
 
     private func note(_ text: String) -> some View {

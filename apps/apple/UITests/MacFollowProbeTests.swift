@@ -19,15 +19,16 @@ final class MacFollowProbeTests: XCTestCase {
         app.tabBars.buttons["Terminals"].tap()
         // Each paired Mac's terminals are listed in its own section.
         let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "remoteSession-", name)).firstMatch
-        let keyboardButton = app.buttons["remoteKeyboard"]
         XCTAssertTrue(row.waitForExistence(timeout: 30))
         row.tap()
+        // Open: the keyboard's Hide key when typing, the keyboard button when not.
+        let keyboardButton = app.buttons.matching(NSPredicate(format: "identifier IN %@", ["remoteKeyboard", "terminalKey-hideKeyboard"])).firstMatch
         XCTAssertTrue(keyboardButton.waitForExistence(timeout: 30))
         RunLoop.current.run(until: Date().addingTimeInterval(2))
         shot("1-following")
         let started = Date()
         // The keyboard comes up with the connection; the button brings it back if not.
-        if !app.keyboards.firstMatch.exists { keyboardButton.tap() }
+        if !app.keyboards.firstMatch.exists { app.toggleTerminalKeyboard() }
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         app.keyboards.firstMatch.keys["e"].tap()
         let elapsed = Date().timeIntervalSince(started)

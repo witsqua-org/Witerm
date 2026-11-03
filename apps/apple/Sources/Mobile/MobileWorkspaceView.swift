@@ -209,9 +209,8 @@ struct MobileWorkspaceView: View {
                 let current = open.firstIndex { $0.terminal == currentTerminal } ?? (step > 0 ? -1 : 0)
                 show(open[(current + step + open.count) % open.count].terminal)
             },
-            // A paired terminal this device may type in: ⇧⌘T switches, as on the Mac.
-            typingHere: shownMac.flatMap { $0.canRequestControl ? $0.mode == .control : nil },
-            setTyping: shownMac.flatMap { model in model.canRequestControl ? { _ in model.switchMode() } : nil },
+            // No Start or Stop Typing (⇧⌘T) on iPhone and iPad: the keyboard
+            // button and Hide Keyboard are the switch.
             leave: shownMac.map { model in { model.showSessions() } },
             disconnect: shownSSH.map { session in { ssh.disconnect(session) } },
             find: shownSSH != nil || shownMac != nil ? { NotificationCenter.default.post(name: .witermFindInTerminal, object: nil) } : nil,

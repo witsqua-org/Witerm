@@ -106,6 +106,11 @@ struct SSHNativeTerminalView: UIViewRepresentable {
         host.surface.updateAppearance(highContrast: highContrast, scheme: scheme, palette: palette)
         host.surface.announceOutput = announceOutput
         host.surface.terminal.setBarActions(barActions)
+        // An SSH terminal can always type: the button only shows the keyboard.
+        host.surface.setKeyboardButton({ [weak terminal = host.surface.terminal] in
+            guard let terminal, terminal.window != nil, !terminal.isFirstResponder else { return }
+            _ = terminal.becomeFirstResponder()
+        }, identifier: "sshKeyboard")
         host.coordinator.toggleKeyboard(keyboardRequest)
     }
 

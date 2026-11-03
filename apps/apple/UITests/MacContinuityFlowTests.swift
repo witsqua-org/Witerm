@@ -86,39 +86,30 @@ final class MacContinuityFlowTests: XCTestCase {
         // Allowed one session, the phone opens it directly.
         let status = any("terminalInputStatus")
         XCTAssertTrue(status.waitForExistence(timeout: 30))
-        // The title bar says Typing (not "Switching to Typing…") before the device name.
-        func state(_ word: String) -> XCTNSPredicateExpectation {
-            // The header's label may start with the terminal's name.
-            XCTNSPredicateExpectation(predicate: NSPredicate(format: "label BEGINSWITH %@ OR label CONTAINS %@", word + ",", ", " + word + ","),
-                                      object: status)
-        }
-        wait(for: [state("Typing")], timeout: 30)
+        // No mode words (Round 16): the title names the device, and the
+        // keyboard is up, so this device types.
+        let hideKey = app.buttons["terminalKey-hideKeyboard"]
+        XCTAssertTrue(hideKey.waitForExistence(timeout: 30), "Opening a terminal that can type brings the keyboard up")
+        XCTAssertFalse(status.label.contains("Typing,") || status.label.contains("Watching"), status.label)
         shot("07-terminal")
 
-        // Stop Typing, then Start Typing: the menu item names the switch from
-        // the current state, and the title bar changes as soon as it's done.
-        // Done before either side types, while the Mac's own window has the
-        // terminal open to type, so watching here shows Typing on the Mac.
-        app.buttons["terminalActionsMenu"].tap()
-        let stop = app.buttons["Stop Typing"]
-        XCTAssertTrue(stop.waitForExistence(timeout: 5), "Typing must offer Stop Typing")
-        XCTAssertFalse(app.buttons["Start Typing"].exists)
-        shot("09a-menu-typing")
-        stop.tap()
-        wait(for: [state("Watching")], timeout: 30)
+        // Hiding the keyboard stops typing; the keyboard button asks to type
+        // again. Done before either side types, while the Mac's own window
+        // has the terminal open to type, so the title then says Typing on
+        // the Mac.
+        hideKey.tap()
+        let keyboardButton = app.buttons["remoteKeyboard"]
+        XCTAssertTrue(keyboardButton.waitForExistence(timeout: 30), "Watching offers the keyboard button")
         // The title says where typing is, from the list it polls while watching.
         let typingOn = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "Typing on"), object: status)
         wait(for: [typingOn], timeout: 20)
-        XCTAssertFalse(app.buttons["remoteKeyboard"].exists, "Watching has no keyboard")
+        app.buttons["terminalActionsMenu"].tap()
+        XCTAssertFalse(app.buttons["Start Typing"].exists || app.buttons["Stop Typing"].exists, "No typing switch in the menu")
         shot("09b-watching")
         app.buttons["terminalActionsMenu"].tap()
-        let startTyping = app.buttons["Start Typing"]
-        XCTAssertTrue(startTyping.waitForExistence(timeout: 5), "Watching must offer Start Typing")
-        XCTAssertFalse(app.buttons["Stop Typing"].exists)
-        shot("09c-menu-watching")
-        startTyping.tap()
-        wait(for: [state("Typing")], timeout: 30)
-        // Start Typing brings the keyboard up, as a new connection does.
+        keyboardButton.tap()
+        // The keyboard comes up once the Mac lets this device type.
+        XCTAssertTrue(hideKey.waitForExistence(timeout: 30))
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         shot("09d-typing-again")
 
@@ -199,8 +190,9 @@ final class MacContinuityFlowTests: XCTestCase {
             signal("phone-burst-ok")
         }
 
-        app.buttons["remoteKeyboard"].tap()
-        // Hiding the keyboard resizes the grid; let that settle first.
+        app.toggleTerminalKeyboard()
+        // Hiding the keyboard stops typing and gives the Mac its grid back;
+        // let that settle first.
         RunLoop.current.run(until: Date().addingTimeInterval(3))
 
         // Long press selects; the edit menu offers Copy.

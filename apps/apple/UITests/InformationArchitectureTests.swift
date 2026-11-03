@@ -91,15 +91,16 @@ import XCTest
         shot("02-terminals-shared-ssh")
     }
 
-    func testTerminalRowsOfferWatchByLongPressNotDelete() {
+    /// A terminal row has no swipe: no watching mode to pick (the keyboard
+    /// decides) and no delete (ending it is the Mac's decision).
+    func testTerminalRowsHaveNoSwipeActions() {
         launch()
         let terminal = app.buttons["remoteSession-fixture-s1"]
         XCTAssertTrue(terminal.waitForExistence(timeout: 15))
-        terminal.press(forDuration: 1.0)
-        XCTAssertTrue(app.buttons["Watch"].waitForExistence(timeout: 5))
+        terminal.swipeLeft()
+        XCTAssertFalse(app.buttons["Watch"].waitForExistence(timeout: 2))
         XCTAssertFalse(app.buttons["Delete"].exists, "Ending a terminal is the other device's decision")
-        shot("03-terminal-context-menu")
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05)).tap()
+        shot("03-terminal-no-swipe")
     }
 
     // MARK: Devices

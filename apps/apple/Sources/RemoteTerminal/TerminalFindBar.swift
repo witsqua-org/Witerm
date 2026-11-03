@@ -37,25 +37,39 @@ enum TerminalTextScale {
     }
 }
 
-/// Smaller and larger terminal text, side by side at the top of a terminal's
-/// actions menu. Like pinching, it changes only this device's view.
-struct TerminalTextSizeControls: View {
+/// Text size and colors in one submenu of a terminal's actions: smaller and
+/// larger text side by side, then the color scheme. Like pinching, it
+/// changes only this device's view; Settings ▸ Text and Colors has the same
+/// preference with previews.
+struct TerminalTextAndColorsMenu: View {
     @AppStorage(TerminalFontSize.key) private var fontSize = TerminalFontSize.standard
+    @AppStorage(TerminalColorScheme.key) private var palette = TerminalColorScheme.system
 
     var body: some View {
-        ControlGroup {
-            Button(String(localized: "Decrease Text Size", bundle: .main), systemImage: "textformat.size.smaller") {
-                fontSize = TerminalFontSize.clamped(fontSize - 1)
+        Menu {
+            ControlGroup {
+                Button(String(localized: "Decrease Text Size", bundle: .main), systemImage: "textformat.size.smaller") {
+                    fontSize = TerminalFontSize.clamped(fontSize - 1)
+                }
+                .disabled(fontSize <= TerminalFontSize.range.lowerBound)
+                .accessibilityIdentifier("terminalSmallerText")
+                Button(String(localized: "Increase Text Size", bundle: .main), systemImage: "textformat.size.larger") {
+                    fontSize = TerminalFontSize.clamped(fontSize + 1)
+                }
+                .disabled(fontSize >= TerminalFontSize.range.upperBound)
+                .accessibilityIdentifier("terminalLargerText")
             }
-            .disabled(fontSize <= TerminalFontSize.range.lowerBound)
-            .accessibilityIdentifier("terminalSmallerText")
-            Button(String(localized: "Increase Text Size", bundle: .main), systemImage: "textformat.size.larger") {
-                fontSize = TerminalFontSize.clamped(fontSize + 1)
+            .controlGroupStyle(.compactMenu)
+            Picker(String(localized: "Color Scheme", bundle: .main), selection: $palette) {
+                ForEach(TerminalColorScheme.allCases) { scheme in
+                    Text(scheme.title).tag(scheme)
+                }
             }
-            .disabled(fontSize >= TerminalFontSize.range.upperBound)
-            .accessibilityIdentifier("terminalLargerText")
+            .pickerStyle(.inline)
+        } label: {
+            Label(String(localized: "Text and Colors", bundle: .main), systemImage: "textformat.size")
         }
-        .controlGroupStyle(.compactMenu)
+        .accessibilityIdentifier("terminalTextAndColors")
     }
 }
 
@@ -79,25 +93,6 @@ struct TerminalSwitcher: View {
         }
         .accessibilityLabel(String(localized: "Switch Terminal", bundle: .main))
         .accessibilityIdentifier("terminalSwitcher")
-    }
-}
-
-/// Shows or hides one terminal's keyboard, and says which it will do: the
-/// symbol and label follow the terminal's real keyboard focus.
-struct TerminalKeyboardButton: View {
-    /// The input view whose focus this button follows.
-    let terminal: () -> UIView?
-    let action: () -> Void
-    @State private var shown = false
-
-    var body: some View {
-        Button(shown ? String(localized: "Hide Keyboard", bundle: .main) : String(localized: "Show Keyboard", bundle: .main),
-               systemImage: shown ? "keyboard.chevron.compact.down" : "keyboard", action: action)
-            .onAppear { shown = terminal()?.isFirstResponder ?? false }
-            .onReceive(NotificationCenter.default.publisher(for: .witermTerminalFocusChanged)) { note in
-                guard let view = terminal(), (note.object as AnyObject?) === view else { return }
-                shown = note.userInfo?["focused"] as? Bool ?? false
-            }
     }
 }
 

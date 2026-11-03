@@ -92,8 +92,8 @@ Swipes mirror the row's menu, never add actions of their own, and are also in th
 
 ### Keyboard button (request 6)
 
-- One floating button at the bottom right, for SSH and paired terminals alike: 44 × 44 pt, glass (a solid surface with Reduce Transparency or Increase Contrast), inset 16 pt from the trailing safe area and 16 pt above the bottom safe area, so it clears the home indicator and stays under the thumb in both orientations.
-- It shows only while the keyboard is hidden. The terminal's bottom inset grows by the button's height plus its margin while it shows, so it never covers the cursor line; **Jump to Latest** moves up to sit above it rather than under it.
+- One button at the bottom right, for SSH and paired terminals alike: 44 × 44 pt, glass (gray with Reduce Transparency), 16 pt from the trailing edge (or the safe area, if larger), inside the bottom safe area so it clears the home indicator and stays under the thumb in both orientations.
+- It shows only while the keyboard is hidden, in a strip of its own (8 + 44 + 8 pt) under the terminal text, so it never covers the cursor line; **Jump to Latest** stays at the text area's bottom right, above the strip.
 - While the keyboard is up, the key row's last key is **Hide Keyboard** (as in Round 13), which is where the same thumb already is.
 - It leaves the navigation bar, which keeps only the title, the switcher chevron and the ••• menu.
 - VoiceOver: "Show Keyboard", with the hint "Starts typing in this terminal." for a paired terminal. It comes after the terminal in reading order.

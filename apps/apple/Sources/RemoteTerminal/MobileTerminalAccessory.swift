@@ -121,9 +121,11 @@ enum MobileKey: String, CaseIterable, Identifiable {
     private let keys = UIStackView()
     private var keyHeightConstraint: NSLayoutConstraint?
     private var shown: [MobileKey] = []
-    /// At the row's end while the navigation bar steps aside for typing
-    /// (iPhone in landscape): Hide Keyboard, which brings the bar back, and
-    /// the bar's own actions menu. Hidden otherwise.
+    /// Pinned at the row's end: Hide Keyboard, always (the keyboard button
+    /// shows only while the keyboard is hidden, so this is how it goes away,
+    /// and hiding it stops typing in a paired terminal), and the bar's own
+    /// actions menu while the navigation bar steps aside for typing (iPhone
+    /// in landscape).
     private let barKeys = UIStackView()
     private let hideKeyboard = UIButton(type: .system)
     private var barActions: UIHostingController<AnyView>?
@@ -164,13 +166,14 @@ enum MobileKey: String, CaseIterable, Identifiable {
         barKeys.alignment = .center
         barKeys.spacing = 6
         barKeys.isLayoutMarginsRelativeArrangement = true
-        barKeys.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 0, leading: 6, bottom: 0, trailing: 6)
+        barKeys.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 0, leading: 2, bottom: 0, trailing: 6)
         barKeys.setContentHuggingPriority(.required, for: .horizontal)
         barKeys.setContentCompressionResistancePriority(.required, for: .horizontal)
-        barKeys.isHidden = true
         configureHideKeyboard()
         keys.axis = .horizontal
-        keys.spacing = 6
+        // With Hide Keyboard pinned at the end, Esc, Ctrl, Tab and the
+        // arrows still fit a 402 pt iPhone (MobileTerminalInputTests).
+        keys.spacing = 5
         keys.translatesAutoresizingMaskIntoConstraints = false
         scroll.addSubview(keys)
         let height = keys.heightAnchor.constraint(equalToConstant: keyHeight)
@@ -383,7 +386,7 @@ enum MobileKey: String, CaseIterable, Identifiable {
     /// as it opens, so SwiftUI's updates don't rebuild it each time.
     func setBarActions(_ actions: AnyView?) {
         guard let actions else {
-            if !barKeys.isHidden { barKeys.isHidden = true }
+            if barActions?.view.isHidden == false { barActions?.view.isHidden = true }
             return
         }
         if barActions == nil {
@@ -398,7 +401,7 @@ enum MobileKey: String, CaseIterable, Identifiable {
             barKeyHeights.append(height)
             barActions = host
         }
-        if barKeys.isHidden { barKeys.isHidden = false }
+        if barActions?.view.isHidden == true { barActions?.view.isHidden = false }
     }
 
     @objc private func updateMetrics() {
@@ -425,7 +428,7 @@ enum MobileKey: String, CaseIterable, Identifiable {
         var configuration = UIButton.Configuration.plain()
         configuration.title = key.face
         configuration.baseForegroundColor = .label
-        configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10)
+        configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8)
         button.configuration = configuration
         button.titleLabel?.font = .preferredFont(forTextStyle: .callout)
         button.titleLabel?.adjustsFontForContentSizeCategory = true

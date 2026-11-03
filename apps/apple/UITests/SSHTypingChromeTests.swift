@@ -222,7 +222,7 @@ import XCTest
 
     /// Runs a saved snippet from the key row's Snippets key.
     private func runSnippet(_ name: String) {
-        if !keyboard.waitForExistence(timeout: 1.5) { app.buttons["sshKeyboard"].tap() }
+        if !keyboard.waitForExistence(timeout: 1.5) { app.toggleTerminalKeyboard() }
         XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
         let key = app.buttons["terminalKey-snippets"]
         XCTAssertTrue(key.waitForExistence(timeout: 5))
@@ -315,7 +315,8 @@ import XCTest
         // Portrait, keyboard up: the bar stays, as before.
         let portrait = try XCTUnwrap(stty())
         XCTAssertTrue(actions.isHittable, "Portrait keeps the navigation bar while typing")
-        XCTAssertFalse(hideKey.exists, "Portrait's key row has no Hide Keyboard key; the bar has the keyboard button")
+        XCTAssertTrue(hideKey.isHittable, "Hide Keyboard ends the key row in portrait too (Round 16)")
+        XCTAssertFalse(app.buttons["sshKeyboard"].exists, "The keyboard button shows only while the keyboard is hidden")
         shot("portrait-keyboard-up")
 
         // Landscape, keyboard up.
@@ -331,8 +332,11 @@ import XCTest
             XCTAssertGreaterThan(landscape.rows, 5, "Hiding the bar gives the terminal rows")
             // The actions menu from the key row has what the bar's had.
             actionsKey.tap()
-            for item in ["SFTP Files", "Port Forwarding", "Terminal Display", "Find in Terminal", "Disconnect"] {
-                XCTAssertTrue(app.buttons[item].waitForExistence(timeout: 5), item)
+            for item in ["SFTP Files", "Port Forwarding", "Text and Colors", "Find in Terminal", "Disconnect"] {
+                // With the software keyboard up in landscape the menu scrolls;
+                // its last item can start out of view.
+                if !app.buttons[item].waitForExistence(timeout: 5) { app.buttons["terminalFind"].swipeDown() }
+                XCTAssertTrue(app.buttons[item].waitForExistence(timeout: 3), item)
             }
             shot("landscape-actions-menu")
             // Text size works from it like from the bar's menu: the cell grows,
@@ -341,14 +345,18 @@ import XCTest
                 app.buttons.matching(NSPredicate(format: "identifier == %@ OR label == %@", id, label)).firstMatch
             }
             func closeMenu() {
-                if app.buttons["SFTP Files"].exists { terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap() }
-                XCTAssertNotNil(until(5) { !app.buttons["SFTP Files"].exists })
+                if app.buttons["SFTP Files"].exists || sizeItem("terminalSmallerText", "Decrease Text Size").exists {
+                    terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
+                }
+                XCTAssertNotNil(until(5) { !app.buttons["SFTP Files"].exists && !sizeItem("terminalSmallerText", "Decrease Text Size").exists })
             }
             let cell = probe("cell") ?? 0
+            app.openTextAndColors()
             sizeItem("terminalLargerText", "Increase Text Size").tap()
             let larger = until(5) { (probe("cell") ?? 0) > cell }
             closeMenu()
             actionsKey.tap()
+            app.openTextAndColors()
             XCTAssertTrue(sizeItem("terminalSmallerText", "Decrease Text Size").waitForExistence(timeout: 5))
             sizeItem("terminalSmallerText", "Decrease Text Size").tap()
             let restored = until(5) { abs((probe("cell") ?? 0) - cell) < 0.01 }
@@ -378,7 +386,7 @@ import XCTest
         }
         for index in 0..<5 {
             var changes = probe("grids") ?? 0
-            if baseline { app.buttons["sshKeyboard"].tap() } else { XCTAssertTrue(hideKey.isHittable); hideKey.tap() }
+            if baseline { app.toggleTerminalKeyboard() } else { XCTAssertTrue(hideKey.isHittable); hideKey.tap() }
             hides.append(until(5) { !keyboard.exists && (baseline || terminal.frame.minY > 40) } ?? 99)
             _ = until(1) { false }
             let hide = steps(since: changes)
@@ -392,7 +400,7 @@ import XCTest
             }
             XCTAssertTrue(actions.isHittable, "The bar is back once the keyboard is hidden")
             changes = probe("grids") ?? 0
-            app.buttons["sshKeyboard"].tap()
+            app.toggleTerminalKeyboard()
             // The terminal at the top of the screen says the bar is gone; the
             // bar's buttons stay hittable to XCTest for a while after.
             shows.append(until(5) { typeable && (baseline || (terminal.frame.minY < 10 && hideKey.exists)) } ?? 99)
@@ -435,7 +443,7 @@ import XCTest
         // coming back to portrait left the terminal 13 rows tall until the
         // keyboard was next hidden or shown (see the HCI log, Round 14: iOS).
         if !baseline { XCTAssertEqual(again.rows, portrait.rows, "Portrait restores the rows") }
-        XCTAssertFalse(hideKey.exists)
+        XCTAssertTrue(hideKey.exists, "Hide Keyboard stays on the key row in portrait")
 
         disconnectAndRemove(name, fingerprint: fingerprint)
     }
@@ -486,11 +494,11 @@ import XCTest
         let portraitReferenceUnder = underKeyRow()
         report("r14_portrait_kb_under_key_row_pt", portraitReferenceUnder)
         shot("r14-rotation-1-portrait-keyrow")
-        app.buttons["sshKeyboard"].tap()
+        app.toggleTerminalKeyboard()
         XCTAssertNotNil(until(5) { !keyboard.exists })
         _ = until(1) { false }
         let portraitDown = probedGrid()
-        app.buttons["sshKeyboard"].tap()
+        app.toggleTerminalKeyboard()
         XCTAssertNotNil(until(5) { typeable })
         _ = until(1) { false }
         XCTAssertEqual(probedGrid(), portraitGrid, "Showing the key row again gives the same grid")
@@ -515,7 +523,7 @@ import XCTest
         hideKey.tap()
         XCTAssertNotNil(until(5) { !keyboard.exists })
         _ = until(1) { false }
-        app.buttons["sshKeyboard"].tap()
+        app.toggleTerminalKeyboard()
         XCTAssertNotNil(until(5) { typeable && hideKey.exists })
         _ = until(1) { false }
         let landscapeReference = probedGrid()
@@ -573,6 +581,7 @@ import XCTest
         func step(_ id: String, _ label: String, from grid: String) -> Double? {
             XCTAssertNotNil(until(5) { actions.isHittable })
             actions.tap()
+            app.openTextAndColors()
             let item = sizeItem(id, label)
             XCTAssertTrue(item.waitForExistence(timeout: 5), label)
             let cell = probe("cell") ?? 0
@@ -659,7 +668,7 @@ import XCTest
                                                                          ("Three million", "seq 1 3000000")])
         runSnippet("Hundred thousand")
         XCTAssertNotNil(until(60, poll: 1) { text().contains("100000") && lastLine().hasSuffix("~$") }, "seq 1 100000 must finish")
-        app.buttons["sshKeyboard"].tap()
+        app.toggleTerminalKeyboard()
         XCTAssertNotNil(until(5) { !keyboard.exists })
         _ = until(1) { false }
 
@@ -701,12 +710,12 @@ import XCTest
         report("r14_live_scroll_worst_frame_ms", live["worstms"] ?? -1)
         report("r14_live_scroll_draw_mean_ms", live["drawms"] ?? -1)
         shot("r14-smooth-2-live-output")
-        if !keyboard.exists { app.buttons["sshKeyboard"].tap() }
+        if !keyboard.exists { app.toggleTerminalKeyboard() }
         let interrupt = app.buttons["terminalInterrupt"]
         if interrupt.waitForExistence(timeout: 5) { interrupt.tap() }
         XCTAssertNotNil(until(30, poll: 1) { lastLine().hasSuffix("~$") }, "Ctrl+C must stop the output")
         if latest.exists { latest.tap() }
-        app.buttons["sshKeyboard"].tap()
+        app.toggleTerminalKeyboard()
         XCTAssertNotNil(until(5) { !keyboard.exists })
         _ = until(1) { false }
 
@@ -740,6 +749,7 @@ import XCTest
         for _ in 0..<12 where (probe("cell") ?? 0) > cell + 0.01 {
             XCTAssertNotNil(until(5) { actions.isHittable })
             actions.tap()
+            app.openTextAndColors()
             let smaller = app.buttons.matching(NSPredicate(format: "identifier == %@ OR label == %@", "terminalSmallerText", "Decrease Text Size")).firstMatch
             XCTAssertTrue(smaller.waitForExistence(timeout: 5))
             smaller.tap()
@@ -748,7 +758,7 @@ import XCTest
             _ = until(5) { !smaller.exists }
         }
         XCTAssertEqual(probe("cell") ?? 0, cell, accuracy: 0.01, "The text size must be back where it started")
-        if keyboard.exists { app.buttons["sshKeyboard"].tap() }
+        if keyboard.exists { app.toggleTerminalKeyboard() }
         _ = until(5) { !keyboard.exists && probedGrid() == gridBefore }
         XCTAssertEqual(probedGrid(), gridBefore, "With the keyboard down again, the grid it started with")
 
@@ -765,7 +775,7 @@ import XCTest
         let host = try connectForGrid(prefix, more: [("Long words", "yes \(Self.word) | head -400")])
         runSnippet("Long words")
         XCTAssertNotNil(until(30, poll: 0.5) { text().contains(Self.word) && lastLine().hasSuffix("~$") }, "The words must print")
-        app.buttons["sshKeyboard"].tap()
+        app.toggleTerminalKeyboard()
         XCTAssertNotNil(until(5) { !keyboard.exists })
         _ = until(1) { false }
         return host
@@ -881,7 +891,7 @@ import XCTest
         XCTAssertEqual(selected(), 0, "Copy ends the selection")
         app.buttons["terminalJumpToLatest"].tap()
         XCTAssertNotNil(until(5) { lastLine().hasSuffix("~$") })
-        app.buttons["sshKeyboard"].tap()
+        app.toggleTerminalKeyboard()
         XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
         let paste = app.buttons["terminalKey-paste"]
         XCTAssertTrue(paste.waitForExistence(timeout: 5))
@@ -987,7 +997,7 @@ import XCTest
         XCTAssertFalse(text().contains("VISUAL"), "A swipe must not start Visual mode")
         XCTAssertEqual(selected(), 0, "Witerm selects nothing")
         // A tap on a line puts vim's cursor there (keyboard up: taps are clicks).
-        if !keyboard.exists { app.buttons["sshKeyboard"].tap() }
+        if !keyboard.exists { app.toggleTerminalKeyboard() }
         XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
         _ = until(1) { false }
         let rows = lines()
@@ -1006,29 +1016,36 @@ import XCTest
 
     // MARK: Round 15: renderer trial
 
-    /// Changes Terminal Display, opened from the bar's actions menu: toggles
-    /// Increase Terminal Contrast, or picks a color scheme by its title.
+    /// Picks a color scheme from the actions menu's Text and Colors, or
+    /// toggles Increase Terminal Contrast in Settings ▸ Advanced (Round 16
+    /// moved it there), coming back to the same connected terminal.
     private func changeTerminalDisplay(scheme: String? = nil) {
         let actions = app.buttons["sshSessionActions"]
-        if !actions.isHittable, keyboard.exists { app.buttons["sshKeyboard"].tap() }
+        if !actions.isHittable, keyboard.exists { app.toggleTerminalKeyboard() }
         XCTAssertNotNil(until(5) { actions.isHittable })
-        actions.tap()
-        let display = app.buttons["Terminal Display"]
-        XCTAssertTrue(display.waitForExistence(timeout: 5))
-        display.tap()
-        let contrast = app.switches["terminalHighContrast"]
-        XCTAssertTrue(contrast.waitForExistence(timeout: 5))
         if let scheme {
-            app.buttons["terminalColorScheme"].tap()
+            actions.tap()
+            app.openTextAndColors()
             let choice = app.buttons[scheme].firstMatch
             XCTAssertTrue(choice.waitForExistence(timeout: 5), "The \(scheme) scheme must be offered")
             choice.tap()
             _ = until(1) { false }
-        } else {
-            contrast.tap()
+            return
         }
-        app.buttons["closeTerminalAppearance"].tap()
-        XCTAssertNotNil(until(5) { !contrast.exists })
+        app.buttons["sshShowHosts"].tap()
+        let settings = app.tabBars.buttons.element(boundBy: 2)
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        settings.tap()
+        app.buttons["settingsAdvanced"].tap()
+        let contrast = app.switches["terminalHighContrast"]
+        XCTAssertTrue(contrast.waitForExistence(timeout: 5))
+        contrast.tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.tabBars.buttons.element(boundBy: 0).tap()
+        let card = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "sshProfileRow-")).firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        card.tap()
+        XCTAssertNotNil(until(5) { actions.isHittable })
         _ = until(1) { false }
     }
 
@@ -1044,12 +1061,12 @@ import XCTest
         let expected = ProcessInfo.processInfo.environment["WITERM_RENDERER"] == "metal" ? "metal" : "coretext"
         let (name, fingerprint) = try connectWithWords("R15 Render")
         XCTAssertTrue(terminal.label.contains(" renderer=" + expected), "The probe must report the \(expected) renderer")
-        app.buttons["sshKeyboard"].tap()
+        app.toggleTerminalKeyboard()
         XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
         _ = until(1) { false }
         shot("r15-render-\(expected)-1-prompt")
         XCTAssertTrue(lastLine().hasSuffix("~$"), "The reading text ends with the prompt")
-        app.buttons["sshKeyboard"].tap()
+        app.toggleTerminalKeyboard()
         XCTAssertNotNil(until(5) { !keyboard.exists })
 
         terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.35)).press(forDuration: 0.8)
