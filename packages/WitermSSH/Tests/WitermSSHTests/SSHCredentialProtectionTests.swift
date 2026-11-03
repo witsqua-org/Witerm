@@ -56,6 +56,9 @@ final class ProtectingSSHSecrets: SSHSecretStorage, @unchecked Sendable {
         XCTAssertEqual(item[kSecAttrService as String] as? String, SSHKeychainStorage.service)
         XCTAssertEqual(item[kSecAttrAccount as String] as? String, "credential-test")
         XCTAssertEqual(item[kSecValueData as String] as? Data, Data("fixture".utf8))
+        // Asking follows this mark, so a Keychain that doesn't enforce access
+        // control (the simulator) still asks.
+        XCTAssertEqual(item[kSecAttrDescription as String] as? String, SSHKeychainStorage.protectedMark)
     }
 
     func testSavingProtectsAndReadingNeedsOneUnlockForEveryHop() async throws {

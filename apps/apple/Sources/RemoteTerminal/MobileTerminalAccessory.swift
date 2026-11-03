@@ -385,15 +385,15 @@ struct TerminalPasteReview: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text(destination).font(.headline)
+                VStack(alignment: .leading, spacing: WitermMetrics.Space.l) {
+                    Text(destination).font(WitermType.cardTitle)
                     Text(String(localized: "Review the entire text before sending it to the terminal. Newlines may run commands.", bundle: .main))
-                        .font(.subheadline).foregroundStyle(.secondary)
-                    Text(verbatim: text).font(.system(.body, design: .monospaced))
+                        .font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
+                    Text(verbatim: text).font(WitermType.code)
                         .textSelection(.enabled).privacySensitive()
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .accessibilityIdentifier("terminalPastePreview")
-                }.padding()
+                }.padding(WitermMetrics.pagePadding)
             }
             .navigationTitle(String(localized: "Review Multiline Paste", bundle: .main))
             .navigationBarTitleDisplayMode(.inline)

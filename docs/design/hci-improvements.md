@@ -329,3 +329,39 @@ The production pass from the [Mac audit](audit-mac.md), on the shared design sys
 - **iOS:** builds (`CODE_SIGNING_ALLOWED=NO`).
 - **Not run:** `SSHHostManagementTests`, which needs a trusted host left by an earlier native run.
 - **Not reachable:** the Approve and device Edit sheets. No device is paired with the relay server, and pairing one needs a phone (the joint run).
+
+## Round 11: iOS
+
+The production pass from the [iOS audit](audit-ios.md), on the shared design system, plus Face ID for saved SSH credentials (the user's decision on F-33), on 2026-11-03. Before and after captures are in `.build/screenshots/audit-ios` (before), `round11-ios/before/ipad-*`, and `round11-ios/after/*`, from the opt-in `AuditScreenshotTests` on the iPhone 18 Pro and iPad Air 11-inch (M4) simulators, one at a time.
+
+| Area | Before | After |
+|---|---|---|
+| Literal design values in iOS-only files (distinct) | spacing 14, padding 12, radii 4, fonts 14 | spacing 7, padding 6, radii 4, fonts 13, all on the token scale; the only literals left are the 56 pt tour symbol and the rows' chevron size |
+| Literal design values in all iOS-compiled code | spacing 15, padding 15, radii 7, fonts 23 | spacing 9, padding 8, radii 6, fonts 22; the rest belong to Mac-shared code the Mac crew owns (key cards, SFTP) |
+| Page backgrounds | Canvas on lists, system grouped on forms and sheets | System grouped everywhere (the shared token) |
+| A device paired twice | Two rows; Unpair on one removed both | One row per device and relay server, with its widest access |
+| Saved SSH credentials | Keychain, readable while unlocked | Face ID, Touch ID or the passcode for every read, once per attempt for every hop |
+
+| # | Findings | Change | Main code |
+|---|---|---|---|
+| 1 | F-01 | `RemoteTerminalModel.devices` lists one grant per device (control beats view, then newest); Terminals and Devices use it. Unpair already ends every pairing with the device on that server. | [RemoteTerminalModel](../../apps/apple/Sources/RemoteTerminal/RemoteTerminalModel.swift), [DevicesView](../../apps/apple/Sources/Mobile/DevicesView.swift) |
+| 2 | F-02, F-03 | The system Paste button gets a graphite fill that keeps its white label above 7:1 in both appearances; Positive is #157043 (lead). | [ContinueFromDeviceFlow](../../apps/apple/Sources/Continuity/ContinueFromDeviceFlow.swift) |
+| 3 | F-04 | Each key says its face to Voice Control first ("Ctrl", "Ctrl C"), then its name; keys show the Large Content Viewer. | [MobileTerminalAccessory](../../apps/apple/Sources/RemoteTerminal/MobileTerminalAccessory.swift) |
+| 4 | F-05 | `ContentActionLabel`: in-content actions carry a leading symbol and the semibold weight on iOS (the Mac keeps a plain title). | [Components](../../apps/apple/Sources/Design/Components.swift) |
+| 5 | F-06, F-12, F-32 | The terminal keeps 6 pt (or the safe area) from each side edge; a Jump to Latest button appears while scrolled back and says when new output arrived; pinching scales live and shows the size it will set. | [RemoteNativeTerminalView](../../apps/apple/Sources/RemoteTerminal/RemoteNativeTerminalView.swift) |
+| 6 | F-07 | A device row in Devices opens the device's page there: Show Terminals, Access, relay server, code, Unpair…. The ⓘ and the tab jump are gone. | [RemoteModels](../../apps/apple/Sources/RemoteTerminal/RemoteModels.swift) |
+| 7 | F-08 | Verified on the iPad: two "Terminals" titles from a split view inside a stack. The split view is now the tab's root on regular width; SSH and paired terminals open in its detail column beside the list, and the tab bar stays. | [MobileWorkspaceView](../../apps/apple/Sources/Mobile/MobileWorkspaceView.swift), [SSHWorkspaceView](../../apps/apple/Sources/SSH/SSHWorkspaceView.swift) |
+| 8 | F-09 | iOS lists Find in Terminal (⌘F), Stop/Start Typing (⇧⌘T), Leave and Disconnect in the Terminal menu while ⌘ is held. | [WitermApp](../../apps/apple/Sources/WitermApp.swift) |
+| 9 | F-10, F-11, F-20, F-46 | The relay-server sheet says Add or Save (the title fits), focuses its field, and opens full height at accessibility sizes; the server row wraps the name there. The SSH form focuses the address, and at accessibility sizes its actions end the form instead of covering it. | [ServerViews](../../apps/apple/Sources/Server/ServerViews.swift), [SSHProfileForm](../../apps/apple/Sources/SSH/SSHProfileForm.swift) |
+| 10 | F-13 | The key row's Paste is the system Paste control, and the edit menu uses the system Paste command, so iOS doesn't ask "Allow Paste?". | [MobileTerminalAccessory](../../apps/apple/Sources/RemoteTerminal/MobileTerminalAccessory.swift) |
+| 11 | F-14, F-18, F-19, F-40, F-41 | First use is one list section with neutral tiles (no emblem, no machine hues); a device's terminals are a list with swipe-to-watch; the Terminals section has no title. | [TerminalsHome](../../apps/apple/Sources/Mobile/TerminalsHome.swift), [RemoteTerminalWorkspace](../../apps/apple/Sources/RemoteTerminal/RemoteTerminalWorkspace.swift) |
+| 12 | F-47, F-48 | Addresses in rows break only between characters, never with a hyphen (`AddressText`); a host named after its address doesn't repeat it. | [Components](../../apps/apple/Sources/Design/Components.swift), [SSHWorkspaceView](../../apps/apple/Sources/SSH/SSHWorkspaceView.swift) |
+| 13 | F-52, F-16 | Terminal text follows Dynamic Type up to xxxLarge; Text and Colors previews the size the terminal really uses. | [TerminalFindBar](../../apps/apple/Sources/RemoteTerminal/TerminalFindBar.swift), [TerminalAppearanceSettings](../../apps/apple/Sources/Design/TerminalAppearanceSettings.swift) |
+| 14 | F-17, F-34, F-35, F-28 | Inline titles in every sheet; detents per the audit's table; Snippets without a repeated header or an empty Edit; the find bar stacks at accessibility sizes; Keyboard Row uses checkmarks and an Edit button instead of permanent delete controls. | several |
+| 15 | F-21, F-22, F-24, F-25, F-27, F-29, F-30, F-37, F-43, F-50 | Relay server, not server alone (iOS strings); "Requesting access adds this relay server"; Add SSH Host… everywhere; title-case iOS settings labels (the Mac keeps sentence case); Dismiss; Disconnected; fewer always-visible hints; "touch and hold to select"; the device page shows the server's name; QR code for the scannable image. | [round11-strings-ios.json](round11-strings-ios.json) |
+| 16 | F-26, F-38, F-44, F-45, F-51 | Swipe actions on host rows (Favorite; Disconnect or Delete Host); haptics for the typing switch, Ctrl and unpairing; the Unpaired note stays until you leave the tab; the preview has an edge; the keyboard button comes before the actions menu on SSH terminals too. | several |
+| 17 | F-33 | Saved credentials use `.userPresence` access control, when-passcode-set, this device only, never synced, and a marker attribute so the app asks even where the Keychain doesn't enforce access control (the simulator). Connecting asks once per attempt for every hop; cancelling opens the form for that attempt and keeps what's saved. One line under the switch names what protects them; without a passcode the switch is off. Older items gain protection on their next successful connection; Undo after Delete restores them without reading them. | [SSHStorage](../../packages/WitermSSH/Sources/WitermSSH/SSHStorage.swift), [SSHWorkspaceModel](../../apps/apple/Sources/SSH/SSHWorkspaceModel.swift), [SSH](../ssh.md#credentials) |
+
+**Not changed:** F-31 (key cards, the Mac crew's `SelectableCard`), F-42 (the selection color is SwiftTerm's), F-39 for row heights (tiles scale; rows follow the system), F-09's paired terminals in ⌘1–9 and Find Next/Previous, and F-21's shared `ConnectionFeedback` wording (Mac-shared).
+
+**Verification (iPhone 18 Pro, then iPad Air 11-inch (M4), never both booted):** see [audit-ios.md](audit-ios.md#phase-2-status).

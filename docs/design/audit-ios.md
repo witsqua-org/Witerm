@@ -390,6 +390,30 @@ No in-app appearance override exists (correct per AGENTS.md); terminal colors fo
 | Multitasking | `.frame(maxWidth: 700)`, `600`, `560` | Six readable widths (see Spacing) behave differently in Split View and Slide Over | One `readableWidth` |
 | Selection highlight in the sidebar | `TerminalsHome.swift:131` | hue 12% background on the shown host; no selection for paired devices | Use `List(selection:)` so the system selection, keyboard focus, and VoiceOver selected trait come for free |
 
+## Phase 2 status
+
+Fixed on 2026-11-03 (Round 11: iOS in the [HCI log](hci-improvements.md#round-11-ios)), after the shared design system and Round 11: Mac were merged.
+
+| Priority | Fixed | Not fixed, and why |
+|---|---|---|
+| P0 | F-01, F-02, F-04; F-03 by the lead's Positive color | none |
+| P1 | F-05, F-06, F-07, F-08 (verified on the iPad first), F-09 (part), F-10, F-11, F-12, F-13, F-14, F-15, F-46, F-47 (rows), F-49 (lead), F-52 | F-09's paired terminals in ⌘1–9 and Find Next/Previous; F-47 in Mac-shared sentences (relay errors) |
+| P2 | F-16, F-17, F-18, F-19, F-20, F-21 (iOS strings), F-22, F-23 (part), F-24, F-25, F-26, F-27, F-28, F-29, F-30 (iOS), F-32, F-33 (Face ID), F-34, F-35, F-36, F-51 | F-23's full-width Paste: the system Paste button keeps its own size; F-31 (the Mac crew's key cards); F-21 and F-30 in Mac-shared views (`ConnectionFeedback`, the RSA line in the key area) |
+| P3 | F-37, F-38, F-39 (tiles), F-40, F-41, F-43, F-44, F-45, F-48, F-50 | F-42 (SwiftTerm's selection color), F-39 row heights (the system's) |
+
+**Distinct literal values in the 15 iOS-only files:** spacing 14 → 7, padding 12 → 6, radii 4 → 4, fonts 14 → 13, every remaining value on the token scale (tokens resolved to their iOS values). The only literal sizes left are the tour's 56 pt symbol and the rows' chevron (`footnote.semibold`). In all code compiled for iOS: spacing 15 → 9, padding 15 → 8, radii 7 → 6, fonts 23 → 22; the remainder is Mac-shared code.
+
+**Verification.**
+
+- `swift test --package-path packages/WitermSSH -j 4`: 37 tests, 0 failures (9 live tests skipped without their fixture config), including `SSHCredentialProtectionTests`: the protected item's attributes (access control, no separate accessibility, not synchronizable, data-protection keychain, the protection mark), one unlock for every hop, migration of an unprotected item on its next save, and Delete keeping protected items for Undo, then purging them.
+- `WitermiOSTerminalTests`: 42 tests, 0 failures, including `DeviceGroupingTests`.
+- iPhone 18 Pro UI tests: `ConnectionFlowTests` (all but `testRealServerSuccess`, which needs a local relay server; the cancellation case ran with `scripts/ui-test-server.py`), `FirstUseTests`, `SystemLanguageTests`, `WelcomeTourTests`, `SSHConfigurationTests`, and against the disposable fixture `testKeyboardScrollAndSelectionInLiveTerminal`, `testSnippetKeyAndFindBarInLiveTerminal`, and the new `SSHSavedCredentialTests`: Face ID enrolled, save, reconnect with one Face ID match and no password, no match then Cancel (no error banner, the form offers the password, the saved credential kept), then a match again; and with Face ID not enrolled, the line says "Your passcode protects them." `testDirectSSHTrustTerminalKeyboardAndSFTP` stops where XCTest's software `z` key is off screen, as in earlier rounds.
+- The simulator's Face ID alert has Try Face ID Again and Cancel only; the Enter Password fallback appears on devices and takes the same path as Cancel.
+- The simulator doesn't enforce `.userPresence` on reads (measured: a protected item read with interaction not allowed returned its data), so asking follows the item's protection mark, not only the Keychain's refusal.
+- Mac: builds with `CODE_SIGNING_ALLOWED=NO` after the merge.
+- Screenshots after the fixes, in `.build/screenshots/round11-ios/after/`: en-light 27, en-dark 27, zh-light 27, en-AX5 22 (the run stopped at the saved-host step, where the AX5 form scrolled the name field under the keyboard), Face ID 9, and iPad en-light 22. On the iPad the live SSH step wasn't captured because XCTest couldn't type into the form sheet's fields; F-08 was checked there before (two Terminals titles) and after (one sidebar and a detail column). Before: Phase 1's `audit-ios/` set and `round11-ios/before/ipad-en-light`.
+- Strings: `round11-strings-ios.json` has 34 additions, no changes, and 19 removals. The only key shared with `round11-strings-mac.json` with different Chinese was "Remove Relay Server?", now aligned to the Mac's 要移除中继服务器吗？.
+
 ## QA notes
 
 **Environment.** Xcode at `/Applications/Xcode.app`, derived data inside the worktree, simulator <simulator-udid> (iPhone 18 Pro, iOS 27.2, already booted; nothing created or erased), parallel testing off, one `xcodebuild` at a time. The Mac app and its service weren't touched.

@@ -208,7 +208,10 @@ import XCTest
         address.tap(); address.typeText("audit@example.invalid")
         reveal(app.buttons["sshMoreOptions"])
         let nameField = app.textFields["sshProfileName"]
-        reveal(nameField); nameField.typeText(name)
+        XCTAssertTrue(nameField.waitForExistence(timeout: 5))
+        let middle = app.windows.firstMatch.frame.midY
+        for _ in 0..<4 where !nameField.isHittable || nameField.frame.maxY > middle { app.swipeUp() }
+        nameField.tap(); nameField.typeText(name)
         reveal(app.buttons["sshSaveOnly"])
         let host = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@", "sshProfileRow-", name)).firstMatch
         guard host.waitForExistence(timeout: 5) else { return }
@@ -313,9 +316,18 @@ import XCTest
         address.tap(); address.typeText("fixture@127.0.0.1:" + port)
         reveal(app.buttons["sshMoreOptions"])
         let nameField = app.textFields["sshProfileName"]
-        reveal(nameField); nameField.typeText(name)
+        XCTAssertTrue(nameField.waitForExistence(timeout: 5))
+        let middle = app.windows.firstMatch.frame.midY
+        for _ in 0..<4 where !nameField.isHittable || nameField.frame.maxY > middle { app.swipeUp() }
+        nameField.tap(); nameField.typeText(name)
         let password = app.secureTextFields["sshHostPassword"]
-        reveal(password); password.typeText("witerm-fixture-only")
+        let bar = app.navigationBars.firstMatch
+        for _ in 0..<4 where !password.isHittable || (bar.exists && password.frame.minY < bar.frame.maxY + 8) {
+            let window = app.windows.firstMatch
+            window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+                .press(forDuration: 0.05, thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.55)))
+        }
+        password.tap(); password.typeText("witerm-fixture-only")
         shot("01-form-filled")
         reveal(app.buttons["sshConnect"])
         declinePasswordOffer(timeout: 3)

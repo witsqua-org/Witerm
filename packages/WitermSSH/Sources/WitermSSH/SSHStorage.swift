@@ -37,6 +37,10 @@ extension SSHSecretStorage {
 
 struct SSHKeychainStorage: SSHSecretStorage {
     static let service = "com.witerm.ssh.v1"
+    /// Marks an item written with access control. Whether to ask the person
+    /// follows this mark, not only the Keychain's refusal: the simulator
+    /// doesn't enforce `.userPresence` on reads, and the app must ask anyway.
+    static let protectedMark = "witerm.credential.protected.v1"
 
     private func query(_ account: String) -> [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
@@ -60,18 +64,33 @@ struct SSHKeychainStorage: SSHSecretStorage {
                 kSecAttrSynchronizable as String: false,
                 kSecUseDataProtectionKeychain as String: true,
                 kSecAttrAccessControl as String: access,
+                kSecAttrDescription as String: protectedMark,
                 kSecValueData as String: data]
     }
 
+    /// Attributes first (never a prompt); the data only for an unmarked,
+    /// unprotected item saved before protection existed.
     func probe(_ account: String) throws -> SSHSecretProbe {
-        var q = query(account)
-        q[kSecReturnData as String] = true
-        q[kSecMatchLimit as String] = kSecMatchLimitOne
         let context = LAContext()
         context.interactionNotAllowed = true
+        var q = query(account)
+        q[kSecReturnAttributes as String] = true
+        q[kSecMatchLimit as String] = kSecMatchLimitOne
         q[kSecUseAuthenticationContext as String] = context
+        var attributes: CFTypeRef?
+        switch SecItemCopyMatching(q as CFDictionary, &attributes) {
+        case errSecItemNotFound: return .missing
+        case errSecInteractionNotAllowed: return .locked
+        case errSecSuccess: break
+        default: throw SSHFailure.storageUnavailable
+        }
+        if (attributes as? [String: Any])?[kSecAttrDescription as String] as? String == Self.protectedMark { return .locked }
+        var d = query(account)
+        d[kSecReturnData as String] = true
+        d[kSecMatchLimit as String] = kSecMatchLimitOne
+        d[kSecUseAuthenticationContext as String] = context
         var item: CFTypeRef?
-        switch SecItemCopyMatching(q as CFDictionary, &item) {
+        switch SecItemCopyMatching(d as CFDictionary, &item) {
         case errSecItemNotFound: return .missing
         case errSecInteractionNotAllowed: return .locked
         case errSecSuccess:
@@ -420,7 +439,9 @@ public final class SSHUnlock: @unchecked Sendable {
         let context = LAContext()
         var error: NSError?
         guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else { return .unavailable }
-        _ = context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil)
+        // The hardware's biometry type is set even with nothing enrolled;
+        // only enrolled biometrics protect, otherwise the passcode does.
+        guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil) else { return .passcode }
         switch context.biometryType {
         case .faceID: return .faceID
         case .touchID: return .touchID

@@ -45,8 +45,10 @@ import XCTest
     }
 
     private func declinePasswordOffer() {
-        let offer = app.buttons["Not Now"]
-        if offer.waitForExistence(timeout: 1) { offer.tap() }
+        // iOS can offer to save the typed password, from the app or the system.
+        for offer in [app.buttons["Not Now"], springboard.buttons["Not Now"]] where offer.waitForExistence(timeout: 0.5) {
+            offer.tap()
+        }
     }
 
     private func row(_ name: String) -> XCUIElement {
@@ -106,10 +108,20 @@ import XCTest
         let identity = app.staticTexts["sshHostFingerprint"]
         let terminal = app.descendants(matching: .any)["sshTerminalSurface"].firstMatch
         // The trust sheet can follow the system's password offer.
-        for _ in 0..<20 where !terminal.exists {
+        for _ in 0..<60 where !terminal.exists {
             if identity.exists {
                 XCTAssertTrue(identity.label.contains(fingerprint), "Unexpected fixture host fingerprint")
-                app.buttons["sshTrustHost"].tap()
+                // A tap while the sheet still slides in can be lost; try until it closes.
+                let trust = app.buttons["sshTrustHost"]
+                for _ in 0..<5 where trust.exists {
+                    RunLoop.current.run(until: Date().addingTimeInterval(1))
+                    if trust.isHittable { trust.tap() } else { declinePasswordOffer() }
+                }
+                if trust.exists {
+                    shot("00-trust-blocked")
+                    let tree = XCTAttachment(string: springboard.debugDescription + "\n----\n" + app.debugDescription)
+                    tree.lifetime = .keepAlways; add(tree)
+                }
                 break
             }
             declinePasswordOffer()
@@ -131,36 +143,54 @@ import XCTest
         app.buttons["sshShowHosts"].tap()
         disconnect(name)
 
-        // No match, then Enter Password: the form, no error, the saved one kept.
+        // No match, then Cancel: no error banner; the form offers the
+        // password for this attempt, and the saved one is kept. (The
+        // simulator's Face ID alert has Try Face ID Again and Cancel only;
+        // a device adds the Enter Password fallback, which does the same.)
         row(name).tap()
         RunLoop.current.run(until: Date().addingTimeInterval(1.5))
         signal("nomatch")
-        let enterPassword = springboard.buttons["Enter Password"]
-        XCTAssertTrue(enterPassword.waitForExistence(timeout: 10), "No match must offer Enter Password")
+        let tryAgain = springboard.buttons["Try Face ID Again"].firstMatch
+        XCTAssertTrue(tryAgain.waitForExistence(timeout: 10), "No match must say so and offer another try")
         shot("04-no-match")
-        enterPassword.tap()
-        XCTAssertTrue(app.secureTextFields["sshHostPassword"].waitForExistence(timeout: 10), "Enter Password must open the form")
-        XCTAssertFalse(app.descendants(matching: .any)["sshIssue"].exists, "Falling back is not an error")
-        shot("05-enter-password")
+        let cancel = springboard.buttons["Cancel"].firstMatch
+        XCTAssertTrue(cancel.exists)
+        cancel.tap()
+        XCTAssertTrue(app.secureTextFields["sshHostPassword"].waitForExistence(timeout: 10),
+                      "Cancelling must offer the password for this attempt")
+        XCTAssertFalse(app.descendants(matching: .any)["sshIssue"].exists, "Cancelling Face ID is not an error")
+        shot("05-cancelled-offers-password")
         app.navigationBars.buttons.element(boundBy: 0).tap()
 
-        // Cancelling: no error banner, and the saved credential still works.
-        row(name).tap()
-        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
-        signal("nomatch")
-        let cancel = springboard.buttons["Cancel"]
-        XCTAssertTrue(cancel.waitForExistence(timeout: 10))
-        cancel.tap()
-        RunLoop.current.run(until: Date().addingTimeInterval(1))
-        XCTAssertFalse(app.descendants(matching: .any)["sshIssue"].exists, "Cancelling Face ID is not an error")
-        if app.secureTextFields["sshHostPassword"].waitForExistence(timeout: 3) {
-            app.navigationBars.buttons.element(boundBy: 0).tap()
-        }
+        // The saved credential survived: a match connects.
         row(name).tap()
         RunLoop.current.run(until: Date().addingTimeInterval(1.5))
         signal("match")
         XCTAssertTrue(terminal.waitForExistence(timeout: 20), "The saved credential must survive a cancelled attempt")
         app.buttons["sshShowHosts"].tap()
+    }
+
+    /// Without Face ID enrolled, the line names what protects saved
+    /// credentials instead (or that a passcode is needed). Run with
+    /// WITERM_FACEID_EXPECTED_LINE after un-enrolling; nothing is saved.
+    func testProtectionLineFollowsEnrollment() throws {
+        guard let expected = ProcessInfo.processInfo.environment["WITERM_FACEID_EXPECTED_LINE"] else {
+            throw XCTSkip("Set WITERM_FACEID_EXPECTED_LINE")
+        }
+        launch()
+        app.tabBars.buttons.element(boundBy: 0).tap()
+        reveal(app.buttons["newSSHProfile"])
+        let address = app.textFields["sshHostAddress"]
+        XCTAssertTrue(address.waitForExistence(timeout: 5))
+        address.typeText("fixture@example.invalid")
+        let save = app.switches["Save Credentials on This Device"]
+        for _ in 0..<4 where !save.isHittable { app.swipeUp() }
+        if save.isEnabled { save.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap() }
+        let line = app.staticTexts["sshCredentialProtection"]
+        XCTAssertTrue(line.waitForExistence(timeout: 3))
+        XCTAssertEqual(line.label, expected)
+        shot("06-not-enrolled")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
     }
 
     /// Deletes the host and, only when it's the fixture's, its pinned key.

@@ -16,7 +16,7 @@
     "Optic ID protects them.": "由 Optic ID 保护。",
     "Page": "页面",
     "Point at the QR code on the other device": "对准另一台设备上的二维码",
-    "Remove Relay Server?": "移除中继服务器？",
+    "Remove Relay Server?": "要移除中继服务器吗？",
     "Remove Relay Server…": "移除中继服务器…",
     "Requesting access adds this relay server. Only continue if you trust the device that showed the code.": "请求访问会添加此中继服务器。请仅在信任显示该验证码的设备时继续。",
     "Scan a QR Code Instead": "改为扫描二维码",
