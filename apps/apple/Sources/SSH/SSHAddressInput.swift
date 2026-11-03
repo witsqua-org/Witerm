@@ -3,6 +3,11 @@ import WitermSSH
 
 /// One field for an SSH destination, written the way people already type it:
 /// `user@host`, `user@host:port`, `user@[fe80::1]:2222`, or `ssh://user@host`.
+///
+/// Like OpenSSH, the host starts after the *last* `@`, so a username that is
+/// itself an email address (`first.last@corp.com@bastion`) needs no quoting.
+/// In the `ssh://` form the username may also be percent-encoded
+/// (`ssh://first.last%40corp.com@bastion`), as in an SSH URI.
 enum SSHAddressInput {
     struct Parsed: Equatable {
         var username: String
@@ -10,17 +15,22 @@ enum SSHAddressInput {
         var port: Int
     }
 
-    enum Problem: Equatable { case empty, missingUser, invalidHost, invalidPort }
+    enum Problem: Equatable { case empty, missingUser, invalidUser, invalidHost, invalidPort }
 
     static func parse(_ text: String) -> Result<Parsed, ProblemError> {
         var rest = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if rest.lowercased().hasPrefix("ssh://") { rest = String(rest.dropFirst(6)) }
+        let isURI = rest.lowercased().hasPrefix("ssh://")
+        if isURI { rest = String(rest.dropFirst(6)) }
         if rest.hasSuffix("/") { rest = String(rest.dropLast()) }
         guard !rest.isEmpty else { return .failure(ProblemError(.empty)) }
         var username = ""
         if let at = rest.lastIndex(of: "@") {
             username = String(rest[..<at])
             rest = String(rest[rest.index(after: at)...])
+            if isURI {
+                guard let decoded = username.removingPercentEncoding else { return .failure(ProblemError(.invalidUser)) }
+                username = decoded
+            }
         }
         var hostname = rest
         var port = 22
@@ -45,8 +55,10 @@ enum SSHAddressInput {
         else { return .failure(ProblemError(.invalidHost)) }
         guard !username.isEmpty else { return .failure(ProblemError(.missingUser)) }
         guard username.utf8.count <= 255, !username.contains(where: \.isWhitespace),
-              !username.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
-        else { return .failure(ProblemError(.missingUser)) }
+              !username.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains),
+              // `@alice@host`, `alice@@host`: an empty part around an `@` is a typo, not a name.
+              !username.hasPrefix("@"), !username.hasSuffix("@"), !username.contains("@@")
+        else { return .failure(ProblemError(.invalidUser)) }
         return .success(Parsed(username: username, hostname: hostname, port: port))
     }
 
@@ -67,6 +79,7 @@ enum SSHAddressInput {
             switch problem {
             case .empty: String(localized: "Enter an address, like deploy@server.example.com.", bundle: .main)
             case .missingUser: String(localized: "Add the username before @, like deploy@server.example.com.", bundle: .main)
+            case .invalidUser: String(localized: "Check the username. The host starts after the last @, like first.last@corp.com@server.example.com.", bundle: .main)
             case .invalidHost: String(localized: "Enter a valid host address without spaces.", bundle: .main)
             case .invalidPort: String(localized: "After the colon, use a port from 1 to 65535.", bundle: .main)
             }

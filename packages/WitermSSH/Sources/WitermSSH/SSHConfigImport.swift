@@ -145,12 +145,17 @@ public enum SSHConfigImport {
         return jumps + [target]
     }
 
-    /// `[user@]host[:port]`, or `ssh://[user@]host[:port]`.
+    /// `[user@]host[:port]`, or `ssh://[user@]host[:port]`. As in OpenSSH the
+    /// host starts after the last `@`, and an `ssh://` username is percent-decoded.
     private static func parseHop(_ value: String, defaultUsername: String?) -> SSHHost? {
-        var rest = value.hasPrefix("ssh://") ? String(value.dropFirst(6)) : value
+        let isURI = value.lowercased().hasPrefix("ssh://")
+        var rest = isURI ? String(value.dropFirst(6)) : value
+        if isURI, rest.hasSuffix("/") { rest = String(rest.dropLast()) }
         var user = defaultUsername ?? ""
         if let at = rest.lastIndex(of: "@") {
             user = String(rest[..<at]); rest = String(rest[rest.index(after: at)...])
+            if isURI { guard let decoded = user.removingPercentEncoding else { return nil }; user = decoded }
+            guard !user.isEmpty, !user.hasPrefix("@"), !user.hasSuffix("@"), !user.contains("@@") else { return nil }
         }
         var port = 22
         if rest.hasPrefix("["), let close = rest.firstIndex(of: "]") {

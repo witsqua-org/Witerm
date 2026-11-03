@@ -54,6 +54,26 @@ final class SSHConfigImportTests: XCTestCase {
         XCTAssertEqual(chain.jumpHosts.first?.username, "alice")
     }
 
+    func testUsernamesThatAreEmailAddresses() throws {
+        let text = """
+        Host corp
+            HostName inner.corp.com
+            User first.last@corp.com
+            ProxyJump first.last@corp.com@hop1.corp.com:2200,ssh://second%40corp.com@hop2.corp.com/
+
+        Host typo
+            HostName inner.corp.com
+            ProxyJump first@@hop1.corp.com
+        """
+        let entries = Dictionary(uniqueKeysWithValues: SSHConfigImport.parse(text, defaultUsername: "me").map { ($0.alias, $0) })
+        let corp = try XCTUnwrap(entries["corp"]?.profile)
+        XCTAssertEqual(corp.host.username, "first.last@corp.com")
+        XCTAssertEqual(corp.jumpHosts.map(\.username), ["first.last@corp.com", "second@corp.com"])
+        XCTAssertEqual(corp.jumpHosts.map(\.hostname), ["hop1.corp.com", "hop2.corp.com"])
+        XCTAssertEqual(corp.jumpHosts.map(\.port), [2200, 22])
+        XCTAssertNil(entries["typo"]?.profile, "An empty part around an @ is not guessed")
+    }
+
     func testPatternsAndDefaultsWithoutGlobalUser() throws {
         let text = """
         Host app

@@ -2393,6 +2393,23 @@
         }
       }
     },
+    "Check the username. The host starts after the last @, like first.last@corp.com@server.example.com." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check the username. The host starts after the last @, like first.last@corp.com@server.example.com."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请检查用户名。主机从最后一个 @ 之后开始，例如 first.last@corp.com@server.example.com。"
+          }
+        }
+      }
+    },
     "Check your network and the device, then reconnect." : {
       "extractionState" : "manual",
       "localizations" : {
