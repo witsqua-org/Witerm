@@ -52,6 +52,23 @@
         }
       }
     },
+    "%@ can no longer open it. This can’t be undone: to open it again, %@ must invite you again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ can no longer open it. This can’t be undone: to open it again, %@ must invite you again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@将无法再打开它。此操作无法撤销：要再次打开，需要%@重新邀请你。"
+          }
+        }
+      }
+    },
     "%@ can no longer open its terminals. To use them again, pair again." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -286,6 +303,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@。%2$@已不再打开它的终端，但中继服务器尚未收到通知。请重试，或在另一台设备上取消配对。"
+          }
+        }
+      }
+    },
+    "%@. The invitation is still in effect. Try again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@. The invitation is still in effect. Try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@。邀请仍然有效。请重试。"
           }
         }
       }
@@ -3668,6 +3702,23 @@
         }
       }
     },
+    "Disconnected after 3 minutes in the background. Reconnecting opens a new shell." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disconnected after 3 minutes in the background. Reconnecting opens a new shell."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在后台 3 分钟后已断开连接。重新连接会打开新的 Shell。"
+          }
+        }
+      }
+    },
     "Disconnected. Check that this device is still paired, then reconnect." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3970,6 +4021,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "结束邀请"
+          }
+        }
+      }
+    },
+    "End Invitation to “%@”?" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "End Invitation to “%@”?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要结束“%@”的邀请吗？"
+          }
+        }
+      }
+    },
+    "End Invitation…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "End Invitation…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "结束邀请…"
           }
         }
       }
@@ -5444,6 +5529,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "邀请已不可用"
+          }
+        }
+      }
+    },
+    "Invitation ended" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Invitation ended"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "邀请已结束"
           }
         }
       }
@@ -9562,36 +9664,19 @@
         }
       }
     },
-    "SSH stopped when Witerm went to the background. Reconnecting opens a new shell." : {
+    "SSH stays connected for 3 minutes in the background. Use tmux to keep programs running longer." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "SSH stopped when Witerm went to the background. Reconnecting opens a new shell."
+            "value" : "SSH stays connected for 3 minutes in the background. Use tmux to keep programs running longer."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Witerm 进入后台时 SSH 已停止。重新连接会打开新的 Shell。"
-          }
-        }
-      }
-    },
-    "SSH stops in the background. Use tmux to keep programs running." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SSH stops in the background. Use tmux to keep programs running."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SSH 在后台会停止。用 tmux 让程序保持运行。"
+            "value" : "SSH 在后台会保持连接 3 分钟。要让程序运行更久，请使用 tmux。"
           }
         }
       }
