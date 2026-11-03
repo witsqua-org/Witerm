@@ -103,6 +103,6 @@ swift test --package-path packages/WitermSSH -j 4
 python3 tools/ssh-fixture/run.py   # Real OpenSSH
 ```
 
-`run.py` generates throwaway keys, starts two OpenSSH containers on random localhost ports, and cleans everything up afterwards. It covers both key types, passwords, a rejected password, a jump target that refuses, PTY sizing, SFTP through a jump host, permission errors, about 2 MiB each way through L and R forwards, and rejection of unknown or changed host keys.
+`run.py` generates throwaway keys, starts two OpenSSH containers on random localhost ports, and cleans everything up afterwards. The image also has tmux and vim, which the iOS UI tests use as programs that ask for the mouse. It covers both key types, passwords, a rejected password, a jump target that refuses, PTY sizing, SFTP through a jump host, permission errors, about 2 MiB each way through L and R forwards, and rejection of unknown or changed host keys.
 
 Unit tests also check that `ssh-keygen` reads generated keys and that RSA keys are recognized, using throwaway files in a temporary folder. The tests never read your `~/.ssh`, keys, or known hosts, enable Remote Login, or listen on your network. Without the fixture, the live tests skip rather than pretend to pass.

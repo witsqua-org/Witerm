@@ -563,3 +563,120 @@ Time Profiler (`xctrace record --template 'Time Profiler' --device <simulator> -
 **Reviewed, not changed:** the find bar's software keyboard after rotation (its keyboard posts its own reports; not reproducible in hardware-keyboard mode), an undocked iPad keyboard with the key row (covered by the overlap's rule and a unit test, not run), and the pinch's lifting frame (the reflow is SwiftTerm's resize; a later round could rewrap the scrollback lazily).
 
 **Verification:** see [verification.md](../verification.md), Round 14: iOS layout.
+
+## Round 15: iOS selection and renderer trial
+
+The owner's report "dragging now automatically selects text" on iPhone, and a trial of SwiftTerm's Metal renderer behind a DEBUG switch, on 2026-11-04, on the iPhone 18 Pro simulator against the disposable OpenSSH fixture. Paired-Mac and SSH terminals share the renderer (`RemoteNativeTerminalView.TerminalSurface`), so each fix covers both. Captures: `.build/screenshots/round15-ios/` (`r15-before*/` on the old gesture code with the new probe, `r15-after*/`).
+
+### Part 1: dragging selected text
+
+**The owner's case, confirmed: the Mac's tmux asked for the mouse.** The report came from the iPhone 17 Pro, in a paired-Mac terminal at a plain shell prompt, right after tapping into it ("once input mode is enabled, swiping starts selecting text; view-only scrolls smoothly"). The Mac service runs each session in its own tmux (`-f /dev/null`), and the phone draws that tmux client's output. tmux 3.6 and later default `mouse` to **on** even without a configuration file (this Mac has tmux 3.8: `show-options -g mouse` → `mouse on`), so on every attach, resize and re-attach the client sends `ESC[?1006h ESC[?1000h ESC[?1002h`, for viewers too (captured through a real PTY with the service's options and `TERM=xterm-256color`). While typing, Witerm let SwiftTerm's mouse drag through whenever mouse reporting was on, so a one-finger swipe went to tmux as a held button. tmux started a copy-mode selection (shared by every client of the session) and copied it on release. Watching never reports the mouse, so the same swipe scrolled. The fix is on both ends:
+
+- **Mac service:** its tmux sets `mouse off` when a session is made and again before each attach (for sessions made by an older service). `AgentTests.testTmuxNeverAsksViewersForTheMouse` (real tmux, its own socket) fails on the old service, with `?1000h`, `?1002h` and `?1006h` on the first attach, after a resize, on a re-attach and for a viewer, and passes now. An older Mac service keeps sending them until it's updated, which the phone handles on its own:
+- **iPhone:** a paired terminal's touches stay Witerm's whatever its stream asks for (`passesMouseToPrograms` off): a swipe scrolls Witerm's scrollback and a tap stays a tap, as when watching (`TerminalSelectionTests.testPairedTerminalsKeepTouchesWhenTheirTmuxAsksForTheMouse`, fed the captured bytes). For SSH, where a program the person runs asked for the mouse, a one-finger swipe never sends a held button: it sends wheel steps at the finger (below).
+
+The other causes below were found on the way and also fixed. Each was reproduced with a new UI test in `SSHTypingChromeTests` on the old gesture code (the same build with only the DEBUG probe added: the selected character count and the handles' knob positions in the layout probe's label), then fixed.
+
+| # | Cause (confirmed) | Fails before | Change |
+|---|---|---|---|
+| 1 | Witerm's selection long press fired after **0.35 s** (UIKit's own is 0.5 s). A finger that rested a moment before swiping became a long press, and the swipe then extended the selection instead of scrolling. | `testSlowStartSwipeScrollsWithoutSelecting` (rest 0.4 s, then a 200 pt drag), 3 of 3 attempts: 467 characters selected, Copy shown, no scroll (top row 375 → 375). | The long press takes 0.5 s. It is cancelled when the terminal (or the wide grid's sideways scroll) starts dragging, can't begin while either is dragging or coasting, and a touch that lands on a coasting fling only stops it (`SelectionPressGate`). After: nothing selected, no menu, and each swipe scrolled back (375 → 363 → 341 → 318). |
+| 2 | With a selection, a drag grabbed a handle within 22 pt **plus half a row** of the text's corner, not of the knob SwiftTerm draws 6 pt above the first character and below the last, and it was tested where the finger was once the drag was recognized (about 10 pt along), so a swipe toward a handle took it from farther away. The selection lasted until a tap, so one accidental selection kept catching later swipes. | `testSwipesNearASelectionScrollAndItsHandlesStillDrag`: a swipe up from the text 30 pt below the end knob moved the selection (36 → 40 characters) and didn't scroll (`r15-before3/`). Dragging the end knob 100 pt left grew the selection instead (36 → 62, the end jumped to the row the knob hangs in), and the edit menu, placed at the lift point, covered the rows under the selection, so the next drag there landed on the menu (`r15-before/`). | A handle is grabbed only within a 44 pt square centered on its knob, from where the finger came down. The end being dragged keeps the finger's offset from the middle of its character, so it doesn't jump rows. The edit menu is placed beside the selection and its knobs (the interaction's target rectangle), not over them. A first version tested the touch-down point from the pan's translation, which is still zero when it asks to begin, and the swipe toward the handle still took it (36 → 113); the drag now records where its finger came down. After: both swipes scrolled with the selection unchanged (top row 375 → 368, then forward to 372), the knob drag shortened it (36 → 24), and Copy then the Paste key typed exactly those 24 characters. |
+| 3 | When a program asks for the mouse (tmux `mouse on`, vim `mouse=a`, htop) and the terminal can type, SwiftTerm's drag sent a held button (press, motion, release), which those programs turn into their own selection. Witerm also let *any* SwiftTerm drag begin then, including its selection drag left over from a double tap. This is the paired case above when the stream comes from Witerm's tmux. | `testSwipesScrollProgramsThatAskForTheMouse` over SSH, typing: in tmux with `mouse on` a 220 pt swipe didn't scroll (tmux selected, copied and left copy mode); in `vim -c 'set mouse=a'` it started Visual mode across 13 lines (`r15-mouse-before/`). | A one-finger swipe never sends a button. For a program that asked for the mouse it sends wheel steps (buttons 64/65, in the program's encoding, at the finger's cell), one per row dragged, and coasts after a fling with UIScrollView's deceleration; a touch stops the coast without selecting. Without the mouse it scrolls Witerm's scrollback. Taps still click (with the keyboard up, as before), and a long press still makes Witerm's own selection, never sent. No SwiftTerm drag begins. After: tmux scrolled into copy mode with no selection (`[85/362]`), vim scrolled with no Visual mode, a tap moved vim's cursor, and at a plain prompt with the keyboard up the swipe scrolled Witerm's scrollback. |
+
+**Starting a scroll with a selection (HIG).** As in other iOS text, the selection stays and the edit menu steps aside while the text scrolls, and returns beside the selection when the scroll stops (if any of it is on screen). The touch that starts the scroll usually closes the menu already; the terminal brings it back.
+
+**Deliberate mouse drags** (resizing tmux panes, a mouse selection in vim) aren't offered. A two-finger drag would compete with the pinch, and a key-row toggle is more chrome for a rare need; tmux and vim have keyboard equivalents, and Witerm's long press selects and copies locally. A later round can add a toggle, off by default, if it's missed.
+
+**Alternate screen without the mouse** (`less`, `man`): unchanged. The swipe moves nothing, since that screen has no scrollback. Sending arrow keys there, as macOS Terminal does under DECSET 1007 (alternate scroll mode), would be the HIG-consistent next step; not done, because few programs set 1007 and the keys would reach the program.
+
+**Unit tests** (`TerminalSelectionTests`, 6): the knobs' positions; a 44 pt target on each knob and none on the text 30 pt away (the points the old target took); the menu's rectangle containing both knobs; swipes as the wheel in mouse mode (SGR `ESC[<64;…M` per row dragged, never a button) and as scrolling otherwise or when watching; a paired terminal fed the tmux client's captured bytes keeping its touches; the 0.5 s long press.
+
+**Gesture log (DEBUG builds, for confirming on the iPhone).** Each gesture on a terminal is logged with os_log, subsystem `com.witerm`, category `terminal-gestures`, never terminal content: which recognizer asked to begin and the answer, when it began and ended, the mouse mode, whether the view reports the mouse, has the keyboard and accepts input, whether a selection is active, and, when a selection starts, which recognizers were running (on the view and its window). To read it:
+
+- iPhone: Console.app → the iPhone in the sidebar → Start, then filter `subsystem:com.witerm category:terminal-gestures`. Or afterwards: `sudo log collect --device-udid 00008150-000259AE36C0401C --last 10m --output r15-gestures.logarchive`, then `log show r15-gestures.logarchive --predicate 'subsystem == "com.witerm" AND category == "terminal-gestures"'`.
+- Simulator: `xcrun simctl spawn <simulator-udid> log stream --level info --predicate 'subsystem == "com.witerm" AND category == "terminal-gestures"'`.
+
+A swipe in a paired terminal should log `shouldBegin=true UIScrollViewPanGestureRecognizer[scroll]` and `allowMouseReporting=false`; a line `selectionStarted running=[…]` names whatever started a selection.
+
+### Part 2: SwiftTerm's Metal renderer, on trial
+
+SwiftTerm 1.19.0 (unchanged) has an opt-in Metal renderer. A DEBUG-only switch selects it for iOS terminals: launching with `-witerm.debug.renderer metal` (a launch argument, so it lasts for that launch only); anything else, or nothing, keeps Core Graphics, the default. Builds with the `WITERM_RENDERER_TRIAL` compilation condition get the switch too, for optimized measurements on the phone. `-witerm.debug.metalRaw YES` turns off Witerm's fixes below, for comparison. Nothing appears in product UI. UI tests pass it through with `WITERM_RENDERER=metal` (and `WITERM_METAL_RAW=1`); `testRendererTrialScreens` captures the same steps with either renderer (`r15-screens-*`).
+
+**What differs under Metal, and what Witerm does about it** (iPhone 18 Pro simulator, light appearance):
+
+| Area | Under Metal, as SwiftTerm draws it | Witerm's fix (trial only) | Result |
+|---|---|---|---|
+| Row positions while scrolled | The renderer draws whole rows from the top of its view, starting at the first row the scroll offset reaches, and ignores the part of that row scrolled past. The text sat up to a row lower than where touches, the selection and its handles are (`r15-screens-metal/…-2-selection.png`: the handles half a row above the highlight), moved in whole-row steps while the content scrolled smoothly, and the prompt's foot was cut off at the bottom. | The Metal view moves up by the part of a row scrolled past, so every row is where Core Graphics puts it; a plain view in the terminal's background sits under it. | Rows, highlight and handles line up (`r15-screens-metal3/`), and the selection UI tests pass under Metal. **Left:** the renderer can't draw below its first row plus the view's height, so a strip of up to one row at the bottom stays blank, which hides the lower part of the prompt while following output. Fixing that needs SwiftTerm itself (offset its rows by the scrolled part and draw one more). |
+| Selection handles | Not drawn: SwiftTerm draws them only in its Core Graphics path. | Witerm draws the same line and 12 pt knob over the Metal view, in the handle color, from `selectionKnobs()`. | Handles show and drag: `testSlowStartSwipeScrollsWithoutSelecting` and `testSwipesNearASelectionScrollAndItsHandlesStillDrag` pass with `WITERM_RENDERER=metal` (long press, swipes near a handle, a knob drag, Copy). |
+| Selection highlight | The tint at 28% (40% with Increase Terminal Contrast) behind text that keeps its color | none needed | Same as Core Graphics. |
+| Cursor | SwiftTerm hides its caret view and draws the cursor itself | none | Drawn (a steady block in the tests). Blinking wasn't checked. |
+| Increase Terminal Contrast, color schemes | Redrawn: a color change marks every row dirty and the renderer rebuilds them. Ocean's text measured `#0E2A3A` on `#F2F7FA`, System back to `#000000` on `#FFFFFF`, with no fix. | none needed (rebuilding the renderer on color changes was tried and removed) | Same as Core Graphics. The system's light/dark and Increase Contrast weren't toggled (system settings); they take the same `installColors` path. |
+| Reading view (VoiceOver's text) | Built from SwiftTerm's buffer, not the renderer | none | The same text either way (the tests read it). Real VoiceOver wasn't run. |
+| Pinch to zoom | The live transform scales the Metal layer as it does the Core Graphics one | none | Works; the frame where the fingers lift is slower (below). |
+| Jump to Latest, font changes and reflow, rotation | Work | none | `testScrollingAndPinchStaySmooth` (pinch, reflow, host resize, the size back) and `testRendererTrialScreens` (landscape and back, Jump to Latest). |
+| Watch mode (read-only grid) | The fixed grid is laid out as before; the Metal view follows the terminal's bounds | none | Not run: it needs a paired Mac. |
+| Console | SwiftTerm's Debug build prints "Metal FPS" every second while drawing | none | Debug log noise only. |
+
+**Numbers** (iPhone 18 Pro simulator, 60 Hz, Debug, `SSHTypingChromeTests.testScrollingAndPinchStaySmooth` against the fixture: three fast flings through `seq 1 100000`, a slow drag while `seq 1 3000000` streams, a pinch to 1.5×). Ranges over four runs of each renderer (three plain, one under Time Profiler; memory from the third). As the libghostty spike found ([renderer-evaluation.md](renderer-evaluation.md)), timing `draw(_:)` alone measures only Core Graphics recording its commands; the rasterizing happens later, in Core Animation's commit on the main thread. So the probe now also measures **main-thread busy time per frame**: everything the main run loop does between two display-link frames (observers on its waking and sleeping), including parsing, layout, drawing, the commit and Metal's encoding. Hitches come from the same display-link probe (an interval over 1.5 frames); the Animation Hitches instrument doesn't run on the simulator.
+
+| Measure | Core Graphics (default) | Metal (with Witerm's fixes) |
+|---|---|---|
+| Flings: hitches per 3 flings, worst frame | 0–1, 16.7–33.3 ms | 0–2, 33.3–39.8 ms |
+| Flings: main-thread busy per frame, mean / p95 / worst | 3.9–4.3 / 5.3–5.7 / 6.1–24.8 ms | 2.2–3.0 / 7.5–10.0 / 9.8–12.6 ms (one first fling 74 ms) |
+| Flings: drawing timed per frame, mean / p95 | 2.1–2.3 / 2.8–3.0 ms (recording only) | 1.7–1.9 / 7.0–8.5 ms (building rows and encoding) |
+| Drag during live output: hitches; busy mean / p95 | 0; 2.9–4.2 / 4.8–5.7 ms | 0–2 (worst 58.9 ms); 1.8–2.4 / 5.0–8.5 ms |
+| Pinch: hitches, worst frame (the lifting frame) | 1–2, 36–67 ms | 1–3, 55–92 ms |
+| Pinch: main-thread busy in the lifting frame | 11–41 ms | 21–68 ms |
+| Pinch: lifting → new font / new grid | 0–2 / 4–16 ms | 2–6 / 12–19 ms |
+| Pinch: drawing of the first frame at the new size | 3.4–3.7 ms | 8–16 ms (a new glyph atlas) |
+| Memory (physical footprint) after `seq 1 100000` / after 3 million lines and the pinch | 74.7 / 75.5 MB (79.6 MB at the end of the screens test) | 71.1 / 73.4 MB (75.5 MB) |
+
+The mean main-thread time per frame drops by about a third with Metal, but its p95 is about 1.5× Core Graphics', and the tail decides hitches: whenever the top row changes (every few points of a fling), the renderer rebuilds every visible row, because the first row is part of its cache key. At 120 Hz (8.3 ms a frame) Core Graphics' p95 of 5.3–5.7 ms fits; Metal's 7.5–10.0 ms doesn't.
+
+**Main-thread split** (Time Profiler over the whole test, about 36 s of main-thread time with either renderer):
+
+| Bucket | Core Graphics | Metal |
+|---|---|---|
+| XCTest's queries and accessibility snapshots (the test's own) | 14.6 s | 14.6 s |
+| Parsing output (`Terminal.feed`, mostly the 3 million lines) | 12.9 s | 13.0 s |
+| Drawing: `drawTerminalContents` (recording) / the Metal renderer (rows, encoding) | 1.6 s | 1.1 s |
+| Core Animation commit (for Core Graphics including replaying the recorded drawing) | 2.4 s | 1.8 s |
+| Layout | 0.3 s | 0.4 s |
+| Logging, UIKit's update cycle, other | 4.2 s | 4.7 s |
+
+Drawing plus commit is 4.0 s with Core Graphics and 2.9 s with Metal. Parsing is the same and dominates whenever output streams.
+
+**For the lead: keep Core Graphics as the default.** On the simulator Metal saves about a third of the average per-frame main-thread time, but its slow frames are slower, the pinch's lifting frame is slower, and its bottom-row clipping can't be fixed without changing SwiftTerm. The libghostty spike's harness saw the same shape (Metal's fling p95 4.75 ms against Core Graphics' 4.4 ms, and more hitches under heavy output). Whether either renderer hitches at 120 Hz is for the iPhone 17 Pro to show; the steps are below.
+
+**Parsing on the main thread.** Yes. SSH (`SSHNativeTerminalView`, whose batches are drained off the main thread) and paired terminals both call `TerminalView.feed(byteArray:)` on the main actor; parsing took 12.9–13.0 s of main-thread time in these runs. SwiftTerm documents `feed` as callable from a background thread, but nothing guards its buffer: both renderers read lines at draw time, and selection, search, the reading view, resizing and the key row's `send` (which, by SwiftTerm's own contract, must run on the thread that feeds) all use the same state on the main thread. Moving parsing off it would need a SwiftTerm change (a lock, or a snapshot handed to the renderer) and would still have to keep Witerm's ordering: `geometry` and VT output applied in order from the single `events` stream, and an SSH window change only after the output before it. Not feasible inside Witerm alone; reported, not changed.
+
+**Measuring on the iPhone 17 Pro** (steps for the lead; not run). The switch is DEBUG-only, so use either the usual Debug build (it has the motion probe) or an optimized build with the trial's condition:
+
+1. Build and install. If the provisioning profile has expired (2026-11-10 06:01 UTC), renew it by building once in the Xcode IDE first.
+   ```sh
+   export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+   xcodebuild build -project apps/apple/Witerm.xcodeproj -scheme WitermiOS -configuration Release \
+     -destination id=00008150-000259AE36C0401C -derivedDataPath .build/apple-device-release \
+     SWIFT_ACTIVE_COMPILATION_CONDITIONS=WITERM_RENDERER_TRIAL
+   xcrun devicectl device install app --device 00008150-000259AE36C0401C \
+     .build/apple-device-release/Build/Products/Release-iphoneos/WitermiOS.app
+   ```
+   For the Debug build: `-configuration Debug`, `-derivedDataPath .build/apple-device`, and `Debug-iphoneos`, as in [handoff.md](../handoff.md).
+2. Launch with one renderer. The argument lasts for that launch only:
+   ```sh
+   xcrun devicectl device process launch --device 00008150-000259AE36C0401C --terminate-existing \
+     com.witerm.ios -witerm.debug.renderer metal
+   ```
+   For Core Graphics, launch the same way without `-witerm.debug.renderer metal`. To add SwiftTerm's own Metal signposts, add `--environment-variables '{"SWIFTTERM_PROFILE": "1"}'`.
+3. Find the process: `xcrun devicectl device info processes --device 00008150-000259AE36C0401C | grep WitermiOS`.
+4. Record while the owner does the same gestures each time (connect an SSH host, run `seq 1 100000`, three fast flings back, Jump to Latest, a slow drag while `seq 1 3000000` runs, Ctrl+C, pinch out, pinch back):
+   ```sh
+   xcrun xctrace record --device 00008150-000259AE36C0401C --template 'Animation Hitches' \
+     --attach <pid> --time-limit 90s --output .build/r15-device-metal-hitches.trace
+   xcrun xctrace record --device 00008150-000259AE36C0401C --template 'Time Profiler' \
+     --attach <pid> --time-limit 90s --output .build/r15-device-metal-time.trace
+   ```
+   Then relaunch without the argument and record `r15-device-coretext-…` the same way.
+5. Compare: open the traces in Instruments (hitches per gesture, the worst hitch, the frame where the pinch lifts, the main thread's split), or list their tables with `xcrun xctrace export --input <trace> --toc` and export one with `--xpath`.
+
+**Verification:** see [verification.md](../verification.md), Round 15: iOS.

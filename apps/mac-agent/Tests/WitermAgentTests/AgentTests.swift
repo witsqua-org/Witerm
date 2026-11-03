@@ -976,6 +976,60 @@ final class AgentTests: XCTestCase {
         XCTAssertTrue(sessions.isEmpty)
     }
 
+    /// tmux 3.6 and later default `mouse` to on even with -f /dev/null, and
+    /// its client then asks the viewer's terminal for mouse reports; a swipe
+    /// on a typing iPhone became a button drag and tmux's copy-mode selection.
+    /// The service's tmux never asks: not on the first attach, after a
+    /// resize, on a re-attach, nor for a viewer.
+    func testTmuxNeverAsksViewersForTheMouse() async throws {
+        guard FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/tmux") else { throw XCTSkip("tmux is required") }
+        let url = try directory()
+        let configuration = try AgentConfiguration(stateDirectory: url, shellPath: "/bin/sh")
+        let broker = try AgentBroker(configuration: configuration)
+        try broker.start()
+        let tmux = try CommandRunner(executable: "/opt/homebrew/bin/tmux", environment: configuration.environment)
+        defer {
+            broker.stop()
+            _ = try? tmux.run(["-S", url.appendingPathComponent("tmux.sock").path, "kill-server"])
+        }
+        let client = LocalAgentClient(socketURL: url.appendingPathComponent("agent.sock"))
+        let created = try await client.create(name: "Mouse", columns: 80, rows: 24)
+        let mouseOn = ["\u{1b}[?1000h", "\u{1b}[?1002h", "\u{1b}[?1003h", "\u{1b}[?1006h", "\u{1b}[?1005h", "\u{1b}[?1015h", "\u{1b}[?9h"]
+        func check(_ capture: Capture, _ step: String) async {
+            let text = await capture.text()
+            for sequence in mouseOn { XCTAssertFalse(text.contains(sequence), "\(step): tmux asked for the mouse (\(sequence.debugDescription))") }
+        }
+        let control = try await client.attach(sessionID: created.id)
+        let first = Capture()
+        let reader = Task { for try await data in control.output { await first.append(data) } }
+        try await control.send(Data("printf 'MOUSE_''READY\\n'\n".utf8))
+        try await waitFor("MOUSE_READY", capture: first)
+        try await control.resize(columns: 100, rows: 30)
+        try await control.send(Data("printf 'MOUSE_''RESIZED\\n'\n".utf8))
+        try await waitFor("MOUSE_RESIZED", capture: first)
+        await check(first, "first attach and resize")
+        reader.cancel()
+        await control.disconnect()
+        let again = try await client.attach(sessionID: created.id, columns: 100, rows: 30)
+        let second = Capture()
+        let secondReader = Task { for try await data in again.output { await second.append(data) } }
+        defer { secondReader.cancel() }
+        try await waitFor("MOUSE_RESIZED", capture: second)
+        let viewer = try await client.attach(sessionID: created.id, columns: 100, rows: 30, mode: .view)
+        let watched = Capture()
+        let viewerReader = Task { for try await data in viewer.output { await watched.append(data) } }
+        defer { viewerReader.cancel() }
+        try await waitFor("MOUSE_RESIZED", capture: watched)
+        try await Task.sleep(for: .milliseconds(300))
+        await check(second, "re-attach")
+        await check(watched, "viewer")
+        let option = try tmux.run(["-S", url.appendingPathComponent("tmux.sock").path, "show-options", "-g", "mouse"])
+        XCTAssertEqual(String(decoding: option.output, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines), "mouse off")
+        await viewer.disconnect()
+        await again.disconnect()
+        try await client.close(sessionID: created.id)
+    }
+
     func testRawViewInitialPTYUsesAuthoritativeWindowSize() async throws {
         guard FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/tmux") else { throw XCTSkip("tmux is required") }
         let url = try directory()

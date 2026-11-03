@@ -91,6 +91,11 @@ import XCTest
         app.launchArguments = ["-witerm.onboarding.completedVersion", "1", "--witerm-ui-test-steady-terminal-cursor",
                                "--witerm-ui-test-layout-probe", "-witerm.commandSnippets", "<\(hex)>",
                                "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        // Round 15's renderer trial (DEBUG builds): `WITERM_RENDERER=metal`,
+        // and `WITERM_METAL_RAW=1` for SwiftTerm's renderer without Witerm's fixes.
+        let environment = ProcessInfo.processInfo.environment
+        if let renderer = environment["WITERM_RENDERER"] { app.launchArguments += ["-witerm.debug.renderer", renderer] }
+        if environment["WITERM_METAL_RAW"] == "1" { app.launchArguments += ["-witerm.debug.metalRaw", "YES"] }
         addTeardownBlock { await MainActor.run { app.terminate() } }
         app.launch()
         XCUIDevice.shared.orientation = .portrait
@@ -100,7 +105,7 @@ import XCTest
         XCTAssertTrue(app.buttons["newSSHProfile"].waitForExistence(timeout: 10))
         // Leftovers of an interrupted run of these tests, by their unique prefix.
         if let fingerprint = ProcessInfo.processInfo.environment["WITERM_SSH_UI_FINGERPRINT"] {
-            let leftovers = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "sshProfileRow-", "R13 "))
+            let leftovers = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label MATCHES %@", "sshProfileRow-", "R1[3-5] .*"))
             for _ in 0..<5 where leftovers.firstMatch.exists { removeHost(named: leftovers.firstMatch.label, fingerprint: fingerprint) }
         }
     }
@@ -680,6 +685,7 @@ import XCTest
         XCTAssertGreaterThan(frames, 0, "The probe must have seen the scroll")
         XCTAssertLessThan(readings / max(1, frames), 0.1, "A touch scroll must not rebuild the reading page every frame")
         shot("r14-smooth-1-scrolled-back")
+        report("r15_memory_after_100k_mb", probe("mem") ?? -1, "%.1f")
         let latest = app.buttons["terminalJumpToLatest"]
         if latest.waitForExistence(timeout: 3) { latest.tap() }
         XCTAssertNotNil(until(5) { lastLine().hasSuffix("~$") })
@@ -723,6 +729,7 @@ import XCTest
         XCTAssertGreaterThan(pinch["pinchsteps"] ?? 0, 0, "The probe must have seen the pinch")
         XCTAssertLessThanOrEqual(pinch["layouts"] ?? 99, 2, "Pinching must not lay the terminal out at every step")
         shot("r14-smooth-3-pinched")
+        report("r15_memory_after_3m_and_pinch_mb", probe("mem") ?? -1, "%.1f")
         XCTAssertGreaterThan(probe("cell") ?? 0, cell, "Pinching out must enlarge the text")
         XCTAssertNotEqual(probedGrid(), gridBefore, "Pinching out must reflow the grid")
         let host = try XCTUnwrap(stty())
@@ -745,6 +752,341 @@ import XCTest
         _ = until(5) { !keyboard.exists && probedGrid() == gridBefore }
         XCTAssertEqual(probedGrid(), gridBefore, "With the keyboard down again, the grid it started with")
 
+        disconnectAndRemove(name, fingerprint: fingerprint)
+    }
+
+    // MARK: Round 15: selection and scrolling
+
+    /// One long word per line, so a selection is wide and its handles are far apart.
+    private static let word = "abcdefghijklmnopqrstuvwxyz0123456789"
+
+    /// Connects, fills the scrollback with `word` lines, and hides the keyboard.
+    private func connectWithWords(_ prefix: String) throws -> (name: String, fingerprint: String) {
+        let host = try connectForGrid(prefix, more: [("Long words", "yes \(Self.word) | head -400")])
+        runSnippet("Long words")
+        XCTAssertNotNil(until(30, poll: 0.5) { text().contains(Self.word) && lastLine().hasSuffix("~$") }, "The words must print")
+        app.buttons["sshKeyboard"].tap()
+        XCTAssertNotNil(until(5) { !keyboard.exists })
+        _ = until(1) { false }
+        return host
+    }
+
+    /// Characters selected, from the layout probe.
+    private func selected() -> Int { Int(probe("sel") ?? -1) }
+
+    /// The handle knobs' centers, in screen points, from the layout probe.
+    private func knobs() -> (start: CGPoint, end: CGPoint)? {
+        guard terminal.exists, let range = terminal.label.range(of: " knobs=") else { return nil }
+        let values = terminal.label[range.upperBound...].prefix { $0 != " " }.split(separator: ",").compactMap { Double($0) }
+        guard values.count == 4 else { return nil }
+        return (CGPoint(x: values[0], y: values[1]), CGPoint(x: values[2], y: values[3]))
+    }
+
+    private func screen(_ point: CGPoint) -> XCUICoordinate {
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: point.x, dy: point.y))
+    }
+
+    private var copyItem: XCUIElement { app.buttons["Copy"].exists ? app.buttons["Copy"] : app.menuItems["Copy"] }
+
+    /// A finger that rests a moment (0.4 s, under the system's 0.5 s long
+    /// press) and then swipes scrolls the output: no selection starts, and
+    /// no edit menu appears.
+    func testSlowStartSwipeScrollsWithoutSelecting() throws {
+        continueAfterFailure = true
+        executionTimeAllowance = 300
+        let (name, fingerprint) = try connectWithWords("R15 Rest")
+        for attempt in 0..<3 {
+            let top = probe("yDisp") ?? -1
+            let start = terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
+            start.press(forDuration: 0.4, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 200)),
+                        withVelocity: .default, thenHoldForDuration: 0.1)
+            _ = until(1.5) { false }
+            let chars = selected(), after = probe("yDisp") ?? -1
+            print("PERF r15 slow_start_swipe_\(attempt) selected=\(chars) yDisp \(top) -> \(after) menu=\(copyItem.exists)")
+            shot("r15-slow-start-\(attempt)")
+            XCTAssertEqual(chars, 0, "A swipe after the finger rests must not select")
+            XCTAssertFalse(copyItem.exists, "A swipe after the finger rests must not offer Copy")
+            XCTAssertLessThan(after, top, "A swipe after the finger rests must scroll back")
+            if chars > 0 { terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6)).tap(); _ = until(1) { false } }
+        }
+        disconnectAndRemove(name, fingerprint: fingerprint)
+    }
+
+    /// After a deliberate long press: a swipe that starts on the text about
+    /// 30 pt from a handle scrolls (the selection stays as it was), a drag
+    /// that starts on a handle's knob moves that end, and Copy copies exactly
+    /// what's selected (typed back with the key row's Paste key).
+    func testSwipesNearASelectionScrollAndItsHandlesStillDrag() throws {
+        continueAfterFailure = true
+        executionTimeAllowance = 300
+        let (name, fingerprint) = try connectWithWords("R15 Handles")
+
+        // A long press selects the word under the finger; lifting offers Copy.
+        terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.35)).press(forDuration: 0.8)
+        XCTAssertTrue(copyItem.waitForExistence(timeout: 5), "Lifting a long press must offer Copy")
+        _ = until(0.5) { false }
+        let word = selected()
+        XCTAssertEqual(word, Self.word.count, "A long press selects the word under it")
+        shot("r15-handles-1-selected")
+
+        // A swipe from the selected text about 30 pt from the start handle's
+        // knob (25 pt to its right, near the row's foot) scrolls. The edit
+        // menu sits beside the selection, so the row itself is free.
+        let knobsBefore = try XCTUnwrap(knobs(), "The probe must report the handles")
+        let top = probe("yDisp") ?? -1
+        let cell = probe("cell") ?? 17
+        let from = CGPoint(x: knobsBefore.start.x + 25, y: knobsBefore.start.y + 6 + cell * 0.8)
+        screen(from).press(forDuration: 0.05, thenDragTo: screen(from).withOffset(CGVector(dx: 0, dy: 120)),
+                           withVelocity: .slow, thenHoldForDuration: 0.3)
+        _ = until(1.5) { false }
+        let afterSwipe = selected(), scrolledTop = probe("yDisp") ?? -1
+        print("PERF r15 swipe_near_handle selected \(word) -> \(afterSwipe) yDisp \(top) -> \(scrolledTop) menu=\(copyItem.exists)")
+        shot("r15-handles-2-swiped")
+        XCTAssertEqual(afterSwipe, word, "A swipe that starts on the text must not move the selection")
+        XCTAssertLessThan(scrolledTop, top, "A swipe that starts on the text must scroll")
+        XCTAssertTrue(copyItem.waitForExistence(timeout: 3), "The edit menu returns once the scroll stops")
+        let knobsScrolled = try XCTUnwrap(knobs(), "The selection must still be there")
+        XCTAssertEqual(knobsScrolled.start.y - knobsBefore.start.y, 120, accuracy: 25, "The selection scrolls with its text")
+
+        // A swipe up from the text 30 pt below the end handle's knob, toward
+        // it, scrolls forward. (The old target was tested where the finger
+        // was once the drag was recognized, so this one took the handle.)
+        let below = CGPoint(x: knobsScrolled.end.x - 10, y: knobsScrolled.end.y + 30)
+        screen(below).press(forDuration: 0.05, thenDragTo: screen(below).withOffset(CGVector(dx: 0, dy: -80)),
+                            withVelocity: .slow, thenHoldForDuration: 0.3)
+        _ = until(1.5) { false }
+        let afterUp = selected(), forwardTop = probe("yDisp") ?? -1
+        print("PERF r15 swipe_toward_handle selected \(word) -> \(afterUp) yDisp \(scrolledTop) -> \(forwardTop) menu=\(copyItem.exists)")
+        shot("r15-handles-2b-swiped-up")
+        XCTAssertEqual(afterUp, word, "A swipe toward a handle that starts on the text must not move the selection")
+        XCTAssertGreaterThan(forwardTop, scrolledTop, "A swipe up that starts on the text must scroll forward")
+        XCTAssertTrue(copyItem.waitForExistence(timeout: 3), "The edit menu returns once the scroll stops")
+
+        // A drag that starts on the end handle's knob shortens the selection.
+        let knobsNow = try XCTUnwrap(knobs(), "The selection must still be there")
+        screen(knobsNow.end).press(forDuration: 0.05, thenDragTo: screen(knobsNow.end).withOffset(CGVector(dx: -100, dy: 0)),
+                                   withVelocity: .slow, thenHoldForDuration: 0.2)
+        XCTAssertTrue(copyItem.waitForExistence(timeout: 5), "Lifting a handle offers Copy again")
+        _ = until(0.5) { false }
+        let shorter = selected(), handleTop = probe("yDisp") ?? -1
+        print("PERF r15 handle_drag selected \(word) -> \(shorter) yDisp \(forwardTop) -> \(handleTop)")
+        shot("r15-handles-3-dragged")
+        XCTAssertGreaterThan(shorter, 0, "Dragging a handle keeps a selection")
+        XCTAssertLessThan(shorter, word, "Dragging the end handle left must shorten the selection")
+        XCTAssertEqual(handleTop, forwardTop, "Dragging a handle must not scroll")
+
+        // Copy, then the Paste key types exactly that back at the prompt.
+        copyItem.tap()
+        _ = until(1) { false }
+        XCTAssertEqual(selected(), 0, "Copy ends the selection")
+        app.buttons["terminalJumpToLatest"].tap()
+        XCTAssertNotNil(until(5) { lastLine().hasSuffix("~$") })
+        app.buttons["sshKeyboard"].tap()
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+        let paste = app.buttons["terminalKey-paste"]
+        XCTAssertTrue(paste.waitForExistence(timeout: 5))
+        for _ in 0..<6 where !paste.isHittable {
+            let escape = app.buttons["terminalKey-escape"]
+            let start = escape.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: -140, dy: 0)))
+        }
+        paste.tap()
+        let expected = String(Self.word.prefix(max(0, shorter)))
+        XCTAssertNotNil(until(5) { lastLine().hasSuffix("~$ " + expected) }, "Copy must copy exactly the selection (\(lastLine()))")
+        shot("r15-handles-4-pasted")
+        app.buttons["terminalInterrupt"].tap()
+        XCTAssertNotNil(until(5) { lastLine().hasSuffix("~$") })
+        disconnectAndRemove(name, fingerprint: fingerprint)
+    }
+
+    // MARK: Round 15: programs that ask for the mouse
+
+    /// The visible lines, trimmed.
+    private func lines() -> [String] {
+        text().split(separator: "\n", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }
+    }
+
+    /// tmux's copy-mode position, `[top/total]`, in the pane's corner.
+    private func tmuxPosition() -> String? {
+        guard let range = text().range(of: #"\[\d+/\d+\]"#, options: .regularExpression) else { return nil }
+        return String(text()[range])
+    }
+
+    /// vim's ruler, `line,column`, at the end of its last line.
+    private func vimRuler() -> String? {
+        guard let last = lines().last(where: { !$0.isEmpty }),
+              let range = last.range(of: #"\d+,\d+"#, options: [.regularExpression, .backwards]) else { return nil }
+        return String(last[range])
+    }
+
+    /// While typing, in tmux with `mouse on` and in vim with `mouse=a` (both
+    /// inside the fixture's shell, not Witerm's own tmux): a swipe scrolls the
+    /// program's view and starts no selection, a tap in vim moves its cursor,
+    /// and Witerm selects nothing. A held-button drag (what SwiftTerm sent
+    /// before) makes tmux select and copy, and vim enter Visual mode.
+    func testSwipesScrollProgramsThatAskForTheMouse() throws {
+        continueAfterFailure = true
+        executionTimeAllowance = 400
+        let (name, fingerprint) = try connectForGrid("R15 Mouse", more: [
+            ("Tmux", "echo set -g mouse on > ~/.tmux.conf && tmux -L r15 new -A -s r15"),
+            ("Fill", "seq 1 400"),
+            ("End tmux", "tmux -L r15 kill-server"),
+            // Without bracketed paste, so the snippet that quits is typed, not pasted.
+            ("Vim", "seq 1 400 > /tmp/r15.txt && vim -n -i NONE -c 'set mouse=a ruler t_BE=' /tmp/r15.txt"),
+            ("Leave vim", ":q!"),
+        ])
+        // A plain shell (no mouse) with the keyboard up: a swipe scrolls Witerm's scrollback.
+        runSnippet("Fill")
+        XCTAssertNotNil(until(15) { lines().contains("400") && lastLine().hasSuffix("~$") }, "seq must print")
+        _ = until(1) { false }
+        let shellTop = probe("yDisp") ?? -1
+        let shellStart = terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25))
+        shellStart.press(forDuration: 0.05, thenDragTo: shellStart.withOffset(CGVector(dx: 0, dy: 220)), withVelocity: .default, thenHoldForDuration: 0.3)
+        _ = until(2) { false }
+        print("PERF r15 shell_typing_swipe yDisp \(shellTop) -> \(probe("yDisp") ?? -1) selected=\(selected()) keyboard=\(keyboard.exists)")
+        XCTAssertLessThan(probe("yDisp") ?? 0, shellTop, "With the keyboard up, a swipe at a shell prompt scrolls Witerm's scrollback")
+        XCTAssertEqual(selected(), 0, "and selects nothing")
+        let latest = app.buttons["terminalJumpToLatest"]
+        if latest.waitForExistence(timeout: 3) { latest.tap() }
+        XCTAssertNotNil(until(5) { lastLine().hasSuffix("~$") })
+
+        // tmux, its status line at the bottom.
+        runSnippet("Tmux")
+        XCTAssertNotNil(until(15) { text().contains("[r15]") }, "tmux must start")
+        runSnippet("Fill")
+        XCTAssertNotNil(until(15) { lines().contains("400") && lastLine().contains("[r15]") }, "seq must print inside tmux")
+        _ = until(1) { false }
+        shot("r15-mouse-1-tmux")
+        let start = terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25))
+        start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 220)), withVelocity: .default, thenHoldForDuration: 0.3)
+        _ = until(2) { false }
+        let position = tmuxPosition()
+        print("PERF r15 tmux_swipe position=\(position ?? "none") selected=\(selected()) lastline=\(lastLine())")
+        shot("r15-mouse-2-tmux-swiped")
+        XCTAssertNotNil(position, "A swipe must scroll tmux's own view (copy mode's [top/total])")
+        XCTAssertFalse(lines().contains("400"), "The pane must show earlier output")
+        XCTAssertEqual(selected(), 0, "Witerm selects nothing")
+        // Ctrl+C leaves copy mode (a snippet arrives as a paste, which copy mode ignores).
+        app.buttons["terminalInterrupt"].tap()
+        XCTAssertNotNil(until(5) { tmuxPosition() == nil }, "Ctrl+C leaves copy mode")
+        runSnippet("End tmux")
+        XCTAssertNotNil(until(10) { lastLine().hasSuffix("~$") && !text().contains("[r15]") }, "tmux must end")
+
+        // vim on a long file, with its ruler.
+        runSnippet("Vim")
+        XCTAssertNotNil(until(15) { vimRuler() != nil && lines().first == "1" }, "vim must open at the top (it may put the cursor back where it was)")
+        _ = until(1) { false }
+        shot("r15-mouse-3-vim")
+        let lower = terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+        lower.press(forDuration: 0.05, thenDragTo: lower.withOffset(CGVector(dx: 0, dy: -220)), withVelocity: .default, thenHoldForDuration: 0.3)
+        _ = until(2) { false }
+        let top = lines().first ?? ""
+        print("PERF r15 vim_swipe top=\(top) ruler=\(vimRuler() ?? "none") visual=\(text().contains("VISUAL")) selected=\(selected())")
+        shot("r15-mouse-4-vim-swiped")
+        XCTAssertNotEqual(top, "1", "A swipe up must scroll vim's view down")
+        XCTAssertFalse(text().contains("VISUAL"), "A swipe must not start Visual mode")
+        XCTAssertEqual(selected(), 0, "Witerm selects nothing")
+        // A tap on a line puts vim's cursor there (keyboard up: taps are clicks).
+        if !keyboard.exists { app.buttons["sshKeyboard"].tap() }
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+        _ = until(1) { false }
+        let rows = lines()
+        let cell = probe("cell") ?? 17
+        let index = 5, target = rows.count > index ? rows[index] : ""
+        terminal.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 30, dy: (CGFloat(index) + 0.5) * cell)).tap()
+        XCTAssertNotNil(until(5) { vimRuler()?.hasPrefix(target + ",") == true }, "A tap must move vim's cursor to line \(target) (\(vimRuler() ?? "none"))")
+        shot("r15-mouse-5-vim-tapped")
+        // Escape first, in case a drag left vim in Visual mode.
+        let escape = app.buttons["terminalKey-escape"]
+        if escape.isHittable { escape.tap() }
+        runSnippet("Leave vim")
+        XCTAssertNotNil(until(10) { lastLine().hasSuffix("~$") }, "vim must quit")
+        disconnectAndRemove(name, fingerprint: fingerprint)
+    }
+
+    // MARK: Round 15: renderer trial
+
+    /// Changes Terminal Display, opened from the bar's actions menu: toggles
+    /// Increase Terminal Contrast, or picks a color scheme by its title.
+    private func changeTerminalDisplay(scheme: String? = nil) {
+        let actions = app.buttons["sshSessionActions"]
+        if !actions.isHittable, keyboard.exists { app.buttons["sshKeyboard"].tap() }
+        XCTAssertNotNil(until(5) { actions.isHittable })
+        actions.tap()
+        let display = app.buttons["Terminal Display"]
+        XCTAssertTrue(display.waitForExistence(timeout: 5))
+        display.tap()
+        let contrast = app.switches["terminalHighContrast"]
+        XCTAssertTrue(contrast.waitForExistence(timeout: 5))
+        if let scheme {
+            app.buttons["terminalColorScheme"].tap()
+            let choice = app.buttons[scheme].firstMatch
+            XCTAssertTrue(choice.waitForExistence(timeout: 5), "The \(scheme) scheme must be offered")
+            choice.tap()
+            _ = until(1) { false }
+        } else {
+            contrast.tap()
+        }
+        app.buttons["closeTerminalAppearance"].tap()
+        XCTAssertNotNil(until(5) { !contrast.exists })
+        _ = until(1) { false }
+    }
+
+    /// Screens to compare the two renderers by eye, with the same steps:
+    /// the prompt and cursor, a selection with its handles and menu, Increase
+    /// Terminal Contrast on and off again, landscape, scrolled back, and
+    /// after Jump to Latest. Run with `WITERM_RENDERER=metal` (and
+    /// `WITERM_METAL_RAW=1`) and without; `WITERM_SHOTS_DIR` keeps the
+    /// captures. The reading text (what VoiceOver reads) is checked either way.
+    func testRendererTrialScreens() throws {
+        continueAfterFailure = true
+        executionTimeAllowance = 300
+        let expected = ProcessInfo.processInfo.environment["WITERM_RENDERER"] == "metal" ? "metal" : "coretext"
+        let (name, fingerprint) = try connectWithWords("R15 Render")
+        XCTAssertTrue(terminal.label.contains(" renderer=" + expected), "The probe must report the \(expected) renderer")
+        app.buttons["sshKeyboard"].tap()
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+        _ = until(1) { false }
+        shot("r15-render-\(expected)-1-prompt")
+        XCTAssertTrue(lastLine().hasSuffix("~$"), "The reading text ends with the prompt")
+        app.buttons["sshKeyboard"].tap()
+        XCTAssertNotNil(until(5) { !keyboard.exists })
+
+        terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.35)).press(forDuration: 0.8)
+        XCTAssertTrue(copyItem.waitForExistence(timeout: 5))
+        _ = until(0.5) { false }
+        XCTAssertEqual(selected(), Self.word.count)
+        shot("r15-render-\(expected)-2-selection")
+        terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8)).tap()
+        XCTAssertNotNil(until(3) { selected() == 0 })
+
+        changeTerminalDisplay()
+        shot("r15-render-\(expected)-3-contrast-on")
+        changeTerminalDisplay()
+        shot("r15-render-\(expected)-4-contrast-off")
+        // A scheme with its own text color (Ocean's is navy), then back.
+        changeTerminalDisplay(scheme: "Ocean")
+        shot("r15-render-\(expected)-4b-ocean")
+        changeTerminalDisplay(scheme: "System")
+        shot("r15-render-\(expected)-4c-system")
+
+        XCUIDevice.shared.orientation = .landscapeLeft
+        _ = until(3) { terminal.frame.width > terminal.frame.height }
+        _ = until(1) { false }
+        shot("r15-render-\(expected)-5-landscape")
+        XCUIDevice.shared.orientation = .portrait
+        _ = until(3) { terminal.frame.width < terminal.frame.height }
+
+        terminal.swipeDown(velocity: .fast)
+        let latest = app.buttons["terminalJumpToLatest"]
+        XCTAssertTrue(latest.waitForExistence(timeout: 5), "Scrolled back shows Jump to Latest")
+        _ = until(2) { false }
+        shot("r15-render-\(expected)-6-scrolled-back")
+        latest.tap()
+        XCTAssertNotNil(until(5) { lastLine().hasSuffix("~$") }, "Jump to Latest returns to the prompt")
+        _ = until(1) { false }
+        shot("r15-render-\(expected)-7-latest")
+        report("r15_memory_\(expected)_mb", probe("mem") ?? -1, "%.1f")
         disconnectAndRemove(name, fingerprint: fingerprint)
     }
 }
