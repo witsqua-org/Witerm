@@ -86,7 +86,12 @@ final class TmuxEngine {
             for (key, value) in [
                 ("status", "off"), ("prefix", "None"), ("prefix2", "None"),
                 ("exit-unattached", "off"), ("destroy-unattached", "off"),
-                ("set-titles", "off"), ("default-terminal", "xterm-256color")
+                ("set-titles", "off"), ("default-terminal", "xterm-256color"),
+                // tmux 3.6 and later turn the mouse on by default, even with
+                // -f /dev/null: its client then asks every viewer's terminal
+                // for button drags, and a swipe on the phone became tmux's
+                // copy-mode selection. Touches and scrolling stay the viewers'.
+                ("mouse", "off")
             ] { try command(["set-option", "-g", key, value]) }
             try command(["set-window-option", "-g", "window-size", "manual"])
             try command(["set-window-option", "-t", internalID, "allow-rename", "off"])
@@ -262,6 +267,8 @@ final class TmuxEngine {
         _ = try session(id)
         guard let path = configuration.tmuxPath else { throw AgentFailure(.dependencyMissing) }
         let flags = mode == .view ? "read-only,ignore-size" : "ignore-size"
+        // Sessions made before the mouse was turned off at creation get it here.
+        _ = try? command(["set-option", "-g", "mouse", "off"])
         return try PTYChild(executable: path, arguments: baseArguments + ["attach-session", "-t", internalName(id), "-f", flags], environment: configuration.environment, columns: columns, rows: rows)
     }
 

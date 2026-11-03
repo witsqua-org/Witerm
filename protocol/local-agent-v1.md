@@ -21,6 +21,7 @@ The Mac background service (`witerm-agent`) hosts shells in a private tmux serve
 
 **tmux.**
 - Uses `tmux.sock` in that directory with `-f /dev/null`, separate from the user's own tmux.
+- Keeps tmux's `mouse` option off (tmux 3.6 and later default it to on), set when a session is made and again before each attach, so attached clients never ask viewers' terminals for mouse reports.
 - Sessions are named `witerm-<uuid>`. Display names live in `sessions.json`, never in tmux commands.
 - Commands run from argument arrays, never shell strings.
 
