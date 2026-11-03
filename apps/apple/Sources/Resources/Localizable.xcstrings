@@ -7284,23 +7284,6 @@
         }
       }
     },
-    "Open" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已打开"
-          }
-        }
-      }
-    },
     "Open Login Items Settings" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9745,23 +9728,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "请扫描新的二维码后重试。"
-          }
-        }
-      }
-    },
-    "Scan or paste an invitation" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Scan or paste an invitation"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "扫描或粘贴邀请"
           }
         }
       }
