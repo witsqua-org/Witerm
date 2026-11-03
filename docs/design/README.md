@@ -4,7 +4,7 @@ Witerm is a calm, professional tool built from native iOS 27 and macOS controls.
 
 Follow Apple's guidance on [Liquid Glass](https://developer.apple.com/documentation/TechnologyOverviews/liquid-glass), [materials](https://developer.apple.com/design/human-interface-guidelines/materials), [motion](https://developer.apple.com/design/human-interface-guidelines/motion), and [accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility). Glass belongs to controls; content sits on solid surfaces.
 
-The [HCI improvements](hci-improvements.md) page records each round of interaction changes and where they live in code.
+The [HCI improvements](hci-improvements.md) page records each round of interaction changes and where they live in code. [Renderer evaluation](renderer-evaluation.md) compares libghostty-vt with SwiftTerm on iOS.
 
 ## Brand
 
