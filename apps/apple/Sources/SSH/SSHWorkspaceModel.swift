@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import OSLog
 import WitermSSH
 #if os(iOS)
 import UIKit
@@ -33,6 +34,21 @@ enum SSHUIError {
         case .authenticationMethodUnavailable: String(localized: "The host does not accept this sign-in method. Use a password or an Ed25519 key it allows.", bundle: .main)
         case .noCommonAlgorithms: String(localized: "The host offers no algorithms Witerm considers secure, so the connection was stopped. Ask its administrator to enable modern algorithms.", bundle: .main)
         default: String(localized: "The operation did not finish. Check the connection and permissions, then try again.", bundle: .main)
+        }
+    }
+
+    /// Round 20: a host with saved credentials connects only after Face ID
+    /// (or Touch ID, Optic ID, or the passcode) succeeds.
+    static func notUnlocked(_ name: String, method: SSHUnlock.Method) -> String {
+        switch method {
+        case .faceID: String(localized: "Not connected: “\(name)” needs Face ID to use its saved credentials.", bundle: .main)
+        case .touchID: String(localized: "Not connected: “\(name)” needs Touch ID to use its saved credentials.", bundle: .main)
+        case .opticID: String(localized: "Not connected: “\(name)” needs Optic ID to use its saved credentials.", bundle: .main)
+        #if os(macOS)
+        case .passcode, .unavailable: String(localized: "Not connected: “\(name)” needs your login password to use its saved credentials.", bundle: .main)
+        #else
+        case .passcode, .unavailable: String(localized: "Not connected: “\(name)” needs your passcode to use its saved credentials.", bundle: .main)
+        #endif
         }
     }
 
@@ -95,6 +111,22 @@ final class SSHSession: Identifiable {
         closed = true
         terminal.stop()
         Task { [shell, connection] in await shell.close(); await connection.disconnect() }
+    }
+}
+
+/// DEBUG only: the order of an SSH connection attempt (Face ID asked and
+/// its outcome, the network starting, a host key arriving), never a host,
+/// credential or terminal content. `log stream --predicate 'subsystem ==
+/// "com.witerm" AND category == "ssh-connect"'`.
+enum SSHConnectLog {
+    #if DEBUG
+    private static let log = Logger(subsystem: "com.witerm", category: "ssh-connect")
+    #endif
+    static func note(_ event: @autoclosure () -> String) {
+        #if DEBUG
+        let line = event()
+        log.notice("\(line, privacy: .public)")
+        #endif
     }
 }
 
@@ -187,36 +219,49 @@ final class SSHWorkspaceModel {
 
     enum SavedCredentials {
         case read([UUID: SSHCredential])
-        /// The person cancelled Face ID (or Touch ID, or the passcode).
-        case cancelled
-        /// The person chose to type the password for this attempt.
-        case enterPassword
+        /// Face ID (or Touch ID, Optic ID, or the passcode) was cancelled or
+        /// didn't succeed: nothing was read, and nothing may connect.
+        case notUnlocked
+        /// The passcode was removed, and the system deleted the saved
+        /// credentials with it: type the password.
+        case nothingSaved
         case failed
     }
 
     /// Reads this profile's saved credentials, asking once (Face ID, Touch
-    /// ID, or the passcode) for all of its hops when they're protected.
+    /// ID, or the passcode) for all of its hops. Round 20, the owner's rule:
+    /// this succeeds before any connection that uses them starts, so it's
+    /// the only way they're read, including credentials saved before they
+    /// were protected.
     func savedCredentials(for profile: SSHProfile) async -> SavedCredentials {
         let ids = (profile.jumpHosts + [profile.host]).map(\.id)
         do {
             let store = try SSHProfileStore()
-            var unlock: SSHUnlock?
+            let unlock = SSHUnlock()
             if try await store.credentialsNeedUnlock(ids) {
-                let attempt = SSHUnlock()
-                switch try await attempt.unlock(reason: String(localized: "Sign in to “\(profile.name)”", bundle: .main),
-                                                fallbackTitle: String(localized: "Enter Password", bundle: .main)) {
-                case .unlocked: unlock = attempt
-                case .cancelled: return .cancelled
-                case .enterPassword: return .enterPassword
+                SSHConnectLog.note("unlock asked hops=\(ids.count)")
+                let outcome = try await unlock.unlock(reason: String(localized: "Sign in to “\(profile.name)”", bundle: .main))
+                SSHConnectLog.note("unlock \(outcome)")
+                switch outcome {
+                case .unlocked: break
+                case .cancelled, .failed: return .notUnlocked
+                case .noPasscode: return .nothingSaved
                 }
             }
             return .read(try await store.credentials(ids, unlock: unlock))
         } catch SSHFailure.cancelled {
-            return .cancelled
+            return .notUnlocked
         } catch {
             report(SSHUIError.message(error), profileID: profile.id)
             return .failed
         }
+    }
+
+    /// Says why a host with saved credentials didn't connect after Face ID
+    /// (or Touch ID, Optic ID, or the passcode) was cancelled or didn't
+    /// succeed, with Try Again.
+    func reportNotUnlocked(_ profile: SSHProfile) {
+        report(SSHUIError.notUnlocked(profile.name, method: Self.protection), profileID: profile.id, recovery: .tryAgain)
     }
 
     func removeProfile(_ profile: SSHProfile) async {
@@ -302,9 +347,11 @@ final class SSHWorkspaceModel {
                 try await store.save(profile)
                 let savedProfiles = try await store.profiles()
                 if self?.generation == current { self?.profiles = savedProfiles }
+                SSHConnectLog.note("network start hops=\(profile.jumpHosts.count + 1) savedCredentials=\(!remember.isEmpty)")
                 let client = try await SSHConnection.connect(
                     profile: profile, credentials: credentials,
                     verifyHostKey: { [weak self] key in
+                        SSHConnectLog.note("host key received")
                         guard let self else { throw CancellationError() }
                         try await self.verify(key, generation: current)
                     })

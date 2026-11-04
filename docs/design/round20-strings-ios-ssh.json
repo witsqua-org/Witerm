@@ -1,0 +1,13 @@
+{
+  "add": {
+    "Not connected: “%@” needs Face ID to use its saved credentials.": "未连接：“%@”需要通过面容 ID 才能使用存储的认证信息。",
+    "Not connected: “%@” needs Optic ID to use its saved credentials.": "未连接：“%@”需要通过 Optic ID 才能使用存储的认证信息。",
+    "Not connected: “%@” needs Touch ID to use its saved credentials.": "未连接：“%@”需要通过触控 ID 才能使用存储的认证信息。",
+    "Not connected: “%@” needs your login password to use its saved credentials.": "未连接：“%@”需要输入登录密码才能使用存储的认证信息。",
+    "Not connected: “%@” needs your passcode to use its saved credentials.": "未连接：“%@”需要输入设备密码才能使用存储的认证信息。"
+  },
+  "change": {},
+  "remove": [
+    "Enter Password"
+  ]
+}

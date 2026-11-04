@@ -84,15 +84,24 @@ final class ProtectingSSHSecrets: SSHSecretStorage, @unchecked Sendable {
         do { _ = try await store.credentials(ids, unlock: nil); XCTFail("Read a protected credential without unlocking") }
         catch { XCTAssertEqual(error as? SSHFailure, .cancelled) }
 
-        let values = try await store.credentials(ids, unlock: SSHUnlock())
+        // Nor with an unlock that hasn't succeeded (Face ID not yet done,
+        // cancelled, or failed).
+        do { _ = try await store.credentials(ids, unlock: SSHUnlock()); XCTFail("Read before Face ID succeeded") }
+        catch { XCTAssertEqual(error as? SSHFailure, .cancelled) }
+        XCTAssertEqual(secrets.unlockedReads, 0)
+
+        let values = try await store.credentials(ids, unlock: SSHUnlock(unlockedForTesting: true))
         XCTAssertEqual(password(values[ids[0]]), "jump-secret")
         XCTAssertEqual(password(values[ids[1]]), "target-secret")
         XCTAssertEqual(secrets.unlockedReads, 2, "Both hops are read with the same unlock")
     }
 
-    /// A credential saved before protection reads without asking, and gains
-    /// protection the next time it's saved after a successful connection.
-    func testUnprotectedCredentialMigratesOnNextSave() async throws {
+    /// Round 20: a credential saved before protection also needs Face ID
+    /// first (the owner's rule: Face ID succeeds before a connection that
+    /// uses a saved secret), though the Keychain would hand it over without
+    /// asking; it gains protection the next time it's saved after a
+    /// successful connection.
+    func testUnprotectedCredentialNeedsUnlockAndMigratesOnNextSave() async throws {
         let secrets = ProtectingSSHSecrets()
         let store = try SSHProfileStore(directory: directory(), secrets: secrets)
         let profile = SSHProfile(name: "legacy", host: SSHHost(hostname: "legacy.test", username: "user"))
@@ -101,14 +110,29 @@ final class ProtectingSSHSecrets: SSHSecretStorage, @unchecked Sendable {
         secrets.write(try JSONEncoder().encode(["kind": "password", "value": "old-secret"]), account: account)
 
         let needsUnlock = try await store.credentialsNeedUnlock([profile.host.id])
-        XCTAssertFalse(needsUnlock, "An unprotected credential must not ask for Face ID")
-        let old = try await store.credentials([profile.host.id], unlock: nil)
+        XCTAssertTrue(needsUnlock, "A saved credential, protected or not, asks for Face ID first")
+        for unlock in [nil, SSHUnlock()] {
+            do { _ = try await store.credentials([profile.host.id], unlock: unlock); XCTFail("Read an old credential without Face ID") }
+            catch { XCTAssertEqual(error as? SSHFailure, .cancelled) }
+        }
+        let old = try await store.credentials([profile.host.id], unlock: SSHUnlock(unlockedForTesting: true))
         XCTAssertEqual(password(old[profile.host.id]), "old-secret")
 
         try await store.setCredential(.password("old-secret"), hostID: profile.host.id)
         XCTAssertEqual(secrets.isProtected(account), true)
         let afterwards = try await store.credentialsNeedUnlock([profile.host.id])
         XCTAssertTrue(afterwards)
+    }
+
+    /// Hosts without saved credentials never ask, and read nothing.
+    func testNothingSavedNeedsNoUnlock() async throws {
+        let store = try SSHProfileStore(directory: directory(), secrets: ProtectingSSHSecrets())
+        let profile = SSHProfile(name: "typed", host: SSHHost(hostname: "typed.test", username: "user"))
+        try await store.save(profile)
+        let needsUnlock = try await store.credentialsNeedUnlock([profile.host.id])
+        XCTAssertFalse(needsUnlock)
+        let values = try await store.credentials([profile.host.id], unlock: nil)
+        XCTAssertTrue(values.isEmpty)
     }
 
     /// Deleting keeps the protected items for Undo, which restores the host

@@ -350,37 +350,41 @@ public actor SSHProfileStore {
         return saved
     }
 
-    /// Whether reading these credentials needs the person to authenticate.
-    /// Credentials saved before they were protected don't, until they're
-    /// next saved (after a successful connection), which protects them.
+    /// Whether reading these credentials needs the person to authenticate
+    /// first: whenever any of them is saved. Round 20, the owner's rule:
+    /// Face ID (or Touch ID, Optic ID, or the passcode) succeeds before a
+    /// saved credential is used, so before any connection starts. That
+    /// includes a credential saved before protection existed, which the
+    /// Keychain itself would hand over without asking.
     public func credentialsNeedUnlock(_ hostIDs: [UUID]) throws -> Bool {
         Self.diskLock.lock(); defer { Self.diskLock.unlock() }
-        return try hostIDs.contains { try isSaved($0) && secrets.probe(account($0)) == .locked }
+        return try hostIDs.contains { try isSaved($0) && secrets.probe(account($0)) != .missing }
     }
 
     /// The saved credentials for these hosts, read with one authentication.
-    /// `unlock` must already be unlocked when any of them is protected.
+    /// When any of them is saved, `unlock` must have succeeded
+    /// (`SSHUnlock.isUnlocked`); otherwise nothing is read and this throws
+    /// `cancelled`, protected or not.
     public func credentials(_ hostIDs: [UUID], unlock: SSHUnlock?) throws -> [UUID: SSHCredential] {
         Self.diskLock.lock(); defer { Self.diskLock.unlock() }
-        var result: [UUID: SSHCredential] = [:]
+        var found: [(UUID, SSHSecretProbe)] = []
         for id in hostIDs where try isSaved(id) {
+            let probe = try secrets.probe(account(id))
+            if probe != .missing { found.append((id, probe)) }
+        }
+        guard !found.isEmpty else { return [:] }
+        guard let unlock, unlock.isUnlocked else { throw SSHFailure.cancelled }
+        var result: [UUID: SSHCredential] = [:]
+        for (id, probe) in found {
             let data: Data?
-            switch try secrets.probe(account(id)) {
+            switch probe {
             case .missing: data = nil
             case .readable(let value): data = value
-            case .locked:
-                guard let unlock else { throw SSHFailure.cancelled }
-                data = try secrets.read(account(id), unlock: unlock)
+            case .locked: data = try secrets.read(account(id), unlock: unlock)
             }
             if let data { result[id] = try JSONDecoder().decode(StoredSSHCredential.self, from: data).credential() }
         }
         return result
-    }
-
-    /// One host's credential when it can be read without asking; a protected
-    /// one throws `cancelled` (use `credentials(_:unlock:)`).
-    public func credential(hostID: UUID) throws -> SSHCredential? {
-        try credentials([hostID], unlock: nil)[hostID]
     }
 
     public func setCredential(_ credential: SSHCredential?, hostID: UUID) throws {
@@ -413,8 +417,10 @@ public actor SSHProfileStore {
 }
 
 /// One authentication for one connection attempt: Face ID or Touch ID with
-/// the device passcode (the Mac's login password) as the fallback, reused for
-/// every hop of a jump-host chain.
+/// the device passcode (the Mac's login password) as the system's own
+/// fallback, as `.userPresence` on the saved items allows, reused for every
+/// hop of a jump-host chain. A saved credential is read only after it
+/// succeeded (`isUnlocked`), so a connection with one never starts first.
 public final class SSHUnlock: @unchecked Sendable {
     public enum Method: Sendable, Equatable {
         case faceID, touchID, opticID, passcode
@@ -424,15 +430,29 @@ public final class SSHUnlock: @unchecked Sendable {
 
     public enum Outcome: Sendable, Equatable {
         case unlocked
-        /// The person cancelled; the attempt ends quietly.
+        /// The person cancelled (or the system did); nothing connects.
         case cancelled
-        /// The person chose to type the password for this attempt instead.
-        case enterPassword
+        /// Neither Face ID (or Touch ID, Optic ID) nor the passcode
+        /// succeeded; nothing connects.
+        case failed
+        /// No passcode is set any more: the system deleted the saved items
+        /// with it, so there's nothing saved to read; type the password.
+        case noPasscode
     }
 
     let context = LAContext()
+    private let lock = NSLock()
+    private var unlocked = false
 
     public init() {}
+
+    #if DEBUG
+    /// Tests only: an unlock that already succeeded, or not.
+    init(unlockedForTesting: Bool) { unlocked = unlockedForTesting }
+    #endif
+
+    /// Whether `unlock` succeeded. Reading a saved credential needs it.
+    public var isUnlocked: Bool { lock.withLock { unlocked } }
 
     /// How saved credentials are protected on this device.
     public static var method: Method {
@@ -467,34 +487,23 @@ public final class SSHUnlock: @unchecked Sendable {
         return method == .passcode ? nil : method
     }
 
-    /// Asks once. Biometrics come first, with `fallbackTitle` (Enter Password)
-    /// for typing the SSH password instead; without biometrics, or once they're
-    /// locked out, the device passcode.
-    public func unlock(reason: String, fallbackTitle: String) async throws -> Outcome {
-        context.localizedFallbackTitle = fallbackTitle
-        let biometric = context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil)
+    /// Asks once: Face ID (or Touch ID, Optic ID) first, then the system's
+    /// own Enter Passcode after a failed match, or the passcode alone where
+    /// biometrics are off for the app, locked out or not enrolled. Nothing
+    /// skips it: before Round 20 the fallback button typed the SSH password
+    /// instead, which connected without it.
+    public func unlock(reason: String) async throws -> Outcome {
+        // nil keeps the system's own fallback (Enter Passcode).
+        context.localizedFallbackTitle = nil
         do {
-            _ = try await context.evaluatePolicy(biometric ? .deviceOwnerAuthenticationWithBiometrics : .deviceOwnerAuthentication,
-                                                 localizedReason: reason)
+            _ = try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason)
+            lock.withLock { unlocked = true }
             return .unlocked
         } catch let error as LAError {
             switch error.code {
-            case .userCancel, .appCancel, .systemCancel, .notInteractive: return .cancelled
-            case .userFallback: return .enterPassword
-            // Locked out, declined for this app at its first prompt, or
-            // switched off since: the passcode protects the same items.
-            case .biometryLockout, .biometryNotAvailable, .biometryNotEnrolled:
-                do {
-                    _ = try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason)
-                    return .unlocked
-                } catch let error as LAError where [.userCancel, .appCancel, .systemCancel, .notInteractive].contains(error.code) {
-                    return .cancelled
-                } catch let error as LAError where error.code == .passcodeNotSet {
-                    return .enterPassword
-                }
-            // The passcode was removed: the system deleted the saved items
-            // with it, so type the password for this attempt.
-            case .passcodeNotSet: return .enterPassword
+            case .userCancel, .appCancel, .systemCancel, .notInteractive, .userFallback: return .cancelled
+            case .authenticationFailed, .biometryLockout: return .failed
+            case .passcodeNotSet: return .noPasscode
             default: throw SSHFailure.storageUnavailable
             }
         }

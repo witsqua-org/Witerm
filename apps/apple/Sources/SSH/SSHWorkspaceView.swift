@@ -63,8 +63,9 @@ final class SSHWorkspaceUI {
     /// saved, after one Face ID (or Touch ID, or passcode) check for all of
     /// them; otherwise opens the prefilled connection form. `reviewing`
     /// always shows the prefilled form with Connect, so a rejected credential
-    /// is corrected instead of retried as is. Cancelling the check ends the
-    /// attempt without an error and offers the form to type the password.
+    /// is corrected instead of retried as is. Round 20: the check succeeds
+    /// before anything connects. Cancelling it, or a failed match, connects
+    /// nothing and says so, with Try Again; editing just stays as it was.
     func open(_ profile: SSHProfile, model: SSHWorkspaceModel, editing: Bool = false, reviewing: Bool = false) {
         let token = UUID()
         request = token
@@ -90,9 +91,11 @@ final class SSHWorkspaceUI {
                 } else {
                     editorRequest = SSHEditorRequest(profile: profile, credentials: stored, purpose: purpose)
                 }
-            case .cancelled where editing, .failed:
+            case .notUnlocked where editing, .failed:
                 return
-            case .cancelled, .enterPassword:
+            case .notUnlocked:
+                model.reportNotUnlocked(profile)
+            case .nothingSaved:
                 editorRequest = SSHEditorRequest(profile: profile, credentials: [:], purpose: purpose, preserving: saved)
             }
         }
@@ -236,7 +239,9 @@ struct SSHIssueBanner: View {
         if let issue = model.issue {
             IssueBanner(issue) {
                 HStack(spacing: WitermMetrics.Space.m) {
-                    if let profile, model.issueProfileID == profile.id {
+                    // On the iPhone's list no host is shown; the issue's own host gets the next step.
+                    if let profile = profile ?? model.profiles.first(where: { $0.id == model.issueProfileID }),
+                       model.issueProfileID == profile.id {
                         switch model.issueRecovery {
                         case .editConnection:
                             Button(String(localized: "Check Connection…", bundle: .main)) {

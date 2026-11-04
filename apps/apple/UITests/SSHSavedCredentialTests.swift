@@ -158,10 +158,10 @@ import XCTest
         app.buttons["sshShowHosts"].tap()
         disconnect(name)
 
-        // No match, then Cancel: no error banner; the form offers the
-        // password for this attempt, and the saved one is kept. (The
-        // simulator's Face ID alert has Try Face ID Again and Cancel only;
-        // a device adds the Enter Password fallback, which does the same.)
+        // No match, then Cancel. Round 20 (the owner's rule: Face ID
+        // succeeds before connecting): nothing connects, no form opens to
+        // type the password instead, and the list says why, with Try Again.
+        // The saved credential is kept.
         row(name).tap()
         RunLoop.current.run(until: Date().addingTimeInterval(1.5))
         signal("nomatch")
@@ -170,18 +170,29 @@ import XCTest
         shot("04-no-match")
         let cancel = springboard.buttons["Cancel"].firstMatch
         XCTAssertTrue(cancel.exists)
+        let fallbacks = springboard.buttons.allElementsBoundByIndex.map(\.label).filter { !$0.isEmpty }
+        print("PROBE r20 faceid no-match buttons=\(fallbacks)")
+        XCTAssertFalse(fallbacks.contains("Enter Password"), "No fallback may skip Face ID (the SSH password)")
         cancel.tap()
-        XCTAssertTrue(app.secureTextFields["sshHostPassword"].waitForExistence(timeout: 10),
-                      "Cancelling must offer the password for this attempt")
-        XCTAssertFalse(app.descendants(matching: .any)["sshIssue"].exists, "Cancelling Face ID is not an error")
-        shot("05-cancelled-offers-password")
-        app.navigationBars.buttons.element(boundBy: 0).tap()
+        let notConnected = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Not connected: “\(name)” needs Face ID")).firstMatch
+        XCTAssertTrue(notConnected.waitForExistence(timeout: 10), "Cancelling Face ID must say the host didn't connect")
+        XCTAssertFalse(app.secureTextFields["sshHostPassword"].exists, "Cancelling must not open the form to connect another way")
+        XCTAssertFalse(app.staticTexts["sshHostFingerprint"].exists, "Nothing may reach the host")
+        XCTAssertFalse(terminal.exists, "Cancelling must not connect")
+        XCTAssertFalse(app.activityIndicators.firstMatch.exists, "Nothing is connecting")
+        shot("05-cancelled-not-connected")
 
-        // The saved credential survived: a match connects.
-        row(name).tap()
+        // Try Again asks again; a match connects with the saved credential.
+        let retry = app.buttons["sshIssueRetry"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 5), "The message offers Try Again")
+        retry.tap()
         RunLoop.current.run(until: Date().addingTimeInterval(1.5))
         XCTAssertTrue(matchUntilConnected(), "The saved credential must survive a cancelled attempt")
+        XCTAssertFalse(app.secureTextFields["sshHostPassword"].exists, "A match must not ask for the password")
+        shot("06-connected-after-try-again")
         app.buttons["sshShowHosts"].tap()
+        disconnect(name)
+
     }
 
     /// Without Face ID enrolled, the line names what protects saved

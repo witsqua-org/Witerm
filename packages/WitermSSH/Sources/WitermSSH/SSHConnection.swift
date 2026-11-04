@@ -24,14 +24,18 @@ public actor SSHConnection {
         verifyHostKey: @escaping @Sendable (SSHHostKey) async throws -> Void
     ) async throws -> SSHConnection {
         try profile.validate()
+        // Every hop's credential, and its key, before any network: a chain
+        // that can't sign in at its end never reaches its first hop.
+        let hops = try (profile.jumpHosts + [profile.host]).map { host -> (SSHHost, SSHAuthenticationFactory) in
+            guard let credential = credentials[host.id] else { throw SSHFailure.missingCredential }
+            return (host, try SSHAuthenticationFactory(username: host.username, credential: credential))
+        }
         var connected: [SSHClientReference] = []
         let cancellation = SSHConnectCancellation()
         return try await withTaskCancellationHandler {
             do {
-                for host in profile.jumpHosts + [profile.host] {
+                for (host, authentication) in hops {
                     try Task.checkCancellation()
-                    guard let credential = credentials[host.id] else { throw SSHFailure.missingCredential }
-                    let authentication = try SSHAuthenticationFactory(username: host.username, credential: credential)
                     let validator = SSHIdentityValidator(host: host, verify: verifyHostKey)
                     let settings = SSHClientSettings(
                         host: host.hostname, port: host.port,

@@ -78,11 +78,11 @@ final class TestSSHSecrets: SSHSecretStorage, @unchecked Sendable {
         try await store.setCredential(.password("fixed-fixture-secret"), hostID: profile.host.id)
         let serialized = try String(contentsOf: path.appendingPathComponent("profiles.json"), encoding: .utf8)
         XCTAssertFalse(serialized.contains("fixed-fixture-secret"))
-        let credential = try await store.credential(hostID: profile.host.id)
+        let credential = try await store.credentials([profile.host.id], unlock: SSHUnlock(unlockedForTesting: true))[profile.host.id]
         guard case .password("fixed-fixture-secret") = credential else { return XCTFail("Credential missing") }
         profile.host.hostname = "other.test"
         try await store.save(profile)
-        let after = try await store.credential(hostID: profile.host.id)
+        let after = try await store.credentials([profile.host.id], unlock: SSHUnlock(unlockedForTesting: true))[profile.host.id]
         XCTAssertNil(after)
         let permission = try FileManager.default.attributesOfItem(atPath: path.appendingPathComponent("profiles.json").path)[.posixPermissions] as? Int
         XCTAssertEqual(permission, 0o600)
@@ -94,7 +94,7 @@ final class TestSSHSecrets: SSHSecretStorage, @unchecked Sendable {
         try await store.save(profile)
         try await store.setCredential(.privateKey("fixture-key", passphrase: "fixture-passphrase"), hostID: profile.host.id)
         try await store.delete(id: profile.id)
-        let profiles = try await store.profiles(), credential = try await store.credential(hostID: profile.host.id)
+        let profiles = try await store.profiles(), credential = try await store.credentials([profile.host.id], unlock: SSHUnlock(unlockedForTesting: true))[profile.host.id]
         XCTAssertTrue(profiles.isEmpty)
         XCTAssertNil(credential)
         do { try await store.setCredential(.password("fixture"), hostID: UUID()); XCTFail("Unknown host credential accepted") }

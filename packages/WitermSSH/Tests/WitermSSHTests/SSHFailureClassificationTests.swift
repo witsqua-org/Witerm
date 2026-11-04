@@ -29,6 +29,29 @@ final class SSHFailureClassificationTests: XCTestCase {
         } catch { XCTAssertEqual(error as? SSHFailure, .connectionRefused) }
     }
 
+    /// Round 20: every hop's credential is checked before any network. A
+    /// chain missing the target's credential (or with an unusable key) used
+    /// to connect to the jump host first; here the jump host is a closed
+    /// port, so reaching it at all would say "refused".
+    func testMissingOrUnusableCredentialFailsBeforeAnyHopIsReached() async throws {
+        let port = try Self.closedLoopbackPort()
+        let jump = SSHHost(hostname: "127.0.0.1", port: port, username: "nobody")
+        let profile = SSHProfile(name: "Chain", host: SSHHost(hostname: "target.invalid", username: "nobody"), jumpHosts: [jump])
+        let cases: [(String, [UUID: SSHCredential], SSHFailure)] = [
+            ("missing target", [jump.id: .password("unused")], .missingCredential),
+            ("unusable key", [jump.id: .password("unused"), profile.host.id: .privateKey("not a key", passphrase: nil)],
+             .unsupportedPrivateKey),
+        ]
+        for (name, credentials, expected) in cases {
+            do {
+                _ = try await SSHConnection.connect(profile: profile, credentials: credentials) { _ in
+                    XCTFail("\(name): no host key can be presented by a closed port")
+                }
+                XCTFail("\(name): connected")
+            } catch { XCTAssertEqual(error as? SSHFailure, expected, name) }
+        }
+    }
+
     /// Binds an ephemeral loopback port and releases it, so nothing listens there.
     private static func closedLoopbackPort() throws -> Int {
         let fd = socket(AF_INET, SOCK_STREAM, 0)
