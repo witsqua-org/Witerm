@@ -198,8 +198,30 @@ final class RemoteTerminalModel {
     @ObservationIgnored private var work: Task<Void, Never>?
     @ObservationIgnored private var authorizationCheck: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
+    /// The renderer of `displayAttachment` (identity `attachmentID`), owned
+    /// here rather than by a view, so it can stay connected off screen.
+    private(set) var host: PairedTerminalHost?
+    /// Terminals left with Back that stay connected, watching (Round 18).
+    private(set) var kept: [KeptPairedTerminal] = []
+    /// Set when opening a terminal disconnected others to stay within
+    /// `PairedKeepAlive.limit`; the terminal says so for a moment.
+    private(set) var keptNote: String?
+    /// The text size the terminal view last used, for renderers made off screen.
+    static var rendererFontSize: CGFloat = 14
+    @ObservationIgnored private lazy var tunnels = TunnelGate { [weak self] in self?.liveLinks ?? 0 }
 
-    init(serverAddress: String) { self.serverAddress = serverAddress }
+    init(serverAddress: String) {
+        self.serverAddress = serverAddress
+        PairedKeepAlive.register(self)
+    }
+
+    /// Attachments this model holds now: the one on screen (or being
+    /// opened) and the kept ones.
+    var liveLinks: Int {
+        let shown = attachment != nil || parked || (work != nil && selectedSession != nil
+            && [.connecting, .switching].contains(connectionState)) ? 1 : 0
+        return shown + kept.filter(\.connected).count
+    }
 
     var isInteractive: Bool { (attachment != nil || parked) && connectionState == .connected && busy == nil }
     var canReconnect: Bool {
@@ -257,6 +279,10 @@ final class RemoteTerminalModel {
                     self.busy = nil
                     self.work = nil
                     SharedTerminals.prune(keeping: Set(verified.map(\.id)))
+                    // A kept terminal whose grant is gone is let go.
+                    for entry in self.kept where !verified.contains(where: { $0.id == entry.grant.id }) {
+                        _ = self.disconnectKept(entry, acknowledged: false)
+                    }
                     self.listTerminals()
                 } catch { self?.failed(error, token: token) }
             }
@@ -267,7 +293,8 @@ final class RemoteTerminalModel {
     /// session, as after continuing a session from that device.
     func select(_ grant: DeviceGrant, openingSole: Bool = false) {
         guard busy == nil else { return }
-        suspend()
+        // A terminal on screen stays connected, off screen (Round 18).
+        if !keepDisplayed() { suspend() }
         clearDisplay()
         unpairedName = nil
         selectedGrant = grant
@@ -334,6 +361,16 @@ final class RemoteTerminalModel {
     /// one attaches only after that ACK (`attach` does both).
     func open(_ session: LocalSessionInfo, on grant: DeviceGrant, mode requestedMode: LocalAttachmentMode? = nil) {
         guard busy == nil else { return }
+        let showingIt = selectedGrant?.id == grant.id && displayAttachment?.session.id == session.id
+        // Round 18: a terminal on screen stays connected when another opens.
+        if !showingIt, displayAttachment != nil {
+            if !keepDisplayed() { clearDisplay(); selectedSession = nil }
+        }
+        // One kept since Back reopens as it was: no reconnect, no redraw.
+        if let entry = kept.first(where: { $0.key == PairedTerminalKey(grantID: grant.id, sessionID: session.id) && $0.connected }) {
+            reopen(entry)
+            return
+        }
         if selectedGrant?.id != grant.id {
             unpairedName = nil
             selectedGrant = grant
@@ -344,9 +381,17 @@ final class RemoteTerminalModel {
         if !sessions.contains(where: { $0.id == session.id }) { sessions.append(session) }
         automaticAttempts = 0
         notice = false
+        keptNote = nil
+        // At the limit, the terminal left longest ago is disconnected first.
+        var releases: [Task<Void, Never>] = []
+        if !showingIt || attachment == nil {
+            let room = PairedKeepAlive.makeRoom()
+            releases = room.releases
+            if !room.names.isEmpty { noteDisconnected(room.names) }
+        }
         // Opening types when allowed; when someone else is typing it opens
         // with the keyboard down instead, and says who (never by force).
-        attach(session, mode: requestedMode, automatic: requestedMode == nil)
+        attach(session, mode: requestedMode, automatic: requestedMode == nil, waitingFor: releases)
     }
 
     /// What `grant`'s device lets this one do in `session`, as listed.
@@ -376,8 +421,12 @@ final class RemoteTerminalModel {
         let pairing: PairingClient
         do { pairing = try pairingClient() } catch { return }
         let token = listingGeneration
+        let tunnels = tunnels
         listings[grant.id] = Task { [weak self] in
             var result: Result<[LocalSessionInfo], Error>
+            // Kept terminals hold tunnels; a listing waits for a free one.
+            await tunnels.acquire()
+            defer { tunnels.release() }
             do {
                 let current = try await pairing.grants()
                 guard current.contains(where: { $0.id == grant.id }) else { throw RelayError.revoked }
@@ -396,6 +445,7 @@ final class RemoteTerminalModel {
                 if Self.isTrustFailure(error), self.selectedGrant?.id != grant.id {
                     // Ended on the other side: it leaves the lists, as a
                     // device listing would drop it.
+                    for entry in self.kept where entry.grant.id == grant.id { self.disconnectKept(entry, acknowledged: false) }
                     self.grants.removeAll { $0.id == grant.id }
                     self.terminals[grant.id] = nil
                     self.listing[grant.id] = nil
@@ -422,7 +472,7 @@ final class RemoteTerminalModel {
     /// sent before the detach so the Mac's grid (which this device set while
     /// typing, with the keyboard up) fits the screen it's watched on.
     private func attach(_ session: LocalSessionInfo, mode requestedMode: LocalAttachmentMode?, automatic: Bool,
-                        releaseGrid: (columns: Int, rows: Int)? = nil) {
+                        releaseGrid: (columns: Int, rows: Int)? = nil, waitingFor releases: [Task<Void, Never>] = []) {
         guard busy == nil, let grant = selectedGrant else { return }
         let allowed = access(for: session)
         if !automatic {
@@ -465,6 +515,8 @@ final class RemoteTerminalModel {
                         }
                         try await previous.detach()
                     }
+                    // Kept terminals disconnected to make room have let go.
+                    for release in releases { await release.value }
                     try Task.checkCancellation()
                     // Earlier output fills the renderer's scrollback, so a drag scrolls back through it.
                     let next = try await open(session.id, session.columns, session.rows, targetMode)
@@ -484,6 +536,11 @@ final class RemoteTerminalModel {
                     self.attachmentID = UUID()
                     self.activeID = self.attachmentID
                     self.liveGrid = (live.columns, live.rows)
+                    // A new renderer for the new attachment; the old one's
+                    // link has already been let go.
+                    let old = self.host
+                    self.host = self.makeHost(id: self.attachmentID, link: next, mode: targetMode)
+                    old?.stop()
                     self.displayAttachment = next
                     self.attachment = next
                     self.connectionState = .connected
@@ -579,15 +636,17 @@ final class RemoteTerminalModel {
         backgroundedAt = Date()
         returnedAt = nil
         retry?.cancel(); retry = nil
-        guard attachment != nil, busy == nil else {
+        // Kept terminals follow the same 3-minute rule (Round 18).
+        let keepsAny = kept.contains { $0.state == .live || $0.state == .releasing }
+        let shownLive = attachment != nil && busy == nil
+        if !shownLive, !parked {
             // Interrupted mid-connect, or already disconnected by accident:
             // pick it up again on return. A parked terminal stays parked.
-            if parked { return }
             if displayAttachment != nil, connectionState != .ended, busy != nil || resumeWhenActive { resumeWhenActive = true }
             suspend()
-            return
         }
-        resumeWhenActive = true
+        guard shownLive || keepsAny else { return }
+        if shownLive { resumeWhenActive = true }
         endBackgroundTask()
         backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Witerm terminal") { [weak self] in
             // iOS is about to suspend the app: no time left for an
@@ -597,6 +656,7 @@ final class RemoteTerminalModel {
                 guard let self else { return }
                 self.grace?.cancel(); self.grace = nil
                 if self.attachment != nil, !self.appActive { self.park(acknowledged: false) }
+                if !self.appActive { self.parkKept(acknowledged: false) }
                 self.endBackgroundTask()
             }
         }
@@ -612,7 +672,15 @@ final class RemoteTerminalModel {
             do { try await Task.sleep(for: .seconds(release)) } catch { return }
             guard let self, !self.appActive else { return }
             self.grace = nil
-            if self.backgroundedFor >= window { self.detachForBackground() } else { self.park(acknowledged: true) }
+            self.parkKept(acknowledged: true)
+            if self.attachment == nil {
+                // Only kept terminals: done once their ACKs are in.
+                let steps = self.kept.compactMap(\.work)
+                Task { [weak self] in
+                    for step in steps { await step.value }
+                    self?.endBackgroundTask()
+                }
+            } else if self.backgroundedFor >= window { self.detachForBackground() } else { self.park(acknowledged: true) }
         }
     }
 
@@ -642,6 +710,7 @@ final class RemoteTerminalModel {
             }
         }
         endBackgroundTask()
+        returnKept(withinWindow: away <= Double(Self.backgroundWindow.components.seconds))
         resumeIfNeeded()
         // A list may have changed while away.
         if displayAttachment == nil, selectedGrant != nil, busy == nil { refreshSessions() }
@@ -724,6 +793,7 @@ final class RemoteTerminalModel {
                     self.work = nil
                     // The same renderer (same identity) takes the new link.
                     self.activeID = self.attachmentID
+                    self.host?.replace(next)
                     self.displayAttachment = next
                     self.attachment = next
                     self.resumes += 1
@@ -848,10 +918,14 @@ final class RemoteTerminalModel {
         let listed: [LocalSessionInfo]
         #if DEBUG
         if RemoteFixture.isActive { listed = FixtureMac.shared.sessions(for: grant.id) } else {
+            await tunnels.acquire()
+            defer { tunnels.release() }
             guard let pairing, let fresh = try? await RemoteTerminalClient(pairing: pairing, grantID: grant.id).sessions() else { return false }
             listed = fresh
         }
         #else
+        await tunnels.acquire()
+        defer { tunnels.release() }
         guard let pairing, let fresh = try? await RemoteTerminalClient(pairing: pairing, grantID: grant.id).sessions() else { return false }
         listed = fresh
         #endif
@@ -880,6 +954,8 @@ final class RemoteTerminalModel {
         // Every pairing with that device ends, so it leaves the lists: an
         // earlier one that was never cleaned up would otherwise keep it there.
         let ending = Self.pairings(endedBy: grant, in: grants)
+        // Kept terminals from it are let go first, each with the Mac's ACK.
+        await disconnectKept(grantIDs: Set(ending.map(\.id)), acknowledged: true)
         if let selected = selectedGrant, ending.contains(where: { $0.id == selected.id }) {
             cancelWork()
             resumeWhenActive = false
@@ -922,6 +998,7 @@ final class RemoteTerminalModel {
         #else
         let pairing: PairingClient? = try pairingClient()
         #endif
+        await disconnectKept(grantIDs: [grant.id], acknowledged: true)
         if selectedGrant?.id == grant.id {
             cancelWork()
             resumeWhenActive = false
@@ -989,7 +1066,7 @@ final class RemoteTerminalModel {
         // its output consumer first can race the release handshake.
         connectionState = .disconnected
         let token = generation
-        busy = String(localized: "Leaving…", bundle: .main)
+        busy = String(localized: "Disconnecting…", bundle: .main)
         work = Task { [weak self] in
             do {
                 try await previous.detach()
@@ -1002,6 +1079,13 @@ final class RemoteTerminalModel {
                 self.refreshSessions()
             } catch { self?.failed(error, token: token) }
         }
+    }
+
+    /// The model is going away (its relay server was removed or changed):
+    /// every terminal, shown or kept, is let go.
+    func shutDown() {
+        suspend()
+        for entry in kept { disconnectKept(entry, acknowledged: false) }
     }
 
     func suspend() {
@@ -1038,6 +1122,8 @@ final class RemoteTerminalModel {
         resumeWhenActive = false
         parked = false
         displayAttachment = nil
+        host?.stop()
+        host = nil
         attachmentID = UUID()
     }
 
@@ -1086,6 +1172,7 @@ final class RemoteTerminalModel {
         let previous = deactivate()
         if let previous { Task { await previous.abort() } }
         if let id = selectedGrant?.id {
+            for entry in kept where entry.grant.id == id { disconnectKept(entry, acknowledged: false) }
             grants.removeAll { $0.id == id }
             terminals[id] = nil
             listing[id] = nil
@@ -1125,6 +1212,327 @@ final class RemoteTerminalModel {
         let client = try PairingClient(serverAddress: serverAddress, deviceName: PairingDeviceName.current, platform: .ios)
         pairing = client
         return client
+    }
+}
+
+// MARK: Staying connected after Back (Round 18)
+
+extension RemoteTerminalModel {
+    /// A renderer for `link`, owned here; what it reports goes to whoever
+    /// holds the terminal when it happens (on screen or kept).
+    fileprivate func makeHost(id: UUID, link: any PairedTerminalLink, mode: LocalAttachmentMode) -> PairedTerminalHost {
+        PairedTerminalHost(id: id, link: link, mode: mode, fontSize: Self.rendererFontSize, routes: PairedTerminalRoutes(
+            isParked: { [weak self] in self?.isParked(id) ?? false },
+            onLinkLost: { [weak self] in self?.linkLost($0, host: id) ?? false },
+            onGrid: { [weak self] in self?.noteGrid(columns: $0, rows: $1, host: id) },
+            onFailure: { [weak self] in self?.renderFailed($0, host: id) },
+            onEnded: { [weak self] in self?.renderEnded(host: id) }))
+    }
+
+    private func keptEntry(host id: UUID) -> KeptPairedTerminal? { kept.first { $0.host.id == id } }
+
+    private func isParked(_ id: UUID) -> Bool {
+        if id == attachmentID { return parked }
+        // Between links (releasing typing, parked, resuming) the renderer waits.
+        return keptEntry(host: id).map { $0.state != .live } ?? false
+    }
+
+    private func linkLost(_ error: Error, host id: UUID) -> Bool {
+        if id == attachmentID { return linkLost(error, id: id) }
+        guard let entry = keptEntry(host: id), entry.state == .live, Self.isTransient(error) else { return false }
+        // Lost while kept: resumed in place once (now, or on return).
+        entry.set(.parked)
+        if appActive { resume(entry) }
+        return true
+    }
+
+    private func noteGrid(columns: Int, rows: Int, host id: UUID) {
+        if id == attachmentID { noteGrid(columns: columns, rows: rows, id: id) } else { keptEntry(host: id)?.grid = (columns, rows) }
+    }
+
+    private func renderFailed(_ error: Error, host id: UUID) {
+        if id == attachmentID { return attachmentFailed(error, id: id) }
+        guard let entry = keptEntry(host: id) else { return }
+        _ = disconnectKept(entry, acknowledged: false)
+        if Self.isTrustFailure(error) { keptGrantEnded(entry.grant) }
+    }
+
+    /// The Mac ended a kept terminal: it leaves the list at once.
+    private func renderEnded(host id: UUID) {
+        if id == attachmentID { return attachmentEnded(id: id) }
+        guard let entry = keptEntry(host: id) else { return }
+        _ = disconnectKept(entry, acknowledged: false)
+        terminals[entry.grant.id]?.removeAll { $0.id == entry.session.id }
+        sessions.removeAll { $0.id == entry.session.id && selectedGrant?.id == entry.grant.id }
+    }
+
+    /// Whether `session` on `grant`'s device is connected here: on screen
+    /// or kept. Terminals lists it as Connected.
+    func isConnected(_ session: LocalSessionInfo, on grant: DeviceGrant) -> Bool {
+        if selectedGrant?.id == grant.id, displayAttachment?.session.id == session.id,
+           attachment != nil || parked, connectionState == .connected { return true }
+        return kept.contains { $0.key == PairedTerminalKey(grantID: grant.id, sessionID: session.id) && $0.connected }
+    }
+
+    /// Back (the button, the edge swipe): the terminal stays connected,
+    /// watching, off screen, and Terminals shows the list at once. Typing
+    /// stops first, as when the keyboard hides: the Mac's grid is set to the
+    /// watching size, typing is let go with the Mac's ACK, and a watching
+    /// link takes over, all after the list is back. A terminal that isn't
+    /// connected (its last frame) is simply put away.
+    func leaveKeepingConnection() {
+        guard busy == nil else { return }
+        guard keepDisplayed() else {
+            // Nothing live to keep: as Disconnect, which also handles a
+            // terminal not shown (a list).
+            return showSessions()
+        }
+        issue = nil
+        refreshSessions()
+    }
+
+    /// Disconnect, from the terminal's menu or its row: it's let go (the
+    /// Mac's ACK first) and is no longer Connected; it keeps running on the Mac.
+    func disconnect() { showSessions() }
+
+    /// Disconnect from a row: the terminal on screen, or a kept one.
+    func disconnect(_ session: LocalSessionInfo, on grant: DeviceGrant) {
+        if selectedGrant?.id == grant.id, displayAttachment?.session.id == session.id { return showSessions() }
+        guard let entry = kept.first(where: { $0.key == PairedTerminalKey(grantID: grant.id, sessionID: session.id) }) else { return }
+        _ = disconnectKept(entry)
+        UIAccessibility.post(notification: .announcement, argument: String(localized: "Disconnected from \(session.name)", bundle: .main))
+    }
+
+    /// Moves the live terminal on screen into `kept`. False when there's
+    /// none (nothing on screen, or it isn't connected).
+    @discardableResult
+    fileprivate func keepDisplayed() -> Bool {
+        guard busy == nil, !parked, let grant = selectedGrant, let session = selectedSession, let host,
+              let link = attachment, displayAttachment != nil, connectionState == .connected else { return false }
+        let typing = mode == .control
+        cancelWork()
+        _ = deactivate()
+        let entry = KeptPairedTerminal(grant: grant, session: session, host: host, link: link,
+                                       grid: liveGrid ?? (session.columns, session.rows), state: typing ? .releasing : .live)
+        kept.append(entry)
+        // Off screen now: the renderer stays with the entry.
+        self.host = nil
+        displayAttachment = nil
+        attachmentID = UUID()
+        selectedSession = nil
+        connectionState = .browsing
+        notice = false
+        keptNote = nil
+        resumeWhenActive = false
+        if typing { releaseTyping(entry) }
+        #if DEBUG
+        Self.layoutLog.notice("kept session=\(session.id, privacy: .public) typing=\(typing, privacy: .public) kept=\(self.kept.count, privacy: .public) live=\(PairedKeepAlive.liveCount, privacy: .public) keptKB=\(PairedKeepAlive.keptBytes / 1024, privacy: .public)")
+        #endif
+        return true
+    }
+
+    /// Typing stops as when the keyboard hides (Round 16 and 17): the Mac
+    /// gets the watching size, the typing link is let go with its ACK (its
+    /// renderer stays until then), and a watching link with its own renderer
+    /// takes over. A release that fails disconnects the terminal: nothing is
+    /// ever resent, and typing is never kept off screen.
+    private func releaseTyping(_ entry: KeptPairedTerminal) {
+        let previous = entry.link, old = entry.host
+        old.freeze()
+        let fit = old.surface.watchingFit
+        let open: (@Sendable (String, Int, Int, LocalAttachmentMode) async throws -> any PairedTerminalLink)?
+        open = try? linkOpener(for: entry.grant)
+        entry.work = Task { [weak self, weak entry] in
+            // Best effort: another writer may own the grid, and the detach decides.
+            try? await previous.resize(columns: fit.columns, rows: fit.rows)
+            do { try await previous.detach() } catch {
+                await previous.abort()
+                guard let self, let entry else { return }
+                _ = self.disconnectKept(entry, acknowledged: false)
+                return
+            }
+            guard let self, let entry, entry.state == .releasing, let open else {
+                if let entry, entry.state == .releasing { _ = self?.disconnectKept(entry, acknowledged: false) }
+                return
+            }
+            do {
+                let next = try await open(entry.session.id, fit.columns, fit.rows, .view)
+                guard entry.state == .releasing, self.kept.contains(where: { $0 === entry }) else {
+                    await next.abort()
+                    return
+                }
+                let watching = self.makeHost(id: UUID(), link: next, mode: .view)
+                entry.adopt(host: watching, link: next)
+                entry.grid = (next.session.columns, next.session.rows)
+                entry.set(.live)
+                old.stop()
+            } catch {
+                _ = self.disconnectKept(entry, acknowledged: false)
+                if Self.isTrustFailure(error) { self.keptGrantEnded(entry.grant) }
+            }
+        }
+    }
+
+    /// Shows a kept terminal again: the same renderer and attachment, so
+    /// nothing reconnects or redraws. It shows with the keyboard down
+    /// (watching); the keyboard button or a tap types, as usual. One still
+    /// changing (releasing, resuming) is shown once that's done.
+    private func reopen(_ entry: KeptPairedTerminal) {
+        guard entry.state != .live else { return adopt(entry) }
+        busy = String(localized: "Opening terminal…", bundle: .main)
+        selectedGrant = entry.grant
+        let token = generation
+        let step = entry.work
+        work = Task { [weak self, weak entry] in
+            await step?.value
+            guard let self, self.generation == token, !Task.isCancelled else { return }
+            self.busy = nil
+            self.work = nil
+            if let entry, entry.state == .live, self.kept.contains(where: { $0 === entry }) {
+                self.adopt(entry)
+            } else if let entry {
+                // It couldn't stay connected: open it the usual way.
+                self.open(entry.session, on: entry.grant)
+            }
+        }
+    }
+
+    private func adopt(_ entry: KeptPairedTerminal) {
+        kept.removeAll { $0 === entry }
+        cancelWork()
+        if selectedGrant?.id != entry.grant.id {
+            selectedGrant = entry.grant
+            if !grants.contains(where: { $0.id == entry.grant.id }) { grants.append(entry.grant) }
+        }
+        if let listed = terminals[entry.grant.id] { sessions = listed }
+        if !sessions.contains(where: { $0.id == entry.session.id }) { sessions.append(entry.session) }
+        let live = LocalSessionInfo(id: entry.session.id, name: entry.session.name, createdAt: entry.session.createdAt,
+                                    columns: entry.grid.columns, rows: entry.grid.rows, access: entry.session.access,
+                                    writers: entry.session.writers)
+        selectedSession = live
+        unpairedName = nil
+        issue = nil
+        notice = false
+        keptNote = nil
+        mode = entry.host.mode
+        reconnectMode = .view
+        attachmentID = entry.host.id
+        activeID = entry.host.id
+        liveGrid = entry.grid
+        host = entry.host
+        displayAttachment = entry.link
+        attachment = entry.link
+        connectionState = .connected
+        #if DEBUG
+        Self.layoutLog.notice("reopened kept session=\(entry.session.id, privacy: .public) kept=\(self.kept.count, privacy: .public)")
+        #endif
+    }
+
+    /// Lets a kept terminal go: with the Mac's ACK unless `acknowledged` is
+    /// false (its link already failed or ended). Returns the release, for
+    /// opening another only after it.
+    @discardableResult
+    func disconnectKept(_ entry: KeptPairedTerminal, acknowledged: Bool = true) -> Task<Void, Never> {
+        let wasLive = entry.state == .live
+        entry.set(.closing)
+        kept.removeAll { $0 === entry }
+        let link = entry.link, host = entry.host, step = entry.work
+        step?.cancel()
+        return Task {
+            if acknowledged, wasLive {
+                do { try await link.detach() } catch { await link.abort() }
+            } else {
+                await link.abort()
+            }
+            host.stop()
+        }
+    }
+
+    /// Every kept terminal of `grant` is let go (unpaired, invitation
+    /// ended, revoked). Returns once each has let go.
+    func disconnectKept(grantIDs: Set<String>, acknowledged: Bool) async {
+        let releases = kept.filter { grantIDs.contains($0.grant.id) }.map { disconnectKept($0, acknowledged: acknowledged) }
+        for release in releases { await release.value }
+    }
+
+    /// A kept terminal found its grant gone: the device leaves the lists,
+    /// and Terminals says why, as when it happens on screen.
+    private func keptGrantEnded(_ grant: DeviceGrant) {
+        if selectedGrant?.id == grant.id { return authorizationUnavailable() }
+        for entry in kept where entry.grant.id == grant.id { _ = disconnectKept(entry, acknowledged: false) }
+        grants.removeAll { $0.id == grant.id }
+        terminals[grant.id] = nil
+        listing[grant.id] = nil
+        SharedTerminals.forget(grant.id)
+        unpairedName = grant.host.name
+        UIAccessibility.post(notification: .announcement,
+                             argument: String(localized: "No Longer Paired with \(grant.host.name)", bundle: .main))
+    }
+
+    private func noteDisconnected(_ names: [String]) {
+        let list = names.map { "“\($0)”" }.formatted(.list(type: .and))
+        let note = String(localized: "Disconnected \(list) to keep \(PairedKeepAlive.limit) terminals connected. It keeps running.", bundle: .main)
+        keptNote = note
+        UIAccessibility.post(notification: .announcement, argument: note)
+    }
+
+    func dismissKeptNote() { keptNote = nil }
+
+    // MARK: Kept terminals in the background
+
+    /// Lets each kept terminal's link go with the Mac's ACK (or at once when
+    /// iOS is out of time), keeping its renderer and screen.
+    func parkKept(acknowledged: Bool) {
+        for entry in kept where entry.state == .live {
+            entry.set(.parked)
+            let link = entry.link
+            entry.work = Task {
+                if acknowledged { do { try await link.detach() } catch { await link.abort() } } else { await link.abort() }
+            }
+        }
+    }
+
+    /// Back within the window: each parked kept terminal gets a new watching
+    /// link for the same renderer. Past it, every kept terminal is let go.
+    func returnKept(withinWindow: Bool) {
+        for entry in kept {
+            if withinWindow {
+                if entry.state == .parked { resume(entry) }
+            } else {
+                _ = disconnectKept(entry)
+            }
+        }
+    }
+
+    /// A new watching link for a parked kept terminal, to its same renderer,
+    /// after any release still under way. If it can't connect, it's let go.
+    private func resume(_ entry: KeptPairedTerminal) {
+        guard entry.state == .parked, let open = try? linkOpener(for: entry.grant) else {
+            _ = disconnectKept(entry, acknowledged: false)
+            return
+        }
+        entry.set(.resuming)
+        let step = entry.work, grid = entry.grid
+        entry.work = Task { [weak self, weak entry] in
+            await step?.value
+            guard let entry, entry.state == .resuming else { return }
+            do {
+                let next = try await open(entry.session.id, grid.columns, grid.rows, .view)
+                guard let self, entry.state == .resuming, self.kept.contains(where: { $0 === entry }) else {
+                    await next.abort()
+                    return
+                }
+                entry.resumed(with: next)
+                entry.set(.live)
+                #if DEBUG
+                Self.layoutLog.notice("kept resumed session=\(entry.session.id, privacy: .public)")
+                #endif
+            } catch {
+                guard let self else { return }
+                _ = self.disconnectKept(entry, acknowledged: false)
+                if Self.isTrustFailure(error) { self.keptGrantEnded(entry.grant) }
+            }
+        }
     }
 }
 

@@ -322,8 +322,7 @@ struct WitermCommands: Commands {
             }
                 .keyboardShortcut("t", modifiers: [.command, .shift])
                 .disabled(actions?.setTyping == nil)
-            Button(String(localized: "Leave", bundle: .main)) { actions?.leave?() }
-                .disabled(actions?.leave == nil)
+            // One word for ending a connection, paired or SSH (Round 18).
             Button(String(localized: "Disconnect", bundle: .main)) { actions?.disconnect?() }
                 .disabled(actions?.disconnect == nil)
             #endif

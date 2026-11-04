@@ -120,6 +120,76 @@ import XCTest
         assertGridFillsTheScreen("after hiding it again")
     }
 
+    // MARK: Round 18: the bottom obstruction
+
+    /// The surface's height in points, from the probe's keyboard diagnostics.
+    private func surfaceHeight() -> Double? {
+        guard let text = probeText("surface") else { return nil }
+        let parts = text.split(separator: ",").compactMap { Double($0.filter { $0 != "]" }) }
+        return parts.count == 4 ? parts[3] : nil
+    }
+
+    /// The keyboard's space, from the probe's keyboard diagnostics.
+    private func keyboardOverlap() -> Double? {
+        guard surface.exists else { return nil }
+        let label = surface.label
+        guard let range = label.range(of: "kbdiag=[overlap=") else { return nil }
+        return Double(label[range.upperBound...].prefix { $0.isNumber || $0 == "." })
+    }
+
+    /// What the bottom of the terminal shows that isn't text: the surface's
+    /// height less the keyboard's space and the grid's rows on screen. A
+    /// reserved strip for the keyboard button, or a grid shorter than the
+    /// screen, reads as a band here.
+    private func bottomBand() -> (band: Double, cell: Double)? {
+        guard let height = surfaceHeight(), let overlap = keyboardOverlap(), let grid = probe("frameH"),
+              let shown = probe("boundsH"), let cell = probe("cell") else { return nil }
+        return (height - overlap - min(grid, shown), cell)
+    }
+
+    private func assertNoBand(_ step: String) {
+        guard let measured = bottomBand() else { return XCTFail("No probe at \(step)") }
+        print("PROBE r18 band \(step): band=\(String(format: "%.1f", measured.band)) cell=\(measured.cell) rows=\(probeText("rows") ?? "?") fitRows=\(probeText("fitRows") ?? "?") overlap=\(keyboardOverlap() ?? -1) kb=\(keyboardButton.exists ? NSCoder.string(for: keyboardButton.frame) : "none")")
+        XCTAssertLessThan(measured.band, measured.cell, "\(step): \(measured.band) pt at the bottom with no text (a band)")
+    }
+
+    /// The owner's "obstruction at the bottom": watching, the keyboard
+    /// button's strip (60 pt) and the partial row under the grid left an
+    /// empty band. The terminal now uses the full height, with the button
+    /// floating over it; portrait and landscape, keyboard up and down.
+    func testTheTerminalUsesTheFullHeightWithTheKeyboardDown() {
+        launch()
+        continueAfterFailure = true
+        open("fixture-s1")
+        waitForTyping()
+        shot("r18-1-typing-portrait")
+        assertNoBand("typing, portrait")
+        hideKey.tap()
+        waitForWatching()
+        shot("r18-2-watching-portrait")
+        assertNoBand("watching, portrait")
+        // The watched grid's last row is fully on screen and nothing is cut off.
+        XCTAssertLessThan(probe("overflow") ?? 99, 1)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+        shot("r18-3-watching-landscape-portrait-grid")
+        keyboardButton.tap()
+        waitForTyping()
+        shot("r18-4-typing-landscape")
+        assertNoBand("typing, landscape")
+        hideKey.tap()
+        waitForWatching()
+        shot("r18-5-watching-landscape")
+        assertNoBand("watching, landscape")
+        XCUIDevice.shared.orientation = .portrait
+        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+        keyboardButton.tap()
+        waitForTyping()
+        hideKey.tap()
+        waitForWatching()
+        assertNoBand("watching, portrait again")
+    }
+
     // MARK: A3
 
     func testTappingAWatchedTerminalStartsTypingWhenNobodyElseTypes() {

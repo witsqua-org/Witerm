@@ -67,9 +67,91 @@ enum TerminalKeyboardOverlap {
     }
 }
 
-struct RemoteNativeTerminalView: UIViewRepresentable {
-    let attachment: any PairedTerminalLink
+/// What a paired terminal's renderer tells whoever owns it: the model while
+/// it's on screen or kept connected off screen (Round 18). Each is called
+/// with nothing but what the renderer saw; the model knows which terminal
+/// it belongs to.
+@MainActor struct PairedTerminalRoutes {
+    /// The link was let go in the background (or lost): keep the screen and
+    /// wait for a new link (Round 17's resume in place).
+    var isParked: () -> Bool = { false }
+    /// The link failed; true when the owner parks the terminal to resume it.
+    var onLinkLost: (Error) -> Bool = { _ in false }
+    /// The grid the Mac set, for resuming at it.
+    var onGrid: (Int, Int) -> Void = { _, _ in }
+    var onFailure: (Error) -> Void = { _ in }
+    var onEnded: () -> Void = {}
+}
+
+/// A paired terminal's renderer and the task that feeds it, owned by the
+/// model rather than by a view, as `SSHTerminalHost` is for SSH (Round 18).
+/// It keeps consuming the Mac's output (and so acknowledging it, which keeps
+/// the relay's flow control moving) whether or not any view shows it, so a
+/// terminal left with Back stays connected and reopens as it was: the same
+/// renderer, scrollback and attachment, with nothing to redraw. Views only
+/// place its surface; the model stops it when it lets the terminal go.
+@MainActor final class PairedTerminalHost {
+    let id: UUID
     let mode: LocalAttachmentMode
+    let surface: RemoteNativeTerminalView.TerminalSurface
+    let coordinator: RemoteNativeTerminalView.LinkCoordinator
+    private(set) var link: any PairedTerminalLink
+
+    init(id: UUID, link: any PairedTerminalLink, mode: LocalAttachmentMode, fontSize: CGFloat,
+         routes: PairedTerminalRoutes) {
+        TerminalView.textInputDebugEnabled = false
+        self.id = id
+        self.mode = mode
+        self.link = link
+        surface = RemoteNativeTerminalView.TerminalSurface(mode: mode, session: link.session,
+                                                           fontSize: fontSize, isInteractive: true)
+        coordinator = RemoteNativeTerminalView.LinkCoordinator(attachment: link, mode: mode, keyboardRequest: 0,
+                                                           isInteractive: true, routes: routes)
+        surface.terminal.inputDestination = link.session.name
+        // A paired terminal shows the Mac service's own tmux client, which
+        // asks for the mouse by itself (tmux 3.6 and later default `mouse`
+        // to on, even with -f /dev/null). Its touches stay Witerm's.
+        surface.terminal.passesMouseToPrograms = false
+        surface.terminal.focusesWhenShown = mode == .control
+        surface.terminal.terminalDelegate = coordinator
+        coordinator.surface = surface
+        coordinator.start(surface.terminal)
+    }
+
+    /// A resumed terminal: the same renderer takes the new link.
+    func replace(_ next: any PairedTerminalLink) {
+        guard next !== link else { return }
+        link = next
+        coordinator.replace(next)
+    }
+
+    /// Takes keys and resizes no more (while a switch or a release waits for
+    /// the Mac's ACK); the screen stays.
+    func freeze() {
+        surface.setInteractive(false)
+        coordinator.setInteractive(false)
+    }
+
+    /// Stops the renderer: its tasks end and its link is closed.
+    func stop() {
+        surface.terminal.terminalDelegate = nil
+        coordinator.stop()
+        surface.removeFromSuperview()
+    }
+
+    /// The renderer's memory, roughly: SwiftTerm keeps each line of the
+    /// screen and its scrollback (500 lines) as cells, about 24 bytes each.
+    var approximateBytes: Int {
+        let core = surface.terminal.getTerminal()
+        return (core.rows + 500) * core.cols * 24
+    }
+}
+
+/// Places a paired terminal's renderer (`PairedTerminalHost`) and applies
+/// the person's display preferences to it. Removing this view only takes
+/// the renderer off screen; the model decides when the terminal is let go.
+struct RemoteNativeTerminalView: UIViewRepresentable {
+    let host: PairedTerminalHost
     let keyboardRequest: Int
     var isInteractive: Bool = true
     var fontSize: CGFloat = 14
@@ -87,64 +169,39 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
     var keyboardButton: (() -> Void)? = nil
     /// A tap on the terminal while watching one this device may type in.
     var tapToType: (() -> Void)? = nil
-    /// The link was let go in the background (or lost): keep the screen and
-    /// wait for a new `attachment` (Round 17's resume in place).
-    var isParked: () -> Bool = { false }
-    /// The link failed; true when the model parks the terminal to resume it.
-    var onLinkLost: (Error) -> Bool = { _ in false }
-    /// The grid the Mac set, for resuming at it.
-    var onGrid: (Int, Int) -> Void = { _, _ in }
-    let onFailure: (Error) -> Void
-    let onEnded: () -> Void
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(attachment: attachment, mode: mode, keyboardRequest: keyboardRequest,
-                    isInteractive: isInteractive, onFailure: onFailure, onEnded: onEnded)
+    func makeUIView(context: Context) -> UIView {
+        let container = UIView()
+        attach(to: container)
+        return container
     }
 
-    func makeUIView(context: Context) -> TerminalSurface {
-        TerminalView.textInputDebugEnabled = false
-        let surface = TerminalSurface(mode: mode, session: attachment.session,
-                                      fontSize: fontSize, isInteractive: isInteractive)
-        surface.updateAppearance(highContrast: highContrast, scheme: preferredColorScheme, palette: palette)
-        surface.announceOutput = announceOutput
-        surface.terminal.inputDestination = inputDestination ?? attachment.session.name
-        // A paired terminal shows the Mac service's own tmux client, which
-        // asks for the mouse by itself (tmux 3.6 and later default `mouse`
-        // to on, even with -f /dev/null). Its touches stay Witerm's.
-        surface.terminal.passesMouseToPrograms = false
-        surface.terminal.focusesWhenShown = isInteractive && mode == .control
-        surface.terminal.terminalDelegate = context.coordinator
-        context.coordinator.isParked = isParked
-        context.coordinator.onLinkLost = onLinkLost
-        context.coordinator.onGrid = onGrid
-        context.coordinator.surface = surface
-        context.coordinator.start(surface.terminal)
-        finder?.terminal = surface.terminal
-        return surface
-    }
-
-    func updateUIView(_ view: TerminalSurface, context: Context) {
-        context.coordinator.isParked = isParked
-        context.coordinator.onLinkLost = onLinkLost
-        context.coordinator.onGrid = onGrid
-        // A resumed terminal: the same renderer takes the new link.
-        context.coordinator.replace(attachment)
-        view.setInteractive(isInteractive)
-        context.coordinator.setInteractive(isInteractive)
+    func updateUIView(_ container: UIView, context: Context) {
+        if host.surface.superview !== container { attach(to: container) }
+        let view = host.surface
+        if !isInteractive { host.freeze() }
         view.updateFontSize(fontSize)
         view.updateAppearance(highContrast: highContrast, scheme: preferredColorScheme, palette: palette)
         view.announceOutput = announceOutput
+        view.terminal.inputDestination = inputDestination ?? host.link.session.name
         view.terminal.setBarActions(barActions)
         view.terminal.tapToType = tapToType
         view.setKeyboardButton(keyboardButton, identifier: "remoteKeyboard",
                                hint: String(localized: "Starts typing in this terminal.", bundle: .main))
-        context.coordinator.requestKeyboardToggle(keyboardRequest, terminal: view.terminal)
+        host.coordinator.requestKeyboardToggle(keyboardRequest, terminal: view.terminal)
+        finder?.terminal = view.terminal
     }
 
-    static func dismantleUIView(_ view: TerminalSurface, coordinator: Coordinator) {
-        view.terminal.terminalDelegate = nil
-        coordinator.stop()
+    static func dismantleUIView(_ container: UIView, coordinator: ()) {
+        container.subviews.forEach { $0.removeFromSuperview() }
+    }
+
+    private func attach(to container: UIView) {
+        let surface = host.surface
+        surface.removeFromSuperview()
+        surface.frame = container.bounds
+        surface.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        container.addSubview(surface)
     }
 
     @MainActor final class TerminalSurface: UIView, UIScrollViewDelegate {
@@ -237,6 +294,9 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             observeKeyboard()
         }
 
+        /// The keyboard button's frame while it shows, for tests.
+        var shownKeyboardButtonFrame: CGRect? { keyboardButton.isHidden ? nil : keyboardButton.frame }
+
         private func installLatestButton() {
             FloatingTerminalButton.style(latestButton, symbol: Self.latestSymbol)
             latestButton.largeContentImage = UIImage(systemName: Self.latestSymbol)
@@ -285,17 +345,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             updateKeyboardButton()
         }
 
-        @objc private func keyboardFocusChanged() {
-            holdsStripForKeyboard = terminal.isFirstResponder && keyboardButtonAction != nil && keyboardOverlap == 0
-            if holdsStripForKeyboard {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
-                    guard let self, self.holdsStripForKeyboard else { return }
-                    self.holdsStripForKeyboard = false
-                    self.setNeedsLayout()
-                }
-            }
-            updateKeyboardButton()
-        }
+        @objc private func keyboardFocusChanged() { updateKeyboardButton() }
 
         private func updateKeyboardButton() {
             let hidden = keyboardButtonAction == nil || terminal.isFirstResponder
@@ -311,23 +361,87 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
                 + (keyboardButton.isHidden ? [] : [keyboardButton])
         }
 
-        /// The strip under the text that holds the keyboard button: there
-        /// whenever nothing covers the bottom, and gone in the same layout as
-        /// the keyboard's own inset arrives, so showing or hiding the keyboard
-        /// still changes the grid once (not once for focus, once for the
-        /// keyboard).
-        private var keyboardButtonStrip: CGFloat {
-            guard keyboardButtonAction != nil, keyboardOverlap == 0,
-                  !terminal.isFirstResponder || holdsStripForKeyboard else { return 0 }
-            return Self.keyboardButtonSide + 2 * FloatingTerminalButton.gap
+        /// Round 18: the keyboard button floats over the text and reserves
+        /// no space. Round 16's 8 + 44 + 8 pt strip under the text cost three
+        /// rows and, with the partial row under a watched grid, read as an
+        /// empty band at the bottom (the owner's "obstruction"). The button
+        /// moves out of the way of text instead (`placeKeyboardButton`).
+        static let keyboardButtonSide = FloatingTerminalButton.side
+
+        /// Where the keyboard button rests: the bottom right of the text.
+        private func restingKeyboardButtonFrame(in content: CGRect) -> CGRect {
+            let side = FloatingTerminalButton.side, gap = FloatingTerminalButton.gap
+            let x = bounds.maxX - max(FloatingTerminalButton.trailing, safeAreaInsets.right) - side
+            return CGRect(x: x, y: content.maxY - gap - side, width: side, height: side)
         }
 
-        /// Just focused: the strip stays until the keyboard's inset arrives
-        /// (or a moment passes), so the grid changes once. While focused, a
-        /// keyboard frame in flux (rotating) never brings the strip back.
-        private var holdsStripForKeyboard = false
+        /// The keyboard button never covers the cursor, and prefers blank
+        /// cells: from its resting place it steps up a row at a time, within
+        /// the text's lower half, to the first place where only blank cells
+        /// are under it. With text everywhere there (a full-screen program),
+        /// it rests at the bottom unless the cursor is under it, and then
+        /// sits just above the cursor's row. Only the button moves; the grid
+        /// never changes for it.
+        private func placeKeyboardButton(_ rest: CGRect, in content: CGRect) -> CGRect {
+            let cell = cellSize
+            guard !keyboardButton.isHidden, cell.height > 0, cell.width > 0 else { return rest }
+            let lowest = content.minY + content.height / 2
+            var frame = rest
+            while frame.minY >= lowest {
+                if !covers(frame, text: true) { return frame }
+                frame.origin.y -= cell.height
+            }
+            frame = rest
+            while frame.minY - cell.height >= content.minY, covers(frame, text: false) { frame.origin.y -= cell.height }
+            return frame
+        }
 
-        static let keyboardButtonSide = FloatingTerminalButton.side
+        /// Whether `frame` (in this view) lies over the cursor's cell or,
+        /// with `text`, over any cell that isn't blank.
+        private func covers(_ frame: CGRect, text: Bool) -> Bool {
+            let core = terminal.getTerminal(), cell = cellSize
+            let local = terminal.convert(frame.insetBy(dx: -2, dy: -2), from: self)
+            let top = CGFloat(core.getTopVisibleRow()) * cell.height
+            let firstRow = max(0, Int(floor((local.minY - top) / cell.height)))
+            let lastRow = min(core.rows - 1, Int(floor((local.maxY - top) / cell.height)))
+            let firstColumn = max(0, Int(floor(local.minX / cell.width)))
+            let lastColumn = min(core.cols - 1, Int(floor(local.maxX / cell.width)))
+            guard firstRow <= lastRow, firstColumn <= lastColumn else { return false }
+            let following = !terminal.canScroll || terminal.scrollPosition >= 0.999 || core.isCurrentBufferAlternate
+            let cursor = core.getCursorLocation()
+            if following, (firstRow...lastRow).contains(cursor.y), (firstColumn...lastColumn).contains(min(cursor.x, core.cols - 1)) {
+                return true
+            }
+            guard text else { return false }
+            for row in firstRow...lastRow {
+                for column in firstColumn...lastColumn {
+                    if let character = core.getCharacter(col: column, row: row), character != " ", character != "\u{0}" { return true }
+                }
+            }
+            return false
+        }
+
+        /// Moves the floating buttons when the text under them changes.
+        private func updateFloatingButtons() {
+            let content = contentBounds
+            let side = FloatingTerminalButton.side, gap = FloatingTerminalButton.gap
+            let keyboardFrame = placeKeyboardButton(restingKeyboardButtonFrame(in: content), in: content)
+            // Jump to Latest sits just above the keyboard button when it
+            // shows, otherwise just above the text's bottom.
+            let latestY = keyboardButton.isHidden ? content.maxY - side - gap : keyboardFrame.minY - gap - side
+            let latestFrame = CGRect(x: keyboardFrame.minX, y: latestY, width: side, height: side)
+            guard keyboardButton.frame != keyboardFrame || latestButton.frame != latestFrame else { return }
+            let moved = !keyboardButton.frame.isEmpty && !keyboardButton.isHidden && keyboardButton.frame.minX == keyboardFrame.minX
+            let apply = { [self] in
+                keyboardButton.frame = keyboardFrame
+                latestButton.frame = latestFrame
+            }
+            if moved, window != nil, !UIAccessibility.isReduceMotionEnabled {
+                UIView.animate(withDuration: 0.2, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction], animations: apply)
+            } else {
+                apply()
+            }
+        }
 
         private func installSizeReadout() {
             sizeReadout.font = .preferredFont(forTextStyle: .headline)
@@ -500,7 +614,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         /// without the part the keyboard covers.
         private var contentBounds: CGRect {
             let left = max(Self.edgeInset, safeAreaInsets.left), right = max(Self.edgeInset, safeAreaInsets.right)
-            return bounds.inset(by: UIEdgeInsets(top: 0, left: left, bottom: keyboardOverlap + keyboardButtonStrip, right: right))
+            return bounds.inset(by: UIEdgeInsets(top: 0, left: left, bottom: keyboardOverlap, right: right))
         }
 
         // MARK: Keyboard
@@ -620,24 +734,20 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             defer { probeLayout(CACurrentMediaTime() - started) }
             #endif
             if let measured = measuredKeyboardOverlap() { keyboardOverlap = measured }
-            if keyboardOverlap > 0 { holdsStripForKeyboard = false }
             let content = contentBounds
             scroll.transform = .identity
             scroll.frame = content
             readingView.frame = content
-            // One placement rule for both floating buttons: the same
-            // trailing inset; Jump to Latest just above the text's bottom
-            // (the key row or the keyboard button's strip), the keyboard
-            // button in its strip under the text.
-            let side = FloatingTerminalButton.side, gap = FloatingTerminalButton.gap
-            let trailingX = bounds.maxX - max(FloatingTerminalButton.trailing, safeAreaInsets.right) - side
-            latestButton.frame = CGRect(x: trailingX, y: content.maxY - side - gap, width: side, height: side)
-            keyboardButton.frame = CGRect(x: trailingX, y: content.maxY + gap, width: side, height: side)
             layoutSizeReadout()
             if let grid = fixedGrid {
                 preserveGrid(grid)
                 terminal.frame = fixedGridFrame()
                 preserveGrid(grid)
+                // A grid that fills the screen but for part of a row leaves
+                // that part at the top, so the last line sits on the bottom
+                // edge instead of above a sliver of background.
+                let leftover = content.height - terminal.frame.height, cell = cellSize.height
+                if leftover > 0, leftover < cell { terminal.frame.origin.y = leftover }
             } else {
                 reportedFit = nil
                 let grid = terminal.getOptimalFrameSize()
@@ -652,7 +762,11 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
                 ))
                 pinToBottomIfFollowing()
             }
-            scroll.contentSize = terminal.frame.size
+            scroll.contentSize = CGSize(width: terminal.frame.maxX, height: terminal.frame.maxY)
+            // One placement rule for both floating buttons, over the text:
+            // the same trailing inset; the keyboard button at the text's
+            // bottom right (out of the cursor's way), Jump to Latest above it.
+            updateFloatingButtons()
             // A grid that shrank (such as after following a wider one) must
             // not leave the view scrolled past its new edges.
             let maximum = CGPoint(x: max(0, scroll.contentSize.width - scroll.bounds.width),
@@ -690,7 +804,8 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             let keyboard = Self.reportedKeyboard.map { rect($0.frame) + String(format: "@%.0fx%.0f", $0.screen.width, $0.screen.height) } ?? "none"
             let fixed = fixedGrid.map { "\($0.columns)x\($0.rows)" } ?? "none"
             let line = "mode=\(mode == .view ? "view" : "control") focused=\(terminal.isFirstResponder) keyboard=[\(keyboard)] "
-                + "keyRow=[\(keyRowFrame.map { rect($0.frame) } ?? "none")] " + String(format: "overlap=%.1f strip=%.0f ", keyboardOverlap, keyboardButtonStrip)
+                + "keyRow=[\(keyRowFrame.map { rect($0.frame) } ?? "none")] " + String(format: "overlap=%.1f ", keyboardOverlap)
+                + "keyboardButton=\(keyboardButton.isHidden ? "hidden" : rect(keyboardButton.frame)) "
                 + "view=\(rect(bounds)) text=\(rect(content)) grid=\(core.cols)x\(core.rows) fixed=\(fixed) fit=\(fit.columns)x\(fit.rows) "
                 + String(format: "gridHeight=%.0f", terminal.frame.height)
             guard line != loggedLayout else { return }
@@ -746,7 +861,9 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
 
         func coverForResume() {
             resumeCover?.removeFromSuperview()
-            guard !bounds.isEmpty, let cover = snapshotView(afterScreenUpdates: false) else { return }
+            // Off screen (a terminal kept connected after Back) there's
+            // nothing to cover: the redraw is done before it shows again.
+            guard window != nil, !bounds.isEmpty, let cover = snapshotView(afterScreenUpdates: false) else { return }
             cover.frame = bounds
             cover.isUserInteractionEnabled = false
             cover.accessibilityElementsHidden = true
@@ -784,17 +901,18 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         }
 
         /// The grid this view shows once it stops typing: the whole view
-        /// (no keyboard), less the keyboard button's strip, in whole cells.
-        /// Hiding the keyboard tells the Mac this size before letting go, so
-        /// the watched grid fills the screen instead of keeping the rows
-        /// that were above the keyboard (the black half screen, Round 17).
+        /// (no keyboard), in whole cells; the keyboard button floats over it
+        /// (Round 18). Hiding the keyboard tells the Mac this size before
+        /// letting go, so the watched grid fills the screen instead of keeping
+        /// the rows that were above the keyboard (the black half screen,
+        /// Round 17).
         var watchingFit: (columns: Int, rows: Int) {
             let cell = cellSize
             guard cell.width > 0, cell.height > 0, !bounds.isEmpty else { return (session.columns, session.rows) }
             func whole(_ length: CGFloat, _ unit: CGFloat) -> Int { Int((length / unit) * (1 + 1e-9)) }
             let left = max(Self.edgeInset, safeAreaInsets.left), right = max(Self.edgeInset, safeAreaInsets.right)
             let width = bounds.width - left - right
-            let height = bounds.height - (Self.keyboardButtonSide + 2 * FloatingTerminalButton.gap)
+            let height = bounds.height
             return (min(500, max(20, whole(width, cell.width))), min(200, max(5, whole(height, cell.height))))
         }
 
@@ -937,6 +1055,8 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             let document = TerminalAXDocument.make(terminal: core, rows: page.rows, columns: page.columns, cursor: liveCursor)
             readingView.update(document: document, cellSize: cellSize, font: terminal.font,
                                announceOutput: outputChanged && announceOutput)
+            // New text may now lie under the keyboard button.
+            if outputChanged { updateFloatingButtons() }
             #if DEBUG
             if Self.layoutProbe {
                 let base = readingView.accessibilityLabel?.components(separatedBy: " |").first ?? ""
@@ -983,6 +1103,16 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
                               fitGrid.rows, max(0, shown - grid), max(0, grid - shown))
             if RemoteFixture.isActive { line += " links=\(FixtureMac.shared.opened)" }
             line += " covers=\(coversShown) coverMs=\(lastCoverMs) focused=\(terminal.isFirstResponder ? 1 : 0)"
+            // Round 18: the grid's last row and the cursor's cell, in window
+            // points, so tests can check the keyboard button covers neither.
+            let core = terminal.getTerminal(), cell = cellSize, cursor = core.getCursorLocation()
+            let top = CGFloat(core.getTopVisibleRow()) * cell.height
+            let cursorRect = terminal.convert(CGRect(x: CGFloat(cursor.x) * cell.width, y: top + CGFloat(cursor.y) * cell.height,
+                                                     width: cell.width, height: cell.height), to: nil)
+            let gridBottom = terminal.convert(CGPoint(x: 0, y: top + CGFloat(core.rows) * cell.height), to: nil).y
+            let surfaceBottom = convert(CGPoint(x: 0, y: bounds.maxY - keyboardOverlap), to: nil).y
+            line += String(format: " cursorCell=%.1f,%.1f,%.1f,%.1f gridBottom=%.1f textBottom=%.1f",
+                           cursorRect.minX, cursorRect.minY, cursorRect.width, cursorRect.height, gridBottom, surfaceBottom)
             return line
         }
 
@@ -2241,15 +2371,20 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         }
     }
 
-    @MainActor final class Coordinator: NSObject, @preconcurrency TerminalViewDelegate {
+    @MainActor final class LinkCoordinator: NSObject, @preconcurrency TerminalViewDelegate {
         private var keyboardRequest: Int
         private var keyboardGeneration: UInt64 = 0
         private weak var terminal: TerminalInputView?
         private var isInteractive: Bool
         private var attachment: any PairedTerminalLink
         private let mode: LocalAttachmentMode
-        private let onFailure: (Error) -> Void
-        private let onEnded: () -> Void
+        /// Who owns this renderer now hears about it here.
+        private let routes: PairedTerminalRoutes
+        private var isParked: () -> Bool { routes.isParked }
+        private var onLinkLost: (Error) -> Bool { routes.onLinkLost }
+        private var onGrid: (Int, Int) -> Void { routes.onGrid }
+        private var onFailure: (Error) -> Void { routes.onFailure }
+        private var onEnded: () -> Void { routes.onEnded }
         private var outputTask: Task<Void, Never>?
         private var inputTask: Task<Void, Never>?
         private var resizeTask: Task<Void, Never>?
@@ -2265,20 +2400,15 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         /// Between a parked link and its replacement: nothing is sent, and
         /// nothing typed meanwhile is kept for later.
         private var paused = false
-        var isParked: () -> Bool = { false }
-        var onLinkLost: (Error) -> Bool = { _ in false }
-        var onGrid: (Int, Int) -> Void = { _, _ in }
         weak var surface: TerminalSurface?
 
         init(attachment: any PairedTerminalLink, mode: LocalAttachmentMode, keyboardRequest: Int,
-             isInteractive: Bool,
-             onFailure: @escaping (Error) -> Void, onEnded: @escaping () -> Void) {
+             isInteractive: Bool, routes: PairedTerminalRoutes) {
             self.attachment = attachment
             self.mode = mode
             self.keyboardRequest = keyboardRequest
             self.isInteractive = isInteractive
-            self.onFailure = onFailure
-            self.onEnded = onEnded
+            self.routes = routes
             serverGrid = (attachment.session.columns, attachment.session.rows)
         }
 

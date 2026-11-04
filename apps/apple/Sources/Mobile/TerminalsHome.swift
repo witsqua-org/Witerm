@@ -149,10 +149,10 @@ struct TerminalsHome: View {
                         sectionStatus(section)
                         ForEach(matching(section)) { session in
                             terminalRow(session, in: section, shared: true)
-                                .modifier(EndInvitationActions(ending: section.model.unpairingID == section.grant.id,
-                                                               offline: network?.online == false) {
-                                    endingInvitation = EndingInvitation(section: section, name: session.name)
-                                })
+                                .modifier(PairedTerminalRowActions(
+                                    disconnect: disconnectAction(session, in: section),
+                                    endInvitation: { endingInvitation = EndingInvitation(section: section, name: session.name) },
+                                    ending: section.model.unpairingID == section.grant.id, offline: network?.online == false))
                         }
                     }
                 } header: {
@@ -250,7 +250,10 @@ struct TerminalsHome: View {
                     note(String(localized: "On the other device, choose Open On ▸ \(PairingDeviceName.current).", bundle: .main))
                         .accessibilityIdentifier("remoteSessionsEmpty")
                 }
-                ForEach(terminals) { session in terminalRow(session, in: section, shared: false) }
+                ForEach(terminals) { session in
+                    terminalRow(session, in: section, shared: false)
+                        .modifier(PairedTerminalRowActions(disconnect: disconnectAction(session, in: section)))
+                }
             }
         } header: {
             deviceHeader(section)
@@ -310,10 +313,20 @@ struct TerminalsHome: View {
         }
     }
 
+    /// Disconnect, while the terminal is connected here (on screen or kept
+    /// after Back); nil otherwise.
+    private func disconnectAction(_ session: LocalSessionInfo, in section: DeviceSection) -> (() -> Void)? {
+        guard section.model.isConnected(session, on: section.grant) else { return nil }
+        return { section.model.disconnect(session, on: section.grant) }
+    }
+
     private func terminalRow(_ session: LocalSessionInfo, in section: DeviceSection, shared: Bool) -> some View {
         let grant = section.grant, model = section.model
         let access = RemoteTerminalModel.access(for: session, on: grant)
         let shown = model.selectedGrant?.id == grant.id && model.displayAttachment?.session.id == session.id
+        // Connected here (on screen, or kept after Back): the same badge as
+        // a connected SSH host.
+        let connected = model.isConnected(session, on: grant)
         // Whose it is and that access ends with the invitation; or who else
         // types there, and Can only watch, since typing is the norm.
         let detail = shared
@@ -329,6 +342,10 @@ struct TerminalsHome: View {
                         Text(detail.joined(separator: " · "))
                             .font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
                     }
+                    if connected {
+                        StatusBadge(String(localized: "Connected", bundle: .main), systemImage: WitermSymbols.connected, tone: .positive)
+                            .accessibilityIdentifier("remoteSessionConnected-\(session.id)")
+                    }
                 }
                 Spacer(minLength: WitermMetrics.Space.s)
                 Image(systemName: "chevron.right")
@@ -343,12 +360,14 @@ struct TerminalsHome: View {
         .disabled(model.busy != nil)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(session.name)
-        .accessibilityValue(([shared ? nil : grant.host.name] + detail).compactMap { $0 }.joined(separator: ", "))
+        .accessibilityValue(([shared ? nil : grant.host.name] + detail).compactMap { $0 }.joined(separator: ", ")
+                            + (connected ? String(localized: ", connected", bundle: .main) : ""))
         .accessibilityAddTraits(shown ? [.isButton, .isSelected] : .isButton)
         .accessibilityIdentifier("remoteSession-\(session.id)")
         .listRowBackground(sizeClass == .regular && shown ? WitermTheme.tint(grant.host.identityHue) : nil)
         // No delete swipe: ending a terminal is the other device's decision
         // (a Shared with You row gets End Invitation…, which ends access).
+        // Disconnect only ends this device's connection.
     }
 
     private func note(_ text: String) -> some View {
@@ -446,25 +465,43 @@ struct TerminalsHome: View {
     }
 }
 
-/// End Invitation… on a Shared with You terminal: a trailing swipe (never
-/// a full swipe: it can't be undone) and the long-press menu, both asking
-/// first; not offered offline, when the relay server can't be told.
-private struct EndInvitationActions: ViewModifier {
-    let ending: Bool
-    let offline: Bool
-    let confirm: () -> Void
+/// A paired terminal's row actions (Round 18). **Disconnect** while it's
+/// connected here: a trailing swipe and the long-press menu, gray and not
+/// destructive (the terminal keeps running on its Mac, and reopening it
+/// connects again), never a full swipe, so one swipe can't do it by
+/// accident and a swipe works the same on every connected row, SSH ones
+/// included. A Shared with You terminal also has **End Invitation…**, red
+/// and confirmed (it can't be undone), after Disconnect; not offered
+/// offline, when the relay server can't be told.
+struct PairedTerminalRowActions: ViewModifier {
+    let disconnect: (() -> Void)?
+    var endInvitation: (() -> Void)? = nil
+    var ending = false
+    var offline = false
 
     func body(content: Content) -> some View {
         content
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                if !offline, !ending {
-                    Button(String(localized: "End Invitation…", bundle: .main), systemImage: "xmark.circle", action: confirm)
+                if let disconnect {
+                    Button(String(localized: "Disconnect", bundle: .main), systemImage: WitermSymbols.disconnect, action: disconnect)
+                        .tint(.gray)
+                        .accessibilityHint(String(localized: "The terminal keeps running on the other device.", bundle: .main))
+                }
+                if let endInvitation, !offline, !ending {
+                    Button(String(localized: "End Invitation…", bundle: .main), systemImage: "xmark.circle", action: endInvitation)
                         .tint(.red)
                 }
             }
             .contextMenu {
-                Button(String(localized: "End Invitation…", bundle: .main), systemImage: "xmark.circle", role: .destructive, action: confirm)
-                    .disabled(offline || ending)
+                if let disconnect {
+                    Button(String(localized: "Disconnect", bundle: .main), systemImage: WitermSymbols.disconnect, action: disconnect)
+                        .accessibilityHint(String(localized: "The terminal keeps running on the other device.", bundle: .main))
+                }
+                if let endInvitation {
+                    if disconnect != nil { Divider() }
+                    Button(String(localized: "End Invitation…", bundle: .main), systemImage: "xmark.circle", role: .destructive, action: endInvitation)
+                        .disabled(offline || ending)
+                }
             }
     }
 }
@@ -499,7 +536,9 @@ private struct FirstUseRow: View {
 }
 
 /// The host menu's main items as swipes: Favorite leading; Disconnect or
-/// Delete Host trailing. A full swipe deletes, because Undo restores it.
+/// Delete Host trailing. Disconnect (while connected) is gray and never a
+/// full swipe, as on a paired terminal's row (Round 18); Delete Host (when
+/// not connected) is red, and a full swipe deletes, because Undo restores it.
 struct SSHHostSwipeActions: ViewModifier {
     let profile: SSHProfile
     let ssh: SSHWorkspaceModel
@@ -513,11 +552,12 @@ struct SSHHostSwipeActions: ViewModifier {
                        systemImage: ssh.isFavorite(profile) ? "star.slash" : "star") { ssh.toggleFavorite(profile) }
                     .tint(.orange)
             }
-            .swipeActions(edge: .trailing) {
+            .swipeActions(edge: .trailing, allowsFullSwipe: session == nil) {
                 if let session {
-                    Button(String(localized: "Disconnect", bundle: .main), systemImage: WitermSymbols.disconnect, role: .destructive) {
+                    Button(String(localized: "Disconnect", bundle: .main), systemImage: WitermSymbols.disconnect) {
                         ssh.disconnect(session)
                     }
+                    .tint(.gray)
                 } else {
                     Button(String(localized: "Delete Host", bundle: .main), systemImage: "trash", role: .destructive) { ui.remove(profile) }
                 }
@@ -558,8 +598,11 @@ struct SSHHostMenuItems: View {
         }
         Button(String(localized: "Host Keys", bundle: .main), systemImage: "key") { ui.inspectKeys(profile) }
         Divider()
+        // Disconnect ends a connection and isn't destructive; Delete Host,
+        // red and last, removes the saved host (with Undo).
         if let session {
-            Button(String(localized: "Disconnect", bundle: .main), systemImage: WitermSymbols.disconnect, role: .destructive) { ssh.disconnect(session) }
+            Button(String(localized: "Disconnect", bundle: .main), systemImage: WitermSymbols.disconnect) { ssh.disconnect(session) }
+            Divider()
         }
         Button(String(localized: "Delete Host", bundle: .main), systemImage: "trash", role: .destructive) { ui.remove(profile) }
     }

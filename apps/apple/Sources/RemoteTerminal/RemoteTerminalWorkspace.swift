@@ -32,8 +32,8 @@ struct RemoteTerminalWorkspace: View {
         Group {
             // Shown only while a terminal (or its kept last frame) is
             // displayed: each device's terminals are listed in Terminals.
-            if let attachment = model.displayAttachment {
-                terminal(attachment)
+            if let attachment = model.displayAttachment, let host = model.host {
+                terminal(attachment, host: host)
             }
         }
         .background(model.displayAttachment != nil && compactTerminal ? terminalBackground : WitermTheme.canvas)
@@ -59,10 +59,13 @@ struct RemoteTerminalWorkspace: View {
             ToolbarItem(placement: .topBarLeading) {
                 // Symbols alone; the spoken labels name where they go.
                 if model.displayAttachment != nil {
-                    Button(model.selectedGrant?.host.name ?? String(localized: "Terminals", bundle: .main),
-                           systemImage: "chevron.backward") { model.showSessions() }
+                    // Back keeps the terminal connected (Round 18), as for SSH.
+                    Button(String(localized: "Terminals", bundle: .main),
+                           systemImage: "chevron.backward") { model.leaveKeepingConnection() }
                         .labelStyle(.iconOnly)
                         .disabled(model.busy != nil)
+                        .accessibilityHint(model.isInteractive ? String(localized: "The terminal stays connected.", bundle: .main)
+                                           : String(localized: "Returns to your terminals.", bundle: .main))
                         .accessibilityIdentifier("remoteSessionList")
                 } else if model.selectedGrant != nil {
                     Button(String(localized: "Terminals", bundle: .main), systemImage: "chevron.backward") { model.loadDevices() }
@@ -90,9 +93,11 @@ struct RemoteTerminalWorkspace: View {
             // last frame waits for a reconnect.
             if model.displayAttachment == nil { model.refreshSessions() }
         }
-        // Going back to the device list has already cleared the selection and
-        // started reloading devices; suspending then would cancel that load.
-        .onDisappear { if model.selectedGrant != nil { model.suspend() } }
+        // Renderers made off screen (a terminal left typing) start at the
+        // text size shown here.
+        .onChange(of: rendererFontSize, initial: true) { _, size in RemoteTerminalModel.rendererFontSize = size }
+        // No suspend when this disappears: the terminal stays connected
+        // until Disconnect (Round 18); the model owns its renderer.
         // Hiding the keyboard stops typing: the Mac's grid is authoritative
         // again and this device no longer resizes it.
         .onReceive(NotificationCenter.default.publisher(for: .witermTerminalFocusChanged)) { note in
@@ -114,7 +119,11 @@ struct RemoteTerminalWorkspace: View {
     /// The edge swipe and the back button: from a terminal to its sessions,
     /// from sessions to the list of terminals.
     private func goBack() {
-        if model.displayAttachment != nil { model.showSessions() } else if model.selectedGrant != nil { model.loadDevices() }
+        if model.displayAttachment != nil { model.leaveKeepingConnection() } else if model.selectedGrant != nil { model.loadDevices() }
+    }
+
+    private var rendererFontSize: CGFloat {
+        CGFloat(TerminalFontSize.clamped(terminalFontSize)) * TerminalTextScale.factor(typeSize)
     }
 
     /// Other sessions this device may open, for switching from the title.
@@ -132,7 +141,10 @@ struct RemoteTerminalWorkspace: View {
         return HStack(spacing: WitermMetrics.Space.xxs) {
             compactTitleText(attachment)
             if !others.isEmpty {
-                TerminalSwitcher(names: others.map(\.name)) { model.attach(others[$0]) }
+                // The one shown now stays connected, as after Back.
+                TerminalSwitcher(names: others.map(\.name)) { index in
+                    if let grant = model.selectedGrant { model.open(others[index], on: grant) }
+                }
                     .disabled(model.busy != nil)
             }
         }
@@ -169,7 +181,7 @@ struct RemoteTerminalWorkspace: View {
                                palette: terminalPalette)
     }
 
-    private func terminal(_ attachment: any PairedTerminalLink) -> some View {
+    private func terminal(_ attachment: any PairedTerminalLink, host: PairedTerminalHost) -> some View {
         let id = model.attachmentID
         return VStack(spacing: 0) {
             if compactTerminal {
@@ -205,15 +217,35 @@ struct RemoteTerminalWorkspace: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("remoteTerminalNotice")
             }
+            // Opening this one disconnected the terminal left longest ago.
+            if let note = model.keptNote {
+                HStack(alignment: .firstTextBaseline, spacing: WitermMetrics.Space.s) {
+                    Image(systemName: WitermSymbols.disconnect).accessibilityHidden(true)
+                    Text(note).frame(maxWidth: .infinity, alignment: .leading)
+                    Button(String(localized: "Dismiss", bundle: .main), systemImage: "xmark", action: model.dismissKeptNote)
+                        .labelStyle(.iconOnly)
+                        .touchTarget(square: true)
+                }
+                .font(WitermType.rowDetail)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, WitermMetrics.Space.l)
+                .background(WitermTheme.surface)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("remoteKeptNote")
+                .task(id: note) {
+                    try? await Task.sleep(for: .seconds(8))
+                    if model.keptNote == note { model.dismissKeptNote() }
+                }
+            }
             if finding {
                 TerminalFindBar(finder: finder) { finding = false }
                 Divider()
             }
             ZStack(alignment: .top) {
                 RemoteNativeTerminalView(
-                    attachment: attachment, mode: model.mode, keyboardRequest: keyboardRequest,
+                    host: host, keyboardRequest: keyboardRequest,
                     isInteractive: model.isInteractive,
-                    fontSize: CGFloat(TerminalFontSize.clamped(terminalFontSize)) * TerminalTextScale.factor(typeSize),
+                    fontSize: rendererFontSize,
                     highContrast: terminalHighContrast || contrast == .increased,
                     preferredColorScheme: systemColorScheme,
                     palette: terminalPalette,
@@ -222,12 +254,7 @@ struct RemoteTerminalWorkspace: View {
                     inputDestination: model.selectedGrant.map { $0.host.name + " · " + attachment.session.name },
                     barActions: typingBarHidden ? keyRowActions : nil,
                     keyboardButton: startTyping,
-                    tapToType: startTyping.map { _ in { typeOnTap() } },
-                    isParked: { model.parked },
-                    onLinkLost: { model.linkLost($0, id: id) },
-                    onGrid: { model.noteGrid(columns: $0, rows: $1, id: id) },
-                    onFailure: { model.attachmentFailed($0, id: id) },
-                    onEnded: { model.attachmentEnded(id: id) }
+                    tapToType: startTyping.map { _ in { typeOnTap() } }
                 )
                 .id(id)
                 // The renderer leaves the keyboard's space itself (see
@@ -312,18 +339,19 @@ struct RemoteTerminalWorkspace: View {
         AnyView(TerminalKeyRowActions { terminalSecondaryActions }.tint(model.selectedGrant?.host.identityHue))
     }
 
-    /// Text and Colors first (the most frequent), then Find, and Leave last.
-    /// Typing follows the keyboard, so there's no switch here.
+    /// Text and Colors first (the most frequent), then Find, and Disconnect
+    /// last. Typing follows the keyboard, so there's no switch here.
     @ViewBuilder private var terminalSecondaryActions: some View {
         TerminalTextAndColorsItems()
         Button(String(localized: "Find in Terminal", bundle: .main), systemImage: "magnifyingglass") { finding = true }
             .accessibilityIdentifier("terminalFind")
         if model.isInteractive {
             Divider()
-            // Back to Terminals, where this one is still listed in its
-            // device's section: leaving never looks like a dropped connection.
-            Button(String(localized: "Leave", bundle: .main), systemImage: WitermSymbols.leave) { model.showSessions() }
-                .accessibilityHint(String(localized: "The terminal keeps running.", bundle: .main))
+            // Round 18: Back keeps a paired terminal connected, so ending
+            // the connection is its own item, with the same word as SSH. It
+            // never ends the terminal: a phone can't (protocol/relay-v1.md).
+            Button(String(localized: "Disconnect", bundle: .main), systemImage: WitermSymbols.disconnect) { model.disconnect() }
+                .accessibilityHint(String(localized: "Keeps running on \(model.selectedGrant?.host.name ?? String(localized: "the other device", bundle: .main)).", bundle: .main))
                 .accessibilityIdentifier("detachRemoteTerminal")
         }
     }

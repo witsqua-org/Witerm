@@ -27,6 +27,12 @@ import WitermCore
     /// Links opened so far, for the layout probe: a resume opens one more.
     private(set) var opened = 0
     private var backgroundedAt: Date?
+    /// What's typed on each terminal's current line, for `exit`.
+    private var lines: [String: String] = [:]
+    /// Terminals whose shell exited (Round 18): no longer listed.
+    private var ended: Set<String> = []
+    /// How long after `exit` the terminal ends, so a test can leave it first.
+    static let exitDelay: Duration = .seconds(10)
 
     override private init() {
         super.init()
@@ -37,7 +43,7 @@ import WitermCore
 
     /// A grant's terminals as its Mac lists them now: the grid in use.
     func sessions(for grantID: String) -> [LocalSessionInfo] {
-        (RemoteFixture.sessions[grantID] ?? []).map { listed in
+        (RemoteFixture.sessions[grantID] ?? []).filter { !ended.contains($0.id) }.map { listed in
             let grid = grids[listed.id] ?? (listed.columns, listed.rows)
             return LocalSessionInfo(id: listed.id, name: listed.name, createdAt: listed.createdAt, columns: grid.columns,
                                     rows: grid.rows, access: listed.access, writers: listed.writers)
@@ -94,9 +100,17 @@ import WitermCore
         guard link.mode == .control else { throw RelayError.readOnly }
         guard !automatic else { return }
         var echo = Data()
+        let id = link.session.id
         for byte in data {
-            if byte == 0x0d { echo.append(contentsOf: Array("\r\nfixture$ ".utf8)) }
-            else if byte >= 0x20 && byte < 0x7f { echo.append(byte) }
+            if byte == 0x0d {
+                echo.append(contentsOf: Array("\r\nfixture$ ".utf8))
+                // `exit` ends the terminal a moment later, as its shell would.
+                if lines[id] == "exit" { endLater(id) }
+                lines[id] = ""
+            } else if byte >= 0x20 && byte < 0x7f {
+                echo.append(byte)
+                lines[id, default: ""].append(Character(UnicodeScalar(byte)))
+            }
         }
         guard !echo.isEmpty else { return }
         for other in links[link.session.id] ?? [] { other.continuation.yield(.output(echo)) }
@@ -108,6 +122,16 @@ import WitermCore
         if acknowledged { try await Task.sleep(for: Self.latency) }
         guard link.open else { if acknowledged { throw RelayError.transport } else { return } }
         end(link, error: nil)
+    }
+
+    /// The terminal's shell exits: every link on it ends, and it's no
+    /// longer listed, as on a Mac.
+    private func endLater(_ id: String) {
+        Task { @MainActor in
+            try? await Task.sleep(for: Self.exitDelay)
+            ended.insert(id)
+            for link in links[id] ?? [] { end(link, error: nil) }
+        }
     }
 
     private func end(_ link: FixtureLink, error: Error?) {

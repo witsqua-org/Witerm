@@ -614,6 +614,42 @@ import XCTest
         disconnectAndRemove(name, fingerprint: fingerprint)
     }
 
+    /// Round 18: with the keyboard down the terminal uses the full height.
+    /// The keyboard button floats over the text instead of reserving a
+    /// 60 pt strip under it (the owner's "obstruction at the bottom"), in
+    /// portrait and landscape; the host is told the larger size.
+    func testTheTerminalUsesTheFullHeightWithTheKeyboardDown() throws {
+        continueAfterFailure = true
+        let (name, fingerprint) = try connectForGrid("R18 Band")
+        func band(_ step: String) {
+            _ = until(1.5) { false }
+            let label = terminal.label
+            func value(_ key: String) -> Double? {
+                guard let range = label.range(of: key) else { return nil }
+                return Double(label[range.upperBound...].prefix { $0.isNumber || $0 == "." })
+            }
+            let surface = label.range(of: " surface=").map { label[$0.upperBound...].prefix { !$0.isWhitespace && $0 != "]" } }
+            let height = surface.flatMap { Double($0.split(separator: ",").last ?? "") } ?? -1
+            let overlap = value("kbdiag=[overlap=") ?? -1, grid = value(" frameH=") ?? -1
+            let shown = value(" boundsH=") ?? -1, cell = value(" cell=") ?? 0
+            let measured = height - overlap - min(grid, shown)
+            print("PROBE r18 ssh band \(step): band=\(String(format: "%.1f", measured)) cell=\(cell) grid=\(probedGrid()) overlap=\(overlap)")
+            XCTAssertLessThan(measured, cell, "\(step): \(measured) pt at the bottom with no text (a band)")
+        }
+        band("keyboard up, portrait")
+        app.toggleTerminalKeyboard()
+        XCTAssertNotNil(until(5) { !app.buttons["terminalKey-hideKeyboard"].exists })
+        band("keyboard down, portrait")
+        shot("r18-ssh-1-keyboard-down")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        _ = until(1.5) { false }
+        band("keyboard down, landscape")
+        shot("r18-ssh-2-keyboard-down-landscape")
+        XCUIDevice.shared.orientation = .portrait
+        _ = until(1.5) { false }
+        disconnectAndRemove(name, fingerprint: fingerprint)
+    }
+
     /// Round 17: returning within 3 minutes continues the same SSH
     /// connection and shell (the same `$$`), with nothing to reconnect.
     /// Away times from `WITERM_BG_SECONDS` (default 10 and 60). Prints

@@ -216,7 +216,28 @@ final class MacContinuityFlowTests: XCTestCase {
             .press(forDuration: 0.05, thenDragTo: app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)))
         let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "remoteSession-")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 15), "The edge swipe didn't go back")
+        // Round 18: Back keeps it connected (watching), and the row says so.
+        let connected = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "remoteSessionConnected-")).firstMatch
+        XCTAssertTrue(connected.waitForExistence(timeout: 15), "Back didn't keep the terminal connected")
         shot("11-back")
+        // Reopening is instant: the same renderer, no Opening or Reconnecting.
+        row.tap()
+        let surface = any("remoteTerminalSurface")
+        XCTAssertTrue(surface.waitForExistence(timeout: 2), "The kept terminal didn't reopen at once")
+        XCTAssertFalse(any("remoteTerminalActivity").exists, "Reopening a kept terminal connected again")
+        XCTAssertFalse(any("remoteDisconnectedStatus").exists)
+        shot("11b-reopened")
+        app.buttons["remoteSessionList"].tap()
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        // Disconnect from the row: a trailing swipe, gray, not a delete.
+        row.swipeLeft()
+        let disconnect = app.buttons["Disconnect"]
+        XCTAssertTrue(disconnect.waitForExistence(timeout: 5), "No Disconnect swipe on a connected row")
+        shot("11c-disconnect-swipe")
+        disconnect.tap()
+        let notConnected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: connected)
+        XCTAssertEqual(XCTWaiter.wait(for: [notConnected], timeout: 10), .completed, "Still Connected after Disconnect")
+        shot("11d-disconnected")
         signal("phone-done")
 
         // Opt-in: this phone ends the pairing itself, in Device Details, and

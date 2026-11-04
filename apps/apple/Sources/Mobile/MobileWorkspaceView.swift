@@ -83,12 +83,19 @@ struct MobileWorkspaceView: View {
         activeServerID = server.id
     }
 
-    /// A paired terminal through another relay server is left (it keeps
-    /// running there) before this one is shown.
+    /// A paired terminal through another relay server stays connected, off
+    /// screen (Round 18), before this one is shown.
     private func leaveOtherServer(than server: ConnectionModel) {
         guard let id = activeServerID, id != server.id, let other = servers.server(id: id),
               let model = macs.existing(for: other), model.displayAttachment != nil else { return }
-        model.showSessions()
+        model.leaveKeepingConnection()
+    }
+
+    /// Something else takes the Terminals tab (an SSH host): the paired
+    /// terminal on screen stays connected, as after Back.
+    private func setPairedTerminalAside() {
+        activeMac?.leaveKeepingConnection()
+        activeServerID = nil
     }
 
     private var home: some View {
@@ -152,7 +159,7 @@ struct MobileWorkspaceView: View {
                   let session = section.terminals.first(where: { $0.id == sessionID }) else { return }
             openTerminal(section.server, section.grant, session, mode: nil)
         case .ssh(let id):
-            activeServerID = nil
+            setPairedTerminalAside()
             sshUI.requestedSession = id
         }
     }
@@ -181,7 +188,7 @@ struct MobileWorkspaceView: View {
         // From a server address that turned out to be an SSH login, or an invitation.
         .onReceive(NotificationCenter.default.publisher(for: .witermAddSSHHost)) { note in
             tab = .terminals
-            activeServerID = nil
+            setPairedTerminalAside()
             sshUI.presentNewWhenVisible(address: note.object as? String)
         }
         .onReceive(NotificationCenter.default.publisher(for: .witermUseInvitation)) { note in
@@ -210,17 +217,22 @@ struct MobileWorkspaceView: View {
                 show(open[(current + step + open.count) % open.count].terminal)
             },
             // No Start or Stop Typing (⇧⌘T) on iPhone and iPad: the keyboard
-            // button and Hide Keyboard are the switch.
-            leave: shownMac.map { model in { model.showSessions() } },
-            disconnect: shownSSH.map { session in { ssh.disconnect(session) } },
+            // button and Hide Keyboard are the switch. One Disconnect for
+            // paired and SSH terminals alike (Round 18); no Leave.
+            disconnect: shownMac.map { model in { model.disconnect() } } ?? shownSSH.map { session in { ssh.disconnect(session) } },
             find: shownSSH != nil || shownMac != nil ? { NotificationCenter.default.post(name: .witermFindInTerminal, object: nil) } : nil,
             findStep: shownSSH != nil || shownMac != nil ? { NotificationCenter.default.post(name: .witermFindStep, object: $0) } : nil
         ))
         // A connection someone just started is shown in Terminals, from any tab.
         .onChange(of: ssh.connectingProfile?.id) { _, id in
             guard id != nil else { return }
-            activeServerID = nil
+            setPairedTerminalAside()
             tab = .terminals
+        }
+        // An SSH terminal chosen beside a paired one (iPad) takes its place;
+        // the paired one stays connected.
+        .onChange(of: sshUI.shownID) { _, id in
+            if id != nil, activeMac != nil { setPairedTerminalAside() }
         }
         // Back from a paired terminal: its device's list may have changed.
         .onChange(of: activeMac == nil) { _, none in

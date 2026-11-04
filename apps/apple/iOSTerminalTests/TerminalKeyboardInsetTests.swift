@@ -185,7 +185,8 @@ import XCTest
         let cell = cellHeight(typing)
         let above = typing.terminal.getTerminal().rows
         let fit = typing.watchingFit
-        XCTAssertEqual(fit.rows, Int((frame.height - 60) / cell), "The whole view less the 60 pt button strip")
+        // Round 18: the keyboard button floats over the text, so no strip.
+        XCTAssertEqual(fit.rows, Int(frame.height / cell), "The whole view")
         XCTAssertGreaterThan(fit.rows, above + 10, "Not the rows above the keyboard")
         XCTAssertEqual(fit.columns, typing.terminal.getTerminal().cols, "The keyboard never changes the width")
 

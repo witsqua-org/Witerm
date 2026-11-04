@@ -647,7 +647,9 @@ struct SSHWorkspaceView<Home: View>: View {
         Button(String(localized: "SFTP Files", bundle: .main), systemImage: "folder") { ui.files = session }
         Button(String(localized: "Port Forwarding", bundle: .main), systemImage: "arrow.left.arrow.right") { ui.forwarding = session }
         Divider()
-        Button(String(localized: "Disconnect", bundle: .main), systemImage: WitermSymbols.disconnect, role: .destructive) { model.disconnect(session) }
+        // The same item as a paired terminal's (Round 18): it ends the
+        // connection; the host stays saved.
+        Button(String(localized: "Disconnect", bundle: .main), systemImage: WitermSymbols.disconnect) { model.disconnect(session) }
     }
 
     /// Other live SSH terminals, for switching from the title.

@@ -12,7 +12,7 @@ final class RemoteModels {
 
     func model(for server: ConnectionModel) -> RemoteTerminalModel {
         if let model = models[server.id], model.serverAddress == server.address { return model }
-        models[server.id]?.suspend()
+        models[server.id]?.shutDown()
         let model = RemoteTerminalModel(serverAddress: server.address)
         models[server.id] = model
         return model
@@ -47,7 +47,7 @@ final class RemoteModels {
     func prune(keeping servers: [ConnectionModel]) {
         let kept = Set(servers.map(\.id))
         for (id, model) in models where !kept.contains(id) {
-            model.suspend()
+            model.shutDown()
             models[id] = nil
         }
     }
