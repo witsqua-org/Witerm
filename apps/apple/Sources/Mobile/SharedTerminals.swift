@@ -101,7 +101,8 @@ extension RemoteFixture {
                                  session("fixture-s2", "build", writers: [LocalWriterInfo(name: nil)]),
                                  session("fixture-s3", "logs", access: .view)],
         "fixture-grant-mini": [session("fixture-m1", "server", access: .view)],
-        sharedGrantID: [session("fixture-a1", "Demo")],
+        // An invitation's guest learns neither who types nor who is attached.
+        sharedGrantID: [session("fixture-a1", "Demo", writers: nil)],
     ]
 }
 #endif

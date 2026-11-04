@@ -96,17 +96,51 @@ import WitermCore
         for watcher in presenceWatchers.values { watcher.yield([grantID: false]) }
     }
 
-    /// A grant's terminals as its Mac lists them now: the grid in use.
+    /// Round 20: `-witerm.debug.fixtureWatchers 1`: Studio's own window and
+    /// "Sam’s iPhone" watch Terminal 1, so this device counts three.
+    static let watchers = UserDefaults.standard.bool(forKey: "witerm.debug.fixtureWatchers")
+    static let watcherName = "Sam’s iPhone"
+    /// Round 20: `-witerm.debug.fixtureOlderMac 1`: the Macs list who types
+    /// but not who is attached, as a Mac from before Round 20 does.
+    static let olderMac = UserDefaults.standard.bool(forKey: "witerm.debug.fixtureOlderMac")
+
+    /// A grant's terminals as its Mac lists them now: the grid in use, who
+    /// else types, and who is attached (this device's links included).
     func sessions(for grantID: String) -> [LocalSessionInfo] {
         (RemoteFixture.sessions[grantID] ?? []).filter { !ended.contains($0.id) }.map { listed in
             let grid = grids[listed.id] ?? (listed.columns, listed.rows)
             var writers = listed.writers
-            if listed.id == Self.otherTyperSession, let until = otherTyperUntil, Date() < until {
-                writers = (writers ?? []) + [LocalWriterInfo(name: Self.otherTyperName)]
-            }
+            let otherTypes = listed.id == Self.otherTyperSession && otherTyperUntil.map { Date() < $0 } == true
+            if otherTypes { writers = (writers ?? []) + [LocalWriterInfo(name: Self.otherTyperName)] }
             return LocalSessionInfo(id: listed.id, name: listed.name, createdAt: listed.createdAt, columns: grid.columns,
-                                    rows: grid.rows, access: listed.access, writers: writers)
+                                    rows: grid.rows, access: listed.access, writers: writers,
+                                    attached: attached(listed, otherTypes: otherTypes))
         }
+    }
+
+    /// Who is attached, as the Mac's service lists it (`attached`): the Mac
+    /// once, each device once, this device marked, and the grid's owner,
+    /// whoever types (one at a time here). Nil where the Mac lists no
+    /// writers (an invitation's grant) and from an older Mac.
+    private func attached(_ listed: LocalSessionInfo, otherTypes: Bool) -> [LocalConnectedDevice]? {
+        guard !Self.olderMac, let writers = listed.writers else { return nil }
+        var devices: [LocalConnectedDevice] = []
+        let macTypes = writers.contains { $0.name == nil }
+        let watched = Self.watchers && listed.id == Self.otherTyperSession
+        let here = links[listed.id] ?? []
+        let typingHere = here.contains { $0.mode == .control }
+        if macTypes || watched {
+            devices.append(LocalConnectedDevice(name: nil, mode: macTypes ? .control : .view, gridOwner: macTypes && !typingHere))
+        }
+        if otherTypes {
+            devices.append(LocalConnectedDevice(name: Self.otherTyperName, mode: .control, gridOwner: !typingHere))
+        }
+        if watched { devices.append(LocalConnectedDevice(name: Self.watcherName, mode: .view)) }
+        if !here.isEmpty {
+            devices.append(LocalConnectedDevice(name: UIDevice.current.name, mode: typingHere ? .control : .view,
+                                                gridOwner: typingHere, thisDevice: true))
+        }
+        return devices
     }
 
     func attach(grant: DeviceGrant, sessionID: String, columns: Int, rows: Int, mode: LocalAttachmentMode,

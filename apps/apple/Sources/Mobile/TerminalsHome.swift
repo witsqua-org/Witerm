@@ -316,7 +316,7 @@ struct TerminalsHome: View {
                     .accessibilityIdentifier("remoteTerminalActivity")
             } else {
                 if let issue = model.issue {
-                    IssueBanner(issue.typingElsewhere ? TypingElsewhere.busyTitle(model.openWriters, hostName: section.grant.host.name) : issue.title,
+                    IssueBanner(issue.title,
                                 message: issue.recovery, systemImage: WitermSymbols.unpaired)
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)

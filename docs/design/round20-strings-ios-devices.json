@@ -1,0 +1,31 @@
+{
+  "add": {
+    "%lld devices connected": "已连接 %lld 台设备",
+    "Connected Devices": "已连接的设备",
+    "No other devices are connected.": "没有其他设备连接。",
+    "Sets the terminal size": "决定终端尺寸",
+    "Terminal size: %lld columns, %lld rows": "终端尺寸：%lld 列，%lld 行",
+    "Terminal size: %lld × %lld": "终端尺寸：%lld × %lld",
+    "Typing wasn’t available, so you’re watching.": "当时无法输入，所以你现在仅观看。"
+  },
+  "change": {},
+  "remove": [
+    "%@, so you’re watching.",
+    "Another device is typing, so you’re watching.",
+    "Sized for %@",
+    "Sized for Another Device",
+    "Typing on %@, at its size"
+  ],
+  "plural": {
+    "%lld devices connected": {
+      "structure": "Like \"%lld keys\": en uses variations.plural with one and other; zh-Hans is a plain stringUnit (Chinese has no plural forms). The title shows it only for 2 or more, but the one form must exist.",
+      "en": { "one": "%lld device connected", "other": "%lld devices connected" },
+      "zh-Hans": "已连接 %lld 台设备"
+    },
+    "Terminal size: %lld columns, %lld rows": {
+      "structure": "A plain stringUnit in both languages: a terminal has at least 20 columns and 5 rows, so the singular never applies.",
+      "en": "Terminal size: %lld columns, %lld rows",
+      "zh-Hans": "终端尺寸：%lld 列，%lld 行"
+    }
+  }
+}

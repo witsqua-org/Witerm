@@ -211,15 +211,18 @@ import XCTest
         launch()
         open("fixture-s2")
         XCTAssertTrue(until(10) { probeText("mode") == "view" }, "Didn't open watching")
+        // Round 20: the title counts who is connected (the Mac types here)
+        // and never names who types.
         let status = app.descendants(matching: .any)["terminalInputStatus"].firstMatch
-        XCTAssertTrue(until(5) { status.exists && status.label.contains("Typing on Studio") }, status.label)
+        XCTAssertTrue(until(5) { status.exists && status.label.contains("2 devices connected") }, status.label)
         let links = probe("links")
         surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)).tap()
         RunLoop.current.run(until: Date().addingTimeInterval(2))
         XCTAssertEqual(probeText("mode"), "view", "A tap took typing from someone else")
         XCTAssertFalse(hideKey.exists)
         XCTAssertEqual(probe("links"), links, "A tap asked the Mac for typing while someone types")
-        XCTAssertTrue(status.label.contains("Typing on Studio"), status.label)
+        XCTAssertTrue(status.label.contains("2 devices connected") && !status.label.contains("Typing on"), status.label)
+        XCTAssertTrue(app.descendants(matching: .any)["remoteTerminalNotice"].firstMatch.exists, "The tap said nothing")
         shot("a3-3-someone-else-types")
     }
 

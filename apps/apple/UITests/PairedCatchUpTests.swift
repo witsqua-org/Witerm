@@ -3,8 +3,8 @@ import XCTest
 /// Round 19, through the DEBUG remote fixture's Mac (`FixtureMac`, in memory;
 /// nothing leaves the app): a new link that waits for the Mac's redraw for
 /// longer than a moment says Catching up… over the old screen, and never on
-/// a fast resume; watching a grid another device that types set says whose
-/// size it is ("Sized for *device*") until this device types. Prints `PROBE`
+/// a fast resume; watching a grid another device that types set, only
+/// Connected Devices says whose size it is (Round 20). Prints `PROBE`
 /// lines. Screenshots go to `WITERM_SHOTS_DIR` when it's set.
 @MainActor final class PairedCatchUpTests: XCTestCase {
     private var app: XCUIApplication!
@@ -155,43 +155,44 @@ import XCTest
         }
     }
 
-    // MARK: Sized for
+    // MARK: Whose size (Round 19, reworded in Round 20)
 
     /// Another device ("Alex’s iPad", the fixture's) types in Terminal 1 at
-    /// 80 × 24 for 8 s: this phone opens watching its grid and says whose
-    /// size it is (one fact while the iPad types: "Typing on Alex’s iPad, at
-    /// its size"); after the iPad stops, "Sized for Alex’s iPad"; typing
-    /// here sets this phone's size and the note goes, and it stays gone
-    /// once this phone watches again at its own size.
-    func testWatchingAnotherDevicesGridSaysWhoseSizeItIs() {
+    /// 80 × 24 for 8 s, so this phone opens watching its grid. Since Round
+    /// 20 the title only counts who is connected (never "Typing on…" or
+    /// "Sized for…"); Connected Devices says the iPad sets the size. After
+    /// the iPad stops, this phone is alone: no count. Typing here sets this
+    /// phone's size, and the sheet says so.
+    func testWatchingAnotherDevicesGridNamesItOnlyInConnectedDevices() {
         launch(extra: ["-witerm.debug.fixtureOtherTyper", "8"])
         open("fixture-s1")
         XCTAssertTrue(until(10) { probeText("mode") == "view" }, "Didn't open watching")
-        XCTAssertTrue(until(5) { status.exists && status.label.contains("Typing on Alex’s iPad, at its size") }, status.label)
+        XCTAssertTrue(until(5) { status.exists && status.label.contains("2 devices connected") }, status.label)
+        XCTAssertFalse(status.label.contains("Typing on") || status.label.contains("Sized for") || status.label.contains("its size"),
+                       status.label)
         XCTAssertEqual(probeText("cols"), "80", "Not watching the iPad's grid")
-        print("PROBE r19 sized status=\(status.label) grid=\(probeText("cols") ?? "?")x\(probeText("rows") ?? "?")")
-        shot("r19-sized-1-watching-ipad")
-        // The iPad stops; the next list (every 10 s) no longer names it, but
-        // the grid is still the one it set.
-        XCTAssertTrue(until(20) { status.exists && !status.label.contains("Typing on") }, "Still typing on the iPad: \(status.label)")
-        XCTAssertTrue(status.label.contains("Sized for Alex’s iPad"), "The grid is still the iPad's: \(status.label)")
-        shot("r19-sized-2-ipad-stopped")
+        print("PROBE r20 sized status=\(status.label) grid=\(probeText("cols") ?? "?")x\(probeText("rows") ?? "?")")
+        app.buttons["terminalActionsMenu"].tap()
+        app.buttons["Connected Devices"].firstMatch.tap()
+        let ipad = app.descendants(matching: .any)["connectedDevice-device-0"].firstMatch
+        XCTAssertTrue(ipad.waitForExistence(timeout: 5))
+        XCTAssertTrue(until(8) { (ipad.value as? String) == "Typing, Sets the terminal size" }, "\(ipad.value ?? "")")
+        shot("r20-sized-1-sheet-ipad")
+        app.buttons["connectedDevicesDone"].tap()
+        // The iPad stops; the next list (every 10 s) no longer counts it.
+        XCTAssertTrue(until(20) { status.exists && !status.label.contains("devices connected") }, "Still counts the iPad: \(status.label)")
+        XCTAssertFalse(status.label.contains("Sized for"), status.label)
+        shot("r20-sized-2-ipad-stopped")
         // Typing here sets this phone's size.
         while Date().timeIntervalSince(launchedAt) < 10 { RunLoop.current.run(until: Date().addingTimeInterval(0.2)) }
         keyboardButton.tap()
         XCTAssertTrue(until(10) { probeText("mode") == "control" && hideKey.exists }, "Didn't type")
-        XCTAssertTrue(until(3) { status.exists && !status.label.contains("Sized for") && !status.label.contains("its size") }, status.label)
-        shot("r19-sized-3-typing")
-        hideKey.tap()
-        XCTAssertTrue(until(10) { probeText("mode") == "view" && keyboardButton.exists }, "Didn't watch")
-        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
-        XCTAssertFalse(status.label.contains("Sized for") || status.label.contains("its size"), "Watching at its own size: \(status.label)")
-        print("PROBE r19 sized after status=\(status.label) grid=\(probeText("cols") ?? "?")x\(probeText("rows") ?? "?")")
-        // The Mac types in "build" at its own size: named by its paired name.
-        app.buttons["remoteSessionList"].tap()
-        open("fixture-s2")
-        XCTAssertTrue(until(10) { probeText("mode") == "view" }, "build didn't open watching")
-        XCTAssertTrue(until(5) { status.exists && status.label.contains("Typing on Studio, at its size") }, status.label)
-        shot("r19-sized-4-mac-types")
+        app.buttons["terminalActionsMenu"].tap()
+        app.buttons["Connected Devices"].firstMatch.tap()
+        let this = app.descendants(matching: .any)["connectedDevice-this"].firstMatch
+        XCTAssertTrue(this.waitForExistence(timeout: 5))
+        XCTAssertTrue(until(8) { (this.value as? String) == "Typing, Sets the terminal size" }, "\(this.value ?? "")")
+        shot("r20-sized-3-typing-sheet")
+        app.buttons["connectedDevicesDone"].tap()
     }
 }

@@ -43,15 +43,10 @@ import XCTest
         XCTAssertNil(TypingElsewhere.summary(nil, hostName: "Studio"))
     }
 
-    func testRefusalsAndNoticesFallBackWhenTheMacDidNotSay() {
-        XCTAssertEqual(TypingElsewhere.busyTitle(nil, hostName: "Studio"), text("Typing on Another Device"))
-        XCTAssertEqual(TypingElsewhere.busyTitle([LocalWriterInfo(name: nil)], hostName: "Studio"), text("Typing on \("Studio")"))
-        XCTAssertEqual(TypingElsewhere.watchingNotice(nil, hostName: "Studio"), text("Another device is typing, so you’re watching."))
-        let named = text("Typing on \("iPad")")
-        XCTAssertEqual(TypingElsewhere.watchingNotice([LocalWriterInfo(name: "iPad")], hostName: "Studio"),
-                       text("\(named), so you’re watching."))
-        XCTAssertNotEqual(TypingElsewhere.watchingNotice([LocalWriterInfo(name: "iPad")], hostName: "Studio"),
-                          TypingElsewhere.watchingNotice(nil, hostName: "Studio"))
+    /// Round 20: a refusal and the watching notice never name who types.
+    func testRefusalsAndTheWatchingNoticeNeverNameWhoTypes() {
+        XCTAssertEqual(RemoteTerminalIssue(RelayError.sessionBusy).title, text("Typing on Another Device"))
+        XCTAssertEqual(ConnectedDevices.watchingNotice, text("Typing wasn’t available, so you’re watching."))
     }
 
     /// Unpair ends every pairing this device holds with that device, the one
@@ -70,11 +65,5 @@ import XCTest
         let ended = RemoteTerminalModel.pairings(endedBy: newer, in: [older, other, newer])
         XCTAssertEqual(ended.map(\.id), ["g3", "g1"])
         XCTAssertEqual(RemoteTerminalModel.pairings(endedBy: other, in: [older, other, newer]).map(\.id), ["g2"])
-    }
-
-    func testOnlyARefusedTypingNamesWhoTypes() {
-        XCTAssertTrue(RemoteTerminalIssue(RelayError.sessionBusy).typingElsewhere)
-        XCTAssertFalse(RemoteTerminalIssue(RelayError.readOnly).typingElsewhere)
-        XCTAssertFalse(RemoteTerminalIssue(RelayError.offline).typingElsewhere)
     }
 }

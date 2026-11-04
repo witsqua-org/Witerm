@@ -135,6 +135,15 @@ func waitForAgent(_ client: LocalAgentClient) async throws {
             await unexpected.disconnect()
             throw SmokeFailure("A device without shared typing took control")
         } catch LocalAgentClientError.rejected(.sessionBusy) { }
+        // Round 20: it watches instead, and its list counts who is attached:
+        // this Mac once (typing, its grid), itself marked, by name only.
+        let watching = try await client.attach(sessionID: session.id, mode: .view, peer: phone)
+        let attached = try await client.sessions(peer: phone).first { $0.id == session.id }?.attached
+        guard attached == [LocalConnectedDevice(name: nil, mode: .control, gridOwner: true),
+                           LocalConnectedDevice(name: "Smoke phone", mode: .view, thisDevice: true)] else {
+            throw SmokeFailure("A paired device's list of who is attached was wrong")
+        }
+        await watching.disconnect()
         let observer = try await client.attach(sessionID: session.id, mode: .view)
         do { try await observer.send(Data("invalid\n".utf8)); throw SmokeFailure("Observer input accepted") }
         catch LocalAgentClientError.rejected(.readOnly) { }

@@ -95,14 +95,15 @@ final class MacContinuityFlowTests: XCTestCase {
 
         // Hiding the keyboard stops typing; the keyboard button asks to type
         // again. Done before either side types, while the Mac's own window
-        // has the terminal open to type, so the title then says Typing on
-        // the Mac.
+        // has the terminal open, so the title then counts two devices.
         hideKey.tap()
         let keyboardButton = app.buttons["remoteKeyboard"]
         XCTAssertTrue(keyboardButton.waitForExistence(timeout: 30), "Watching offers the keyboard button")
-        // The title says where typing is, from the list it polls while watching.
-        let typingOn = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "Typing on"), object: status)
-        wait(for: [typingOn], timeout: 20)
+        // Round 20: the title counts who is connected, from the list it polls,
+        // and never names who types.
+        let counted = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "2 devices connected"), object: status)
+        wait(for: [counted], timeout: 20)
+        XCTAssertFalse(status.label.contains("Typing on") || status.label.contains("Sized for"), status.label)
         app.buttons["terminalActionsMenu"].tap()
         XCTAssertFalse(app.buttons["Start Typing"].exists || app.buttons["Stop Typing"].exists, "No typing switch in the menu")
         shot("09b-watching")
@@ -156,6 +157,28 @@ final class MacContinuityFlowTests: XCTestCase {
         XCTAssertNotNil(awaitSignal("mac-typed", timeout: 240), "The Mac never typed")
         RunLoop.current.run(until: Date().addingTimeInterval(1.5))
         shot("09-together")
+
+        // Round 20: Connected Devices lists this iPhone and the Mac (by its
+        // name), both typing, from the real Mac's list.
+        app.buttons["terminalActionsMenu"].tap()
+        let devicesItem = app.buttons["Connected Devices"].firstMatch
+        XCTAssertTrue(devicesItem.waitForExistence(timeout: 10), "No Connected Devices in the ⋯ menu")
+        devicesItem.tap()
+        let thisRow = any("connectedDevice-this"), macRow = any("connectedDevice-mac")
+        XCTAssertTrue(thisRow.waitForExistence(timeout: 10), "The sheet didn't list this iPhone")
+        XCTAssertTrue(macRow.waitForExistence(timeout: 10), "The sheet didn't list the Mac")
+        XCTAssertEqual(thisRow.label, "This iPhone")
+        let bothType = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value BEGINSWITH %@", "Typing"), object: macRow)
+        wait(for: [bothType], timeout: 15)
+        XCTAssertTrue((thisRow.value as? String ?? "").hasPrefix("Typing"), "\(thisRow.value ?? "")")
+        shot("09c-connected-devices")
+        app.buttons["connectedDevicesDone"].tap()
+        // Closing the sheet keeps the terminal; type again if the keyboard went.
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        if !hideKey.exists, keyboardButton.waitForExistence(timeout: 5) {
+            keyboardButton.tap()
+            XCTAssertTrue(hideKey.waitForExistence(timeout: 30), "Couldn't type again after Connected Devices")
+        }
 
         // Opt-in: a million lines on the Mac while this phone is attached.
         // The relay used to close the tunnel mid-burst; now the phone must

@@ -148,40 +148,8 @@ import XCTest
         typing.layoutIfNeeded()
         XCTAssertFalse(typing.watchesOtherGrid)
     }
-
-    private func text(_ value: String.LocalizationValue) -> String { String(localized: value, bundle: .main) }
-
-    func testSizedForNamesTheOneOtherWriterAndTheMacByItsName() {
-        XCTAssertEqual(TypingElsewhere.sizedFor([LocalWriterInfo(name: "iPad")], hostName: "Studio"), text("Sized for \("iPad")"))
-        XCTAssertEqual(TypingElsewhere.sizedFor([LocalWriterInfo(name: nil)], hostName: "Studio"), text("Sized for \("Studio")"))
-        // The same device twice is one.
-        XCTAssertEqual(TypingElsewhere.sizedFor([LocalWriterInfo(name: nil), LocalWriterInfo(name: nil)], hostName: "Studio"),
-                       text("Sized for \("Studio")"))
-        // Several: one of them, so no name.
-        XCTAssertEqual(TypingElsewhere.sizedFor([LocalWriterInfo(name: "iPad"), LocalWriterInfo(name: nil)], hostName: "Studio"),
-                       text("Sized for Another Device"))
-        XCTAssertNil(TypingElsewhere.sizedFor([], hostName: "Studio"))
-        XCTAssertNil(TypingElsewhere.sizedFor(nil, hostName: "Studio"), "An older Mac doesn't say who types")
-    }
-
-    func testOneFactWhenTheTypistsSizeIsTheGrid() {
-        let ipad = [LocalWriterInfo(name: "iPad")]
-        let both = TypingElsewhere.watchingFacts(typing: ipad, sizedBy: ipad, hostName: "Studio")
-        XCTAssertEqual(both.typing, text("Typing on \("iPad"), at its size"))
-        XCTAssertNil(both.sized, "The name twice in a short line")
-        // The iPad stopped; the grid is still its size.
-        let after = TypingElsewhere.watchingFacts(typing: [], sizedBy: ipad, hostName: "Studio")
-        XCTAssertNil(after.typing)
-        XCTAssertEqual(after.sized, text("Sized for \("iPad")"))
-        // The Mac types now, at the iPad's size.
-        let other = TypingElsewhere.watchingFacts(typing: [LocalWriterInfo(name: nil)], sizedBy: ipad, hostName: "Studio")
-        XCTAssertEqual(other.typing, text("Typing on \("Studio")"))
-        XCTAssertEqual(other.sized, text("Sized for \("iPad")"))
-        // This screen's own size: only who types.
-        let own = TypingElsewhere.watchingFacts(typing: ipad, sizedBy: nil, hostName: "Studio")
-        XCTAssertEqual(own.typing, text("Typing on \("iPad")"))
-        XCTAssertNil(own.sized)
-    }
+    // Round 19's "Sized for *device*" wording is gone (Round 20): whose
+    // size it is lives in Connected Devices (`ConnectedDevicesTests`).
 }
 
 /// A link whose events the test feeds.

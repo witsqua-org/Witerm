@@ -27,6 +27,8 @@ struct RemoteTerminalWorkspace: View {
     @State private var terminalShown = false
     /// See `TerminalTypingBar`.
     @State private var typingBarHidden = false
+    /// Round 20: the Connected Devices sheet.
+    @State private var showingDevices = false
 
 
     var body: some View {
@@ -55,6 +57,13 @@ struct RemoteTerminalWorkspace: View {
             var transaction = Transaction()
             transaction.disablesAnimations = true
             withTransaction(transaction) { terminalShown = shown }
+            if !shown { showingDevices = false }
+        }
+        // Round 20: everyone connected to this terminal, live while open. A
+        // keyboard that didn't come back when it closes stops typing, as
+        // after Find.
+        .sheet(isPresented: $showingDevices, onDismiss: stopTypingIfKeyboardStaysHidden) {
+            ConnectedDevicesSheet(model: model)
         }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
@@ -176,17 +185,17 @@ struct RemoteTerminalWorkspace: View {
     }
 
     /// The title's status line, in order of importance (a long name is cut
-    /// from the end): what limits this device, who types instead (or the
-    /// device), and, while watching another device's grid, whose size it is.
+    /// from the end): what limits this device, how many devices are
+    /// connected when others are (Round 20; never who types), then the Mac.
     private var statusFacts: [String] {
-        let watching = watchingFacts
-        return [terminalStatus, watching.typing ?? model.selectedGrant?.host.name, watching.sized].compactMap { $0 }
+        [terminalStatus, deviceCount, model.selectedGrant?.host.name].compactMap { $0 }
     }
 
-    /// While watching: who types, and whose size the grid is (Round 19).
-    private var watchingFacts: (typing: String?, sized: String?) {
-        guard model.isInteractive, model.mode == .view, let grant = model.selectedGrant else { return (nil, nil) }
-        return TypingElsewhere.watchingFacts(typing: model.openWriters, sizedBy: model.sizedBy, hostName: grant.host.name)
+    /// "3 devices connected", this device included, while connected and
+    /// others are too; nil when it's alone or the Mac doesn't say.
+    private var deviceCount: String? {
+        guard model.isInteractive else { return nil }
+        return ConnectedDevices.count(model.connectedDevices)
     }
 
     /// The terminal's own background, so the area under the home indicator
@@ -208,7 +217,7 @@ struct RemoteTerminalWorkspace: View {
             } else {
                 // The navigation bar already names the Mac.
                 TerminalHeader(attachment.session.name,
-                               status: [terminalStatus, watchingFacts.typing, watchingFacts.sized].compactMap { $0 }.joined(separator: " · ")
+                               status: [terminalStatus, deviceCount].compactMap { $0 }.joined(separator: " · ")
                                    .nilIfEmpty ?? String(localized: "Connected", bundle: .main),
                                statusImage: terminalStatusImage,
                                live: model.isInteractive, hue: model.selectedGrant?.host.identityHue) {
@@ -217,11 +226,21 @@ struct RemoteTerminalWorkspace: View {
             }
             OfflineBanner(insets: EdgeInsets(top: WitermMetrics.Space.s, leading: WitermMetrics.Space.l,
                                              bottom: WitermMetrics.Space.s, trailing: WitermMetrics.Space.l))
+            // Typing was refused, or a reconnect found it so: what happened
+            // here, never who types (Round 20); Connected Devices says that.
             if model.notice {
-                let notice = TypingElsewhere.watchingNotice(model.openWriters, hostName: model.selectedGrant?.host.name ?? "")
                 HStack(alignment: .firstTextBaseline, spacing: WitermMetrics.Space.s) {
                     Image(systemName: WitermSymbols.watching).accessibilityHidden(true)
-                    Text(notice).frame(maxWidth: .infinity, alignment: .leading)
+                    VStack(alignment: .leading, spacing: WitermMetrics.Space.xxs) {
+                        Text(ConnectedDevices.watchingNotice)
+                        if model.connectedDevices != nil {
+                            Button(String(localized: "Connected Devices", bundle: .main)) { showingDevices = true }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                                .accessibilityIdentifier("remoteNoticeConnectedDevices")
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     Button(String(localized: "Dismiss", bundle: .main), systemImage: "xmark", action: model.dismissNotice)
                         .labelStyle(.iconOnly)
                         .touchTarget(square: true)
@@ -229,7 +248,7 @@ struct RemoteTerminalWorkspace: View {
                 .font(WitermType.rowDetail)
                 .padding(.horizontal, WitermMetrics.Space.l)
                 .background(.bar)
-                .accessibilityElement(children: .combine)
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("remoteTerminalNotice")
             }
             // Opening this one disconnected the terminal left longest ago.
@@ -285,16 +304,26 @@ struct RemoteTerminalWorkspace: View {
                 }
                 .animation(reduceMotion ? .linear(duration: 0.15) : .easeOut(duration: 0.2), value: host.catchingUp)
             }
-            // While watching a terminal this device could type in, list it
-            // again every 10 seconds so the title keeps saying who types.
-            // Each list opens a relay tunnel and the server allows a device
-            // 30 a minute, so this stays at 6. Stops when typing, leaving, or
-            // in the background; slows down while the list can't be had.
-            .task(id: pollsWriters) {
-                guard pollsWriters else { return }
-                var delay = 10.0
+            // Round 20: while connected, list the terminal again every 10
+            // seconds so the title's count stays current, and every 5 while
+            // Connected Devices is open. Each list opens a relay tunnel and
+            // the server allows a device 30 a minute, so this stays at 6 (12
+            // with the sheet), and never closer than that however often the
+            // keyboard switches. Stops when leaving or in the background;
+            // slows down while the list can't be had.
+            .task(id: devicePoll) {
+                guard let poll = devicePoll else { return }
+                var delay = poll.interval
+                // Opening the sheet lists at once unless a list just came.
+                var gap = poll.sheet ? 2 : delay
                 while !Task.isCancelled {
-                    delay = await model.refreshWriters() ? 10 : min(delay * 2, 60)
+                    let since = model.devicesListedAt.map { Date().timeIntervalSince($0) } ?? .infinity
+                    if since < gap {
+                        try? await Task.sleep(for: .seconds(gap - since))
+                        continue
+                    }
+                    delay = await model.refreshDevices() ? poll.interval : min(delay * 2, 60)
+                    gap = delay
                     try? await Task.sleep(for: .seconds(delay))
                 }
             }
@@ -309,20 +338,19 @@ struct RemoteTerminalWorkspace: View {
         }
     }
 
-    private var pollsWriters: Bool {
-        scenePhase == .active && model.isInteractive && model.mode == .view && model.canRequestControl
+    /// How the open terminal's devices are listed again: nil when they
+    /// aren't (not connected, in the background, or the Mac doesn't say).
+    private struct DevicePoll: Equatable {
+        let sheet: Bool
+        /// While the sheet is open, a new link (typing or watching again)
+        /// lists at once, so whose grid it is shows again soon.
+        let link: UUID?
+        var interval: TimeInterval { sheet ? 5 : 10 }
     }
 
-    /// While watching: where typing is (Typing on *device*), when the Mac says.
-    private var typingWhileWatching: String? {
-        guard model.isInteractive, model.mode == .view, let grant = model.selectedGrant else { return nil }
-        return TypingElsewhere.summary(model.openWriters, hostName: grant.host.name)
-    }
-
-    /// An issue's title, naming who types when that's why typing was refused.
-    private func title(of issue: RemoteTerminalIssue) -> String {
-        guard issue.typingElsewhere, let grant = model.selectedGrant else { return issue.title }
-        return TypingElsewhere.busyTitle(model.openWriters, hostName: grant.host.name)
+    private var devicePoll: DevicePoll? {
+        guard scenePhase == .active, model.isInteractive, model.followsDevices else { return nil }
+        return DevicePoll(sheet: showingDevices, link: showingDevices ? model.attachmentID : nil)
     }
 
     /// Plain facts only, never a mode: Can only watch when that's the
@@ -360,12 +388,19 @@ struct RemoteTerminalWorkspace: View {
         AnyView(TerminalKeyRowActions { terminalSecondaryActions }.tint(model.selectedGrant?.host.identityHue))
     }
 
-    /// Text and Colors first (the most frequent), then Find, and Disconnect
-    /// last. Typing follows the keyboard, so there's no switch here.
+    /// Text and Colors first (the most frequent), then Find, Connected
+    /// Devices (Round 20; a sheet, never another menu), and Disconnect last.
+    /// Typing follows the keyboard, so there's no switch here.
     @ViewBuilder private var terminalSecondaryActions: some View {
         TerminalTextAndColorsItems()
         Button(String(localized: "Find in Terminal", bundle: .main), systemImage: "magnifyingglass") { finding = true }
             .accessibilityIdentifier("terminalFind")
+        if model.isInteractive, model.connectedDevices != nil {
+            Button(String(localized: "Connected Devices", bundle: .main), systemImage: ConnectedDevicesSheet.symbol) {
+                showingDevices = true
+            }
+            .accessibilityIdentifier("terminalConnectedDevices")
+        }
         if model.isInteractive {
             Divider()
             // Round 18: Back keeps a paired terminal connected, so ending
@@ -381,7 +416,7 @@ struct RemoteTerminalWorkspace: View {
     /// may type in: the Mac is asked for typing (after the detach ACK of the
     /// watching connection), and the keyboard rises once it accepts. Taking
     /// typing is always this explicit tap; a refusal leaves the keyboard
-    /// down and says who is typing. Nil hides the button: while typing (the
+    /// down and says so. Nil hides the button: while typing (the
     /// key row's Hide Keyboard takes its place), and when this device can
     /// only watch.
     private var startTyping: (() -> Void)? {
@@ -392,12 +427,14 @@ struct RemoteTerminalWorkspace: View {
     /// A tap on a watched terminal starts typing, as on an SSH terminal,
     /// when nobody else types there; then it asks the Mac (after the detach
     /// ACK of the watching connection), which still refuses if someone
-    /// started meanwhile, and this keeps watching and says who. When the
+    /// started meanwhile, and this keeps watching and says so. When the
     /// latest list says someone else types, the tap keeps watching and says
-    /// so, without asking: it never takes typing from anyone.
+    /// so, without asking: it never takes typing from anyone. Who types is
+    /// in Connected Devices (Round 20).
     private func typeOnTap() {
-        if let elsewhere = typingWhileWatching {
-            UIAccessibility.post(notification: .announcement, argument: elsewhere)
+        if model.isInteractive, model.mode == .view, model.othersType {
+            model.noteTypingUnavailable()
+            UIAccessibility.post(notification: .announcement, argument: ConnectedDevices.watchingNotice)
             UINotificationFeedbackGenerator().notificationOccurred(.warning)
             return
         }
@@ -477,7 +514,7 @@ struct RemoteTerminalWorkspace: View {
     private var connectionStatusContent: some View {
         let ended = model.connectionState == .ended
         let title = ended ? String(localized: "Terminal Ended", bundle: .main)
-            : (model.issue.map(title(of:)) ?? String(localized: "Disconnected", bundle: .main))
+            : (model.issue?.title ?? String(localized: "Disconnected", bundle: .main))
         return ContentUnavailableView {
             Label {
                 Text(title).accessibilityIdentifier("remoteDisconnectedStatus")

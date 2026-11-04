@@ -901,3 +901,48 @@ Test that fails first: `PairedCatchUpTests.testWatchingAnotherDevicesGridSaysWho
 ### 3. The simulator's keyboard
 
 Not switched. The approved preference (`com.apple.iphonesimulator`, the device's `DevicePreferences` entry) already said `ConnectHardwareKeyboard = 0`, and Xcode 27.2 has no Simulator.app to apply it; what keeps the software keyboard down is state inside the simulated device. Details and the owner's options are in [handoff.md](../handoff.md), "The simulator's keyboard"; the five UI tests are in [verification.md](../verification.md), Round 19. Found on the way: in landscape the key row's actions menu opens upward, so its items run bottom to top and Port Forwarding and Disconnect start scrolled out of view above Find. The menu works (it scrolls); the test now scrolls it.
+
+## Round 20: connected devices
+
+The owner's decision of 2026-11-04, for a paired-Mac terminal on iOS: "Stop displaying who is typing. Instead, show the number of connected devices, with an option in the top-right corner to view all connected devices." Worked on the iPhone 18 Pro simulator through the DEBUG fixture Mac (`FixtureMac`). Captures: `.build/screenshots/round20-devices/` (`before/` on `main`'s app code with the new tests, `after/`).
+
+### The title
+
+| | Before (Rounds 16 and 19) | After |
+|---|---|---|
+| Watching Terminal 1 while Alex’s iPad types, Studio's window and Sam’s iPhone watch | `Typing on Alex’s iPad, at its size` | `4 devices connected · Studio` |
+| The iPad stopped, its grid still in use | `Studio · Sized for Alex’s iPad` | `3 devices connected · Studio` (or `Studio` when this phone is alone) |
+| Watching "build" while the Mac's window types | `Typing on Studio, at its size` | `2 devices connected · Studio` |
+| Alone, typing or watching | `Studio` | `Studio` |
+| Can only watch, others connected | `Can only watch · Typing on …` | `Can only watch · 2 devices connected · Studio` |
+| Connecting, switching, disconnected, ended | the state's words | unchanged (no count while not connected) |
+| iPad header | the facts above, or Connected | `2 devices connected`, or Connected |
+
+- **The count includes this device**, and the Mac counts once when its app window, another window or the `witerm` command is attached. It's the Mac's `attached` list ([protocol/local-agent-v1.md](../../protocol/local-agent-v1.md)) with this device added from what it does now, so it's never off by this device even when the list was made before it attached.
+- **Alone, no count.** A count of one says nothing the screen doesn't; the HIG asks for information that helps a decision, and collaboration UI on Apple platforms (Notes, Freeform, SharePlay) shows participants only when there are others. So with only this device connected, the line stays as it was: the Mac's name. Connected Devices is still in the menu and says "No other devices are connected."
+- **Order** is state first (what limits this device), then the count, then the Mac's name, so a long Mac name is what gets cut. Plural forms are in the catalog (`%lld devices connected`, English one and other, Chinese one form).
+- **Nobody is named in the title or in notices.** Round 19's "Sized for *device*" and "…, at its size" are gone; whose size it is lives in the sheet. "Catching up…" is unchanged.
+
+### Connected Devices
+
+A **Connected Devices** item in the terminal's ⋯ menu (after Find in Terminal, before Disconnect), also in the iPad header's ⋯ and the key row's actions menu, since all three are the same items. It opens a system sheet (`NavigationStack` + `List`, inline title, Done, medium and large detents), never a menu from a menu.
+
+- **Rows:** This iPhone (or This iPad) first, then the Mac by its paired name (its icon in the Mac's identity hue, the one color that belongs to a machine here), then the other devices in the Mac's order. Each row says Typing or Watching, and "Sets the terminal size" on the one whose grid the terminal uses. The footer gives the terminal's size (`Terminal size: 80 × 24`; VoiceOver: "80 columns, 24 rows"), and "No other devices are connected." when this device is alone.
+- **Whose size, never guessed.** The Mac marks its grid owner ([local-agent-v1](../../protocol/local-agent-v1.md), Grid owner) only while that writer is attached; once it has gone the grid stays as it was and nobody is marked. The phone shows the mark only from a list made on its current link (a list from before typing or watching again could name the wrong device), and its own row only while it types.
+- **Live.** The sheet reads the model, which lists the terminal again every 5 seconds while the sheet is open (10 otherwise); a new link while it's open lists again at once. Measured on the fixture: the iPad leaving disappeared from the open sheet 5.7 to 6.9 s after it stopped (three runs), including the test's own reads.
+- **VoiceOver:** each row is one element, its name as the label and "Typing, Sets the terminal size" as the value; identifiers `connectedDevice-this`, `-mac`, `-device-N`.
+- **Not offered** when the Mac doesn't say who is attached: an invitation's guest (privacy, as for `writers`) and a Mac from before Round 20. Those show no count either; the title names the Mac.
+
+### The watching notice
+
+Round 16's "Another device is typing, so you’re watching." (and its named form) said who types and, once they stopped, said something no longer true (a Round 19 open item). It's now **"Typing wasn’t available, so you’re watching."**: what happened to this device, in the past tense, so it stays true, with a small bordered **Connected Devices** button that opens the sheet, and Dismiss. It shows when typing was refused (the keyboard button, opening a terminal someone else types in, a reconnect), and now also when a tap on a watched terminal keeps watching because the latest list says someone else types (before, the tap only spoke "Typing on *device*" and gave a warning tap, which with the title no longer naming anyone would have left a sighted person with nothing). A refusal's issue title is the plain "Typing on Another Device". Terminals' rows still say "Typing on *device*" before a terminal is opened (not part of this decision; see the questions in the round's report).
+
+### Data and budgets
+
+The phone needed watchers too, so the Mac's `list` for a paired device now carries `attached` (`{name?, mode, grid_owner?, this_device?}`; names only, never device IDs, keys or pairings; omitted for an invitation's guest and by older services). The relay server is untouched; it forwards ciphertext. Polling, not a new frame on the events stream: a frame would need negotiation (older phones fail on an unknown frame kind; older Macs refuse unknown attach fields, which costs a retry tunnel), its own place in the flow-control window, and broadcasts from the service on every attach and detach, for a number that's fine a few seconds late. The phone lists every 10 s while a terminal is connected (6 tunnel opens a minute of the device's 30, as many joins of the Mac's 120) and every 5 s with the sheet open (12), never closer together however often the keyboard switches, and not in the background or after leaving; listings wait for a free tunnel, so 3 kept terminals never need a fifth. A Mac from before Round 20 is listed only while watching a terminal this device could type in, as before.
+
+Tests that fail first: `PairedConnectedDevicesTests` (4: the count and the live sheet; alone; a refused tap; older Macs and invitations), `PairedCatchUpTests.testWatchingAnotherDevicesGridNamesItOnlyInConnectedDevices` (was Round 19's "Sized for" test) and `PairedTerminalFixtureTests.testTappingWhileSomeoneElseTypesKeepsWatching`. Unit tests: `ConnectedDevicesTests` (7). Mac service: `AgentTests` (who is attached, the Mac once over two windows, the grid owner moving when the phone types, a device that left, a guest learning nothing), `LocalAgentSmoke` (a refused paired writer watching sees the Mac as the grid owner and itself marked).
+
+**Fixture (DEBUG):** `FixtureMac` lists `attached` like the service, this device's links included. `-witerm.debug.fixtureWatchers 1`: Studio's own window and "Sam’s iPhone" watch Terminal 1. `-witerm.debug.fixtureOlderMac 1`: the Macs list `writers` but not `attached`. The fixture's invitation terminal ("Demo") now lists neither, as a real guest's.
+
+**Left in place:** `TerminalSurface.watchesOtherGrid` (Round 19), now unused by the title, since the SSH crew was changing `TerminalSurface` at the same time; it can go later.

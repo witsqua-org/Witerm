@@ -9,15 +9,12 @@ struct RemoteTerminalIssue {
     let title: String
     let recovery: String
     let canViewReadOnly: Bool
-    /// Someone else is typing; the view names who, when the Mac says.
-    let typingElsewhere: Bool
 
     init(_ error: Error) {
         let relay = error as? RelayError
         let local = error as? LocalAgentClientError
         canViewReadOnly = relay == .sessionBusy || relay == .readOnly
             || local == .rejected(.sessionBusy) || local == .rejected(.readOnly)
-        typingElsewhere = relay == .sessionBusy || local == .rejected(.sessionBusy)
         if let error = error as? RelayError {
             switch error {
             case .offline:
@@ -73,8 +70,9 @@ struct RemoteTerminalIssue {
 
 /// Where typing is, in the words a paired device can use. The Mac lists the
 /// others who can type in a terminal (`writers`): another paired device by
-/// name, or nil for the Mac itself. Older Macs don't list them, so the
-/// wording falls back to "another device".
+/// name, or nil for the Mac itself. Older Macs don't list them. Since Round
+/// 20 only Terminals' rows say it; an open terminal counts and lists its
+/// connected devices instead (`ConnectedDevices`).
 enum TypingElsewhere {
     /// The names of everyone else typing, the Mac by its paired name, each
     /// once; nil when the Mac didn't say.
@@ -95,42 +93,68 @@ enum TypingElsewhere {
         return String(localized: "Typing on \(joined)", bundle: .main)
     }
 
-    /// A terminal that refused typing because someone else types.
-    static func busyTitle(_ writers: [LocalWriterInfo]?, hostName: String) -> String {
-        summary(writers, hostName: hostName) ?? String(localized: "Typing on Another Device", bundle: .main)
-    }
+}
 
-    /// Round 19: whose grid a watching device shows, when it isn't its own
-    /// size. The Mac gives the grid to the writer who typed last, so with
-    /// one other writer that's them ("Sized for iPad", the Mac by its paired
-    /// name); with several it's one of them. Nil when nobody is known.
-    static func sizedFor(_ writers: [LocalWriterInfo]?, hostName: String) -> String? {
-        guard let names = names(writers, hostName: hostName), !names.isEmpty else { return nil }
-        guard names.count == 1 else { return String(localized: "Sized for Another Device", bundle: .main) }
-        return String(localized: "Sized for \(names[0])", bundle: .main)
-    }
+/// Round 20: who is connected to the open paired terminal, as the Connected
+/// Devices sheet lists them and the title counts them. The Mac lists every
+/// attached device (`attached`, names only): itself without a name, each
+/// paired device once, and this one marked. This device's own row follows
+/// what it does now, not the list, which can be up to one poll old.
+struct ConnectedDevice: Equatable, Identifiable {
+    enum Kind: Equatable { case thisDevice, mac, paired }
+    let id: String
+    let kind: Kind
+    let name: String
+    let typing: Bool
+    /// The terminal's grid is this device's (the Mac's grid owner). Only
+    /// when the Mac said so in a list made since this device's link was
+    /// opened; never guessed.
+    let setsSize: Bool
+}
 
-    /// Round 19: what a watching device's title says about who types and
-    /// whose size the grid is. While one other device types, the grid is
-    /// theirs (the Mac gives it to whoever typed last), so one fact says
-    /// both and the name isn't repeated in a short line: "Typing on iPad,
-    /// at its size". Once they stop, the grid stays theirs: "Sized for iPad".
-    static func watchingFacts(typing writers: [LocalWriterInfo]?, sizedBy setters: [LocalWriterInfo]?,
-                              hostName: String) -> (typing: String?, sized: String?) {
-        let typing = names(writers, hostName: hostName) ?? []
-        let sized = setters.flatMap { names($0, hostName: hostName) } ?? []
-        if typing.count == 1, sized == typing {
-            return (String(localized: "Typing on \(typing[0]), at its size", bundle: .main), nil)
+@MainActor enum ConnectedDevices {
+    /// This device first, then the Mac, then the others in the Mac's order.
+    /// Nil when the Mac didn't list who is attached (an older Mac, or an
+    /// invitation's grant).
+    static func devices(_ attached: [LocalConnectedDevice]?, typingHere: Bool, thisName: String, hostName: String,
+                        sizesCurrent: Bool) -> [ConnectedDevice]? {
+        guard let attached else { return nil }
+        let ownsGrid = attached.contains { $0.thisDevice && $0.gridOwner }
+        var devices = [ConnectedDevice(id: "this", kind: .thisDevice, name: thisName, typing: typingHere,
+                                       setsSize: sizesCurrent && typingHere && ownsGrid)]
+        var others = 0
+        for device in attached where !device.thisDevice {
+            if device.name == nil, !devices.contains(where: { $0.kind == .mac }) {
+                devices.append(ConnectedDevice(id: "mac", kind: .mac, name: hostName, typing: device.mode == .control,
+                                               setsSize: sizesCurrent && device.gridOwner))
+            } else if let name = device.name {
+                devices.append(ConnectedDevice(id: "device-\(others)", kind: .paired, name: name,
+                                               typing: device.mode == .control, setsSize: sizesCurrent && device.gridOwner))
+                others += 1
+            }
         }
-        return (summary(writers, hostName: hostName), sizedFor(setters, hostName: hostName))
+        return devices
     }
 
-    /// A reconnect that found someone else typing and watched instead.
-    static func watchingNotice(_ writers: [LocalWriterInfo]?, hostName: String) -> String {
-        guard let summary = summary(writers, hostName: hostName) else {
-            return String(localized: "Another device is typing, so you’re watching.", bundle: .main)
-        }
-        return String(localized: "\(summary), so you’re watching.", bundle: .main)
+    /// The title's count, this device included: "3 devices connected". Nil
+    /// when this device is the only one, since a count of one says nothing
+    /// the screen doesn't (the title then names the Mac alone).
+    static func count(_ devices: [ConnectedDevice]?) -> String? {
+        guard let devices, devices.count > 1 else { return nil }
+        return String(localized: "\(devices.count) devices connected", bundle: .main)
+    }
+
+    /// "This iPhone" or "This iPad".
+    static var thisDeviceName: String {
+        UIDevice.current.userInterfaceIdiom == .pad ? String(localized: "This iPad", bundle: .main)
+            : String(localized: "This iPhone", bundle: .main)
+    }
+
+    /// Typing was refused (someone else types where this device may not type
+    /// alongside), or a reconnect found it so, and this device watches. It
+    /// says what happened here, never who types: the sheet lists them.
+    static var watchingNotice: String {
+        String(localized: "Typing wasn’t available, so you’re watching.", bundle: .main)
     }
 }
 
@@ -214,7 +238,9 @@ final class RemoteTerminalModel {
     private(set) var parked = false
     /// Resumes in place so far, for the layout probe and tests.
     private(set) var resumes = 0
-    @ObservationIgnored private var liveGrid: (columns: Int, rows: Int)?
+    /// The grid the Mac last told the open terminal. Observed, for the
+    /// Connected Devices sheet's size.
+    private(set) var liveGrid: (columns: Int, rows: Int)?
     /// A parked link's detach is still waiting for the Mac's ACK; resuming
     /// waits for it, so the Mac has let go before the new link asks to type.
     @ObservationIgnored private var releasing = false
@@ -233,14 +259,11 @@ final class RemoteTerminalModel {
     private(set) var keptNote: String?
     /// The text size the terminal view last used, for renderers made off screen.
     static var rendererFontSize: CGFloat = 14
-    /// Round 19: the others last listed as typing in the open terminal, kept
-    /// after they stop, since the grid stays as the last of them set it
-    /// until someone else types. Cleared when this device types.
-    private(set) var gridSetters: GridSetters?
-    struct GridSetters: Equatable {
-        let sessionID: String
-        let writers: [LocalWriterInfo]
-    }
+    /// Round 20: the link the open terminal's devices were last listed for
+    /// (`attachmentID` when the list was asked for), and when. Whose grid it
+    /// is counts only from a list made on the current link.
+    private(set) var devicesListedFor: UUID?
+    @ObservationIgnored private(set) var devicesListedAt: Date?
     /// A relay server without the presence stream (an older one) is asked
     /// again after this (Round 18).
     @ObservationIgnored var presenceUnsupportedUntil: Date?
@@ -561,11 +584,11 @@ final class RemoteTerminalModel {
                         return
                     }
                     // The attach reply carries the live grid; the listed access still applies.
-                    // Who else types comes from the list, until the next one.
-                    let writers = self.sessions.first { $0.id == next.session.id }?.writers ?? session.writers
+                    // Who else types and who is attached come from the list, until the next one.
+                    let listed = self.sessions.first { $0.id == next.session.id } ?? session
                     let live = LocalSessionInfo(id: next.session.id, name: next.session.name, createdAt: next.session.createdAt,
                                                 columns: next.session.columns, rows: next.session.rows, access: allowed,
-                                                writers: writers)
+                                                writers: listed.writers, attached: listed.attached)
                     self.selectedSession = live
                     self.sessions = self.sessions.map { $0.id == live.id ? live : $0 }
                     self.mode = targetMode
@@ -580,7 +603,6 @@ final class RemoteTerminalModel {
                     self.host = self.makeHost(id: self.attachmentID, link: next, mode: targetMode,
                                               following: changingMode ? old : nil)
                     old?.stop()
-                    self.rememberGridSetters()
                     self.displayAttachment = next
                     self.attachment = next
                     self.connectionState = .connected
@@ -949,14 +971,48 @@ final class RemoteTerminalModel {
         return sessions.first { $0.id == id }?.writers
     }
 
-    /// Lists the device's terminals again only to learn who else types in
-    /// the one being watched, so its title can say where typing is. Changes
-    /// nothing else; false when the list couldn't be had.
+    /// Round 20: everyone connected to the open terminal, this device first,
+    /// as of the latest list; nil when the Mac doesn't say (an older Mac, or
+    /// an invitation's grant) or nothing is connected here.
+    var connectedDevices: [ConnectedDevice]? {
+        guard let id = selectedSession?.id, attachment != nil || parked,
+              [.connected, .switching].contains(connectionState) else { return nil }
+        return ConnectedDevices.devices(sessions.first { $0.id == id }?.attached, typingHere: mode == .control,
+                                        thisName: ConnectedDevices.thisDeviceName,
+                                        hostName: selectedGrant?.host.name ?? "",
+                                        sizesCurrent: devicesListedFor == attachmentID)
+    }
+
+    /// Whether the open terminal's list says who is connected (or, from an
+    /// older Mac, who types), so it's worth listing again to keep the title
+    /// and the sheet current. An invitation's grant learns neither.
+    var followsDevices: Bool {
+        guard let id = selectedSession?.id, let listed = sessions.first(where: { $0.id == id }) else { return false }
+        if listed.attached != nil { return true }
+        // An older Mac: only who types, which a tap on a watched terminal checks.
+        return listed.writers != nil && mode == .view && canRequestControl
+    }
+
+    /// Someone else types in the open terminal, as of the latest list.
+    var othersType: Bool {
+        if let devices = connectedDevices { return devices.contains { $0.kind != .thisDevice && $0.typing } }
+        return openWriters?.isEmpty == false
+    }
+
+    /// A tap on a watched terminal kept watching because someone else types
+    /// there: the terminal says so, as when the Mac refuses.
+    func noteTypingUnavailable() { notice = true }
+
+    /// Lists the device's terminals again only to learn who is connected to
+    /// the open one (and who types), for its title and the Connected Devices
+    /// sheet. Changes nothing else; false when the list couldn't be had.
     @discardableResult
-    func refreshWriters() async -> Bool {
-        guard isInteractive, mode == .view, canRequestControl, let grant = selectedGrant,
+    func refreshDevices() async -> Bool {
+        guard isInteractive, followsDevices, let grant = selectedGrant,
               let id = selectedSession?.id else { return false }
         let token = generation
+        let link = attachmentID
+        devicesListedAt = Date()
         let listed: [LocalSessionInfo]
         #if DEBUG
         if RemoteFixture.isActive { listed = FixtureMac.shared.sessions(for: grant.id) } else {
@@ -975,27 +1031,12 @@ final class RemoteTerminalModel {
         sessions = sessions.map { session in
             guard let fresh = listed.first(where: { $0.id == session.id }) else { return session }
             return LocalSessionInfo(id: session.id, name: session.name, createdAt: session.createdAt, columns: session.columns,
-                                    rows: session.rows, access: session.access, writers: fresh.writers)
+                                    rows: session.rows, access: session.access, writers: fresh.writers,
+                                    attached: fresh.attached)
         }
-        rememberGridSetters()
+        // Whose grid it is holds only for the link the list was made on.
+        devicesListedFor = attachmentID == link ? link : nil
         return true
-    }
-
-    /// Round 19: who set the grid this device watches, when it isn't this
-    /// screen's own size: another device that types now, or the last one
-    /// that did. Nil while typing (the grid is this device's), and when
-    /// nobody is known. `TypingElsewhere.watchingFacts` words it.
-    var sizedBy: [LocalWriterInfo]? {
-        guard isInteractive, mode == .view, host?.watchesOtherGrid == true, let id = selectedSession?.id else { return nil }
-        return openWriters.flatMap { $0.isEmpty ? nil : $0 } ?? (gridSetters?.sessionID == id ? gridSetters?.writers : nil)
-    }
-
-    /// Keeps who types in the open terminal, for `sizedBy` once they stop.
-    private func rememberGridSetters() {
-        guard let id = selectedSession?.id else { return }
-        if mode == .control { gridSetters = nil; return }
-        if gridSetters?.sessionID != id { gridSetters = nil }
-        if let writers = openWriters, !writers.isEmpty { gridSetters = GridSetters(sessionID: id, writers: writers) }
     }
 
     /// Ends this device's pairing with `grant`'s device, through the server
@@ -1472,7 +1513,7 @@ extension RemoteTerminalModel {
         if !sessions.contains(where: { $0.id == entry.session.id }) { sessions.append(entry.session) }
         let live = LocalSessionInfo(id: entry.session.id, name: entry.session.name, createdAt: entry.session.createdAt,
                                     columns: entry.grid.columns, rows: entry.grid.rows, access: entry.session.access,
-                                    writers: entry.session.writers)
+                                    writers: entry.session.writers, attached: entry.session.attached)
         selectedSession = live
         unpairedName = nil
         issue = nil
@@ -1487,7 +1528,6 @@ extension RemoteTerminalModel {
         displayAttachment = entry.link
         attachment = entry.link
         connectionState = .connected
-        rememberGridSetters()
         #if DEBUG
         Self.layoutLog.notice("reopened kept session=\(entry.session.id, privacy: .public) kept=\(self.kept.count, privacy: .public)")
         #endif
@@ -1548,7 +1588,8 @@ extension RemoteTerminalModel {
     /// How often devices are listed again while Terminals is on screen and
     /// the relay server has no presence stream: every 15 seconds, so 4 tunnel
     /// opens a minute per device, within the server's 30 a minute even with
-    /// several devices and the 6 a minute of a watched terminal's writers.
+    /// several devices and the 6 a minute (12 with its Connected Devices
+    /// open) of an open terminal's connected devices.
     static let presencePoll: Duration = .seconds(15)
 
     /// Keeps each device's Online or Offline current while a list that shows
