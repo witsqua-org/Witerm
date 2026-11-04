@@ -1019,3 +1019,73 @@ Tests that fail first: `PairedConnectedDevicesTests.testTerminalsRowsCountConnec
 ### SSH: going Home and back keeps the connection
 
 `SSHWorkspaceTests.testDirectSSHTrustTerminalKeyboardAndSFTP` still expected going Home to disconnect SSH immediately (Reconnect, then the password again). That was stale: since Round 17 SSH stays connected for 3 minutes in the background, and since Round 20, returning within that window continues the same connection with no Face ID prompt. The step now types a letter on the shell's line, goes Home, checks the app really left the foreground, and comes back. It checks that the terminal is still there, with no Reconnect, no password form and no trust prompt, that the letter is still on the line (a new shell wouldn't have it), and that the letter can be erased. The Reconnect check the old step carried (a new shell on the same verified pin, with no trust prompt) now follows an explicit Disconnect from the ⋯ menu. The test doesn't wait 3 minutes. Coming back after 10, 60 and 170 s with the same `$$` is covered by `SSHTypingChromeTests.testReturningWithinThreeMinutesKeepsTheSameShell`. Being disconnected past 3 minutes has no SSH UI test: it's `SSHWorkspaceModel.enterForeground` and `closeAfterBackgroundWindow`, and paired terminals have the opt-in `PairedTerminalFixtureTests.testReturningAfterThreeMinutesReconnects` (`WITERM_BG_LONG=1`). No other step was stale: the whole test passes against the fixture, its own cleanup included.
+
+## Round 22: iOS terminal chrome
+
+Four findings from the owner on the iPhone 17 Pro (2026-11-05, Rounds 18–21 build), in a paired-Mac terminal (the coordinator's follow-up), checked on SSH too. Worked on the iPhone 18 Pro simulator with the real software keyboard, through the DEBUG fixture Mac (`FixtureMac`) and the disposable OpenSSH fixture. Evidence: `.build/screenshots/round22-ios/` (`before-paired/`, `before-ssh/`, `after-paired/`, `after-ssh/`, and `video/`: screen recordings of hiding the keyboard before and after, with stills in `before-frames/` and `after-frames/`). "Before" is `main`'s app code (11a0cd3) with the new UI tests.
+
+### 1. One tap didn't bring up the keyboard
+
+**Causes, both on a watched paired terminal.**
+
+- **The Mac's own window counted as "someone else types".** The owner's Terminal 1 is open in the Mac app, whose window is attached as a writer. Since Round 17 a tap on a watched terminal kept watching whenever the latest list said anyone else typed, and since Round 20 that included the Mac (`othersType` counted every typing entry but this device's). But the Mac's own clients always let a paired device type alongside them ([local-agent-v1](../../protocol/local-agent-v1.md), Typing; `AgentBroker.coTypes`), so the Mac would have said yes: the keyboard button worked, and the tap only said "Typing wasn’t available, so you’re watching." `othersType` now counts only other paired devices that type (whose co-typing this device can't see). The fixture had the same mistake (it refused typing wherever the Mac typed), which is why no test caught it; it now lets this device type alongside the Mac, as the service does.
+- **A tap right after hiding the keyboard was dropped.** Hiding the keyboard switches to watching 0.4 s later (detach ACK, a new link, Round 19's still picture). While that ran, the terminal had no tap-to-type action, and a tap on the old renderer waited out the double tap's interval, by when the renderer had been replaced and the tap was cancelled. Now a tap (or the keyboard button) during the switch is kept and types once watching is ready (`RemoteTerminalModel.requestTyping`), and the renderer being replaced doesn't wait for a double tap. A tap in the first 0.4 s takes the keyboard back on the typing link, as before.
+- **Stale lists:** checked in code, not seen. The Mac marks this device's own entry `this_device`, and it never counts, so a list made while this device typed can't make it "someone else". A list up to 10 s old can still name another paired device that has since stopped typing; the tap then says typing wasn't available until the next list.
+
+**Feedback while the Mac is asked.** A tap or the keyboard button turns the keyboard button into the system button's own activity indicator (VoiceOver: "Showing Keyboard…") until the keyboard rises, instead of the button disappearing with only the title's caption changing.
+
+| Paired, fixture | Before (`main`) | After |
+|---|---|---|
+| "build" (the Mac types there): open, hide the keyboard, one tap | Opened watching with "Typing wasn’t available"; the tap said it again and asked nothing (links 1 → 1) | Opens typing alongside the Mac; one tap types (spinner 0.69 s after the tap started, typing at 3.2 s with the fixture at 0.6 s a step) |
+| Terminal 1, one tap while watching | Typing after 1.73 s (fixture at 0.15 s a step), nothing shown meanwhile | Spinner at 0.71 s (XCTest's tap itself returns at 0.50 s), typing at 3.16 s at 0.6 s a step |
+| One tap during the switch to watching, 0.6 s a step | (not reachable on `main`, which ignores the slower fixture) | Types after 2.70 s: the switch finishes, then typing |
+
+**SSH:** one tap brings the keyboard up after the double tap's interval (focused 0.86–1.12 s after XCTest starts the tap on `main`, 1.01–1.05 s after; the tap call itself takes 0.48–0.78 s). Not waiting for the double tap was tried and dropped: the keyboard then rose on the first tap of a double tap, and the grid's resize for it cleared the word the second tap selected. A double tap selects on a paired terminal; on SSH, XCTest's double tap selected nothing on `main` either (recorded, not asserted).
+
+**Diagnostics (DEBUG, for the owner's phone):** `com.witerm` / `terminal-layout` logs `tapToType interactive=… mode=… hiding=… othersType=… devices=[thisDevice,mac+typing,…] writers=N` for each tap on a watched terminal (kinds and modes only, never names), and `terminal-gestures` logs whether the tap recognizer began.
+
+### 2. The bottom buttons after returning to the bottom
+
+**Reproduced as a missing keyboard button with the keyboard down.** Flinging back, Jump to Latest, new output, typing, rotation, keyboard up and down: Jump to Latest showed while away (above the key row) and went at the bottom in every case, on both kinds of terminal (`TerminalFloatingButtonsTests.testTheRightButtonsShowAtTheBottom`, `SSHFloatingButtonsTests.testTheRightButtonsShowOnOneColumn`). What was missing was the keyboard button. A paired terminal passed it an action only while watching, so after the keyboard went down, through the 0.4 s wait and the switch to watching, neither Hide Keyboard nor the keyboard button showed. In the recordings on `main`, the bottom right was empty for **0.74 s** after Hide Keyboard (paired) and **0.43 s** (SSH, where the button was placed for the old text area until the late relayout below); after, it's drawn in every frame.
+
+**The rule now** (`TerminalSurface.keyboardButtonShown`): keyboard up, the key row's Hide Keyboard; keyboard down, the keyboard button whenever the keyboard can come up (the terminal types, watching may ask, or the Mac is being asked). On a typing terminal it focuses it; on a watching one it asks the Mac.
+
+**If the owner still sees a button missing:** DEBUG builds log each show and hide of either floating button with the state that decided it (`buttons latest|keyboardButton shown|hidden focused=… acceptsInput=… action=… pending=… mode=… pos=… canScroll=… overlap=… latest=frame keyboard=frame`, category `terminal-layout`).
+
+### 3. Jump to Latest and Hide Keyboard weren't on one column
+
+| | Before | After |
+|---|---|---|
+| Portrait, keyboard up: centers of Jump to Latest / Hide Keyboard | 364 / 374 pt (trailing insets 16 and 6 pt) | 364 / 364 |
+| Portrait, keyboard down: keyboard button | 364 | 364 |
+| Landscape, keyboard up: Jump to Latest / Hide Keyboard | 774 / 726 (the actions key came after Hide Keyboard) | 774 / 774 |
+| Landscape, keyboard down: keyboard button | 774 | 774 |
+
+Hide Keyboard now ends the key row on the floating buttons' column, `FloatingTerminalButton.trailing` (16 pt) from the edge or the safe area, with the actions key before it; its symbol is the floating buttons' size (it was the keys' smaller callout). All three are 44 pt system glass. To keep Esc, Ctrl, Tab and the four arrows on a 402 pt iPhone beside it, the keys are 4 pt apart (5 before) and the scrolling keys' last inset is 2 pt (6).
+
+**Open:** in landscape, the actions menu now opens from a key 60 pt further left and shows Text and Colors at its top; `SSHTypingChromeTests.testLandscapeTypingGivesTheTerminalTheBarsRows` no longer reaches SFTP Files by scrolling it (its drags close the menu). Whether every item is reachable by hand wasn't confirmed; check on the phone.
+
+### 4. Hiding the keyboard flickered
+
+Measured from screen recordings (`simctl io recordVideo`, every changed frame, analyzed for where text is on screen and whether the keyboard button's place is drawn; no terminal content kept):
+
+| Hide Keyboard | Before | After |
+|---|---|---|
+| While the keyboard slides away | The text stayed at the keyboard-up size: a black band grew under it | The text is full height under the keyboard, which slides away over it |
+| After the keyboard has gone | The lower 45% blank for 0.24 s (paired) / 0.17 s (SSH), then every row jumped at once | Nothing more |
+| The paired switch to watching, about 1 s later | Old and new renderers cross-faded 7.7 pt apart: 5 frames of doubled, dimmed text | No visible change |
+| The title and keyboard button during that switch | "Hiding Keyboard…" with a gray symbol, the device count gone; no keyboard button | Unchanged; the button stays |
+
+Causes and changes:
+
+- **The grid waited for the keyboard to be gone** (`keyboardDidHide`, about 0.41 s after the tap). Now, when UIKit says the keyboard will leave (its end frame below the screen) and the terminal is letting it go, the text takes the whole height at once, without animation, under the keyboard (`keyboardLeaving`). UIKit says so from inside the terminal's `resignFirstResponder`, while it still has the keyboard, so the terminal marks that moment (`isResigningFocus`). Probe: the grid changed 2 ms after the will-hide, before the keyboard was gone; on `main` 413–422 ms after it, on both kinds.
+- **Typing and watching grids put their part row on different sides.** Round 18 put a watched grid's leftover at the top (the last line on the bottom edge); a typing grid kept it at the bottom. The typing grid now does the same, so the switch lands every row where it was and Round 19's still picture fades over identical text.
+- **The switch's status.** While the keyboard's switch to watching runs, the title, its symbol and count, the iPad header and the switch haptic stay as they were (`RemoteTerminalModel.hidingKeyboard`); Back stays disabled for that moment, as before.
+
+Left as it was: content shifts once when the grid grows (SwiftTerm brings lines back from scrollback), and on a paired terminal the Mac's redraw at the new size follows a moment later (tmux draws from the top). In landscape, where the bar steps aside for typing, its return after the keyboard has gone is a second change; not measured this round.
+
+Tests that fail first on `main`'s app code: `TerminalFloatingButtonsTests` (paired) `testOneTapShowsTheKeyboardWhileOnlyTheMacTypes`, `testOneTapShowsASpinnerAtOnceThenTheKeyboard`, `testFloatingButtonsAndHideKeyboardShareOneColumn` and `testHidingTheKeyboardIsOneTransition`; `SSHFloatingButtonsTests` `testTheRightButtonsShowOnOneColumn` and `testHidingTheKeyboardIsOneTransition`. `testOneTapRightAfterHidingTheKeyboardTypes` and `testTheRightButtonsShowAtTheBottom` passed on `main` only because `main` ignores the slower fixture, so its switch was over before XCTest's tap returned; the recordings show the missing button there. Unit tests: `KeptPairedTerminalTests.testKeyboardButtonShowsWhenTheKeyboardIsDownWhileTyping` and `testTypingAndWatchingGridsEndOnTheBottomEdge`, `MobileTerminalInputTests.testHideKeyboardEndsTheRowOnTheFloatingButtonsColumn`.
+
+**Fixture (DEBUG):** `-witerm.debug.fixtureLatency <seconds>` sets the fixture Mac's time per step (0.15 s by default). The fixture's Mac types alongside this device; Alex’s iPad (`-witerm.debug.fixtureOtherTyper`) doesn't, and is now the "someone else types" case in `PairedTerminalFixtureTests.testTappingWhileSomeoneElseTypesKeepsWatching` and `PairedConnectedDevicesTests.testATapWhileAnotherDeviceTypesSaysWatchingWithoutNamingAnyone` (was "build"). The joint `MacContinuityFlowTests` gains the owner's case on the real Mac: hide the keyboard while the Mac's window types, then one tap types (built, not run).
+
+**Verification:** see [verification.md](../verification.md), Round 22: iOS.
