@@ -355,6 +355,20 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             setNeedsLayout()
         }
 
+        /// The floating buttons lie over the reading text (Round 18), and the
+        /// text comes first in `accessibilityElements`, so without this a
+        /// VoiceOver touch on a button (and XCUITest's hit test) found the
+        /// text under it. A shown button wins at its own frame; reading
+        /// order is unchanged.
+        @available(iOS 18.0, *)
+        override func accessibilityHitTest(_ point: CGPoint, event: UIEvent?) -> Any? {
+            for button in [keyboardButton, latestButton] where !button.isHidden && button.alpha > 0.01
+                && button.frame.contains(point) {
+                return button
+            }
+            return super.accessibilityHitTest(point, event: event)
+        }
+
         /// The text first, then Jump to Latest and the keyboard button when shown.
         private func updateAccessibilityElements() {
             accessibilityElements = [readingView] + (latestButton.isHidden ? [] : [latestButton])

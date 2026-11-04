@@ -168,6 +168,9 @@ import XCTest
         waitForWatching()
         shot("r18-2-watching-portrait")
         assertNoBand("watching, portrait")
+        // The floating button lies over the reading text: an accessibility
+        // touch at the button (VoiceOver, XCUITest) must find the button.
+        XCTAssertTrue(keyboardButton.isHittable, "The text under the keyboard button took its accessibility hit test")
         // The watched grid's last row is fully on screen and nothing is cut off.
         XCTAssertLessThan(probe("overflow") ?? 99, 1)
         XCUIDevice.shared.orientation = .landscapeLeft
