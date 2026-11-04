@@ -848,3 +848,56 @@ On a real relay server, "the moment the server knows" is at once for a Mac that 
 ### 5. Native system components
 
 The owner: the "Device is offline" box (the paired terminal's custom connection card) should be native, and so should similar custom components elsewhere. The audit, what replaced each component, what stays custom and why, and the Mac's candidates (not changed) are in [native UI audit (iOS)](native-ui-audit-ios.md). In short: the terminal's connection states are now `ContentUnavailableView` over the system material (with the system `ProgressView` while connecting); `IssueBanner` is a `GroupBox` with a `Label`; `StatusBadge` is a plain `Label` in the status color; the offline device's row, the camera-unavailable note, the invitation field, the device code and the SSH host-key card use system rows, `ContentUnavailableView`, `.roundedBorder` and `GroupBox`; the Welcome Tour's symbols lose their drawn tiles; notices over a terminal sit on the system `.bar` material. The [Design Guidelines](README.md#design-system) now say to prefer the system component and to state a reason for a custom one. Captures: `.build/screenshots/round18-ios/native-before/` and `native-after/` (`NativeUIScreenshotTests`).
+
+## Round 19: iOS
+
+The owner's three decisions of 2026-11-04, worked on the iPhone 18 Pro simulator through the DEBUG fixture Mac (`FixtureMac`) and the disposable OpenSSH fixture. Captures: `.build/screenshots/round19-ios/` (`before/` on the code before the change, with the new fixture seams; `after/`).
+
+### 1. Catching up…
+
+**Cause.** Typing again (the keyboard button or a tap), hiding the keyboard, and Back while typing each replace the terminal's link with a new one, and a new link gets a new renderer, which starts empty. A resume in place (Round 17) keeps the renderer but resets it. Either way, the Mac's service first sends the terminal's earlier output, ending in a screenful of line feeds that scroll it above the screen, and only then tmux's redraw ([protocol/local-agent-v1.md](../../protocol/local-agent-v1.md), History). Until the redraw arrives, the screen is blank but for the cursor: what the owner saw in the Round 17 joint run (`phone-09d-typing-again.png`). Round 17's still picture covered only the resume in place, for at most 1.5 s, and went as soon as any output paused, so the earlier output alone (with no redraw yet) could already take it away.
+
+**Change.**
+
+- **The old screen stays.** A new renderer for the same terminal (typing or watching again, including the watching link after Back) starts under a still picture of the old one's text (`TerminalSurface.cover(withPictureOf:)`), below the floating buttons, which stay usable. The resume in place keeps its picture of the whole screen. Either picture now stays until the screen has the Mac's redraw, and then until output pauses for 0.15 s (at most 1.5 s more). It's cheap: one snapshot view, made from what's already on screen, and no second renderer.
+- **"Caught up"** means the screen (not the scrollback) has any visible character again (`LinkCoordinator.screenHasText`), checked on each output while waiting. A screen that's also blank on the Mac (a cleared full-screen program) counts as caught up once the Mac has sent nothing for 3 s.
+- **The note.** If the redraw hasn't arrived 0.4 s after the new link is in place, "Catching up…" shows: a system `ProgressView` and the text on the system `.bar` material, across the top of the terminal like Round 18's notices, but over the terminal rather than above it, so it never changes the terminal's height (that would resize the Mac's grid). It fades in and out (0.2 s, a 0.15 s fade with Reduce Motion), takes no touches, and goes as soon as the screen has the redraw. VoiceOver says "Catching up…" once, and only if it's still there 0.6 s after it appeared, so a note that only flashes isn't spoken.
+- **First opens** don't show it: there's no old screen, and "Opening terminal…" already covers the wait.
+
+**Why 0.4 s.** On a good connection the redraw follows the attach reply within a round trip or two; on the fixture, the measured wait was 9 to 63 ms. A progress note that appeared sooner would mostly flash, which reads as a glitch, and anything under about half a second already feels like part of the tap. 0.4 s is above the normal case and well under the 1 s at which a wait stops feeling like a direct response to the tap. It's one constant, `LinkCoordinator.catchUpThreshold`, to tune with numbers from the real relay.
+
+| Typing again with a slow redraw (fixture, redraw 1.5 s late) | Before | After |
+|---|---|---|
+| Hiding the keyboard, 0.9 s later | Blank, only the cursor (`before/r19-catch-1b-watching-0.9s.png`) | The old screen under "Catching up…" (`after/r19-catch-1-watching.png`); the note went 1.24 s after the tap returned; the renderer waited 1,575 ms |
+| Typing again, the owner's case | Blank until the redraw | The old screen under "Catching up…" (`after/r19-catch-2-typing-again.png`); waited 1,712 ms; the note went 0.78 s after the tap returned |
+| Fast redraw (the fixture as it is), watch, type, watch, type | No note | No note; the renderer waited 9–63 ms |
+
+Tests that fail first: `PairedCatchUpTests.testASlowRedrawSaysCatchingUpOverTheOldScreen` (no note, no picture before). `testAFastResumeNeverSaysCatchingUp` guards the other side: it never saw a note on the old code either (it failed there only on the new probe fields). Unit tests: `CatchUpTests` (8), with the threshold, the picture staying until the redraw, a fast redraw never showing the note, the blank-on-the-Mac fallback, no note on a first open, and earlier output scrolled off the screen counting as blank.
+
+**Fixture (DEBUG):** `-witerm.debug.fixtureRedrawDelay <seconds>` sends each attach's earlier output at once, ending in a screenful of line feeds as the service does, and the redraw (on attach and on resize) that much later.
+
+### 2. Sized for *device*
+
+**When.** Only while this device watches a grid that isn't its own size (`TerminalSurface.watchesOtherGrid`: the Mac's grid differs from the whole view's fit, `watchingFit`), and the device that set it is known. The Mac gives the grid to the writer who typed last ([protocol/local-agent-v1.md](../../protocol/local-agent-v1.md), Grid owner), so that's the one other writer the Mac lists (`writers`, already in the terminal list; the Mac itself by its paired name). The phone keeps the last non-empty list for the open terminal, since the grid stays as the last of them set it after they stop (`RemoteTerminalModel.gridSetters`). Nothing is added to the protocol.
+
+**Where.** In the title's status line, the plain-facts line under the terminal's name (also the iPad header's status). It's quiet (caption, secondary), always where the person looks to see who types, and costs the terminal nothing.
+
+- While the one other device types, the grid is theirs by the Mac's rule, so one fact says both and the name isn't repeated in a line that would otherwise cut it off ("Typing on Alex’s iPad · Sized for…" in the first capture): **Typing on Alex’s iPad, at its size**.
+- After they stop: **Studio · Sized for Alex’s iPad**.
+- When someone else types now but the grid is still another's: **Typing on Studio · Sized for Alex’s iPad**. With several writers it's one of them, so **Sized for Another Device**.
+- It goes when this device types (its own size applies) and stays gone when it watches again at its own size (Round 17's fit). An older Mac that doesn't list writers shows nothing.
+
+| | Before | After |
+|---|---|---|
+| Watching Terminal 1 while Alex’s iPad types at 80 × 24 | `Typing on Alex’s iPad` | `Typing on Alex’s iPad, at its size` |
+| The iPad stopped; still its grid | `Studio` | `Studio · Sized for Alex’s iPad` |
+| This phone types, then watches at its own size (45 × 39 with the watching notice shown) | `Studio` | `Studio` |
+| Watching "build" while the Mac types there at 80 × 24 | `Typing on Studio` | `Typing on Studio, at its size` |
+
+Test that fails first: `PairedCatchUpTests.testWatchingAnotherDevicesGridSaysWhoseSizeItIs`. Unit tests in `CatchUpTests`: the wording (one writer, the Mac, several, none, an older Mac) and when the grid counts as another's (never while typing).
+
+**Fixture (DEBUG):** `-witerm.debug.fixtureOtherTyper <seconds>`: "Alex’s iPad" types in Terminal 1 at 80 × 24 for that long after the fixture starts, so the phone opens watching, then may type.
+
+### 3. The simulator's keyboard
+
+Not switched. The approved preference (`com.apple.iphonesimulator`, the device's `DevicePreferences` entry) already said `ConnectHardwareKeyboard = 0`, and Xcode 27.2 has no Simulator.app to apply it; what keeps the software keyboard down is state inside the simulated device. Details and the owner's options are in [handoff.md](../handoff.md), "The simulator's keyboard"; the five UI tests are in [verification.md](../verification.md), Round 19. Found on the way: in landscape the key row's actions menu opens upward, so its items run bottom to top and Port Forwarding and Disconnect start scrolled out of view above Find. The menu works (it scrolls); the test now scrolls it.
