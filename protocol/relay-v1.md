@@ -36,6 +36,15 @@ An iOS client lists and attaches to existing Mac sessions through the server. Th
 - A once-per-second check closes sockets whose grant or device is gone, or when the database fails.
 - The server pings every 15 seconds with a 5-second deadline.
 
+**Presence** (Round 18; in the server's code, not yet deployed, and not listed in `/v1/info`'s capabilities). `GET /v1/relay/presence` (WebSocket, Bearer, iOS only) tells a client device whether the Macs it holds grants with are connected to this server, so its lists can say Offline as soon as the server knows, without opening a tunnel per check.
+
+- The client's first message is text: `{"type":"watch","grant_ids":[…]}`, 1 to 16 distinct grant IDs, no other fields. The server checks each with the usual active-grant lookup and keeps only those whose client is this device; others are silently left out, so the stream reveals nothing about grants that aren't the caller's.
+- The server answers with a snapshot, `{"type":"presence","hosts":[{"grant_id","online"}…]}`, then sends one such message, with one entry, whenever a watched grant's Mac connects or its host connection drops. A host connection replaced by a new one from the same Mac sends nothing. The client sends nothing more; any message from it, or its close, ends the stream.
+- A revoked grant, a revoked device, or an expired session closes the stream (the client watches again with the grants it still holds). A client that doesn't read is closed rather than queued (64 updates).
+- At most 2 streams per device; each counts as one socket and as one relay open against the per-device rate limit when it starts. It carries no terminal data and no grid sizes.
+- A server without presence answers the upgrade with 404; the client then lists terminals instead, every 15 seconds while a list is on screen, and asks again after 10 minutes.
+- When a Mac's connection drops uncleanly, the server learns it from its own pings (15-second interval, 5-second deadline), so Offline can take up to about 20 seconds then; a Mac that disconnects cleanly shows Offline at once. Shared examples: `fixtures/relay-presence-v1.json`.
+
 **Errors.** The existing codes plus `host_offline` and `tunnel_unavailable`. Requests with an `Origin` header are rejected (native clients don't send one), and cookies are never used.
 
 ## Handshake

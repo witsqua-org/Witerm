@@ -12,6 +12,7 @@ struct DevicesView: View {
     @Environment(ServerList.self) private var servers
     @Environment(NetworkStatus.self) private var network: NetworkStatus?
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.scenePhase) private var scenePhase
     /// A confirmation after unpairing, since the row just disappears. It
     /// stays until the next visit to this tab.
     @State private var unpairedNote: String?
@@ -92,6 +93,11 @@ struct DevicesView: View {
                 }
             }
             .navigationTitle(String(localized: "Devices", bundle: .main))
+            // Round 18: each device's Online or Offline stays current here too.
+            .task(id: PresenceTrigger(active: scenePhase == .active, online: network?.online != false)) {
+                guard scenePhase == .active, network?.online != false else { return }
+                await followPresence(servers: servers, macs: macs)
+            }
             .serverEditor($editing)
             .alert(String(localized: "Unpair from “\(confirmingUnpair?.grant.host.name ?? "")”?", bundle: .main),
                    isPresented: Binding(get: { confirmingUnpair != nil }, set: { if !$0 { confirmingUnpair = nil } }),
@@ -165,8 +171,14 @@ struct DevicesView: View {
                     // relay server when there are several.
                     let access = row.grant.permission == .view ? String(localized: "Can only watch", bundle: .main)
                         : String(localized: "Can watch and type", bundle: .main)
-                    Text(unpairing ? String(localized: "Unpairing…", bundle: .main)
-                         : servers.servers.count > 1 ? "\(access) · \(row.server.displayName)" : access)
+                    // Round 18: whether it's online, as in Terminals.
+                    let status: String? = switch row.model.listing[row.grant.id] {
+                    case .online: String(localized: "Online", bundle: .main)
+                    case .offline: String(localized: "Offline", bundle: .main)
+                    default: nil
+                    }
+                    let parts = [access, status, servers.servers.count > 1 ? row.server.displayName : nil].compactMap { $0 }
+                    Text(unpairing ? String(localized: "Unpairing…", bundle: .main) : parts.joined(separator: " · "))
                         .font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
                         .lineLimit(typeSize.isAccessibilitySize ? nil : 1).truncationMode(.middle)
                 }

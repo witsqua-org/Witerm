@@ -242,6 +242,16 @@ final class RelayWebSocket: RelaySocketIO, Sendable {
       self.close()
     }
   }
+  /// A text message (presence's watch request).
+  func sendText(_ data: Data) async throws {
+    guard data.count <= 4096, let text = String(data: data, encoding: .utf8) else { throw RelayError.invalidMessage }
+    do { try await task.send(.string(text)) } catch {
+      close()
+      throw failure(error)
+    }
+  }
+  /// The server answered the upgrade with 404: it has no such endpoint.
+  var unsupported: Bool { (task.response as? HTTPURLResponse)?.statusCode == 404 }
   func receive() async throws -> Data {
     try await withTaskCancellationHandler {
       do {

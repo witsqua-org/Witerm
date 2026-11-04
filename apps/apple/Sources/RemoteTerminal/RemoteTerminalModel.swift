@@ -208,6 +208,9 @@ final class RemoteTerminalModel {
     private(set) var keptNote: String?
     /// The text size the terminal view last used, for renderers made off screen.
     static var rendererFontSize: CGFloat = 14
+    /// A relay server without the presence stream (an older one) is asked
+    /// again after this (Round 18).
+    @ObservationIgnored var presenceUnsupportedUntil: Date?
     @ObservationIgnored private lazy var tunnels = TunnelGate { [weak self] in self?.liveLinks ?? 0 }
 
     init(serverAddress: String) {
@@ -414,7 +417,7 @@ final class RemoteTerminalModel {
         #if DEBUG
         if RemoteFixture.isActive {
             terminals[grant.id] = FixtureMac.shared.sessions(for: grant.id)
-            listing[grant.id] = RemoteFixture.offline.contains(grant.id) ? .offline : .online
+            listing[grant.id] = FixtureMac.shared.offline.contains(grant.id) ? .offline : .online
             return
         }
         #endif
@@ -592,6 +595,8 @@ final class RemoteTerminalModel {
 
     func attachmentFailed(_ error: Error, id: UUID) {
         guard id == activeID else { return }
+        // Its device may have gone offline: Terminals says so at once.
+        if let grant = selectedGrant { linkDropped(error, on: grant) }
         let previous = deactivate()
         if let previous { Task { await previous.abort() } }
         // Renderer shutdown cancels its callback task. The active attachment
@@ -1240,6 +1245,7 @@ extension RemoteTerminalModel {
     private func linkLost(_ error: Error, host id: UUID) -> Bool {
         if id == attachmentID { return linkLost(error, id: id) }
         guard let entry = keptEntry(host: id), entry.state == .live, Self.isTransient(error) else { return false }
+        linkDropped(error, on: entry.grant)
         // Lost while kept: resumed in place once (now, or on return).
         entry.set(.parked)
         if appActive { resume(entry) }
@@ -1254,7 +1260,7 @@ extension RemoteTerminalModel {
         if id == attachmentID { return attachmentFailed(error, id: id) }
         guard let entry = keptEntry(host: id) else { return }
         _ = disconnectKept(entry, acknowledged: false)
-        if Self.isTrustFailure(error) { keptGrantEnded(entry.grant) }
+        if Self.isTrustFailure(error) { keptGrantEnded(entry.grant) } else { linkDropped(error, on: entry.grant) }
     }
 
     /// The Mac ended a kept terminal: it leaves the list at once.
@@ -1477,6 +1483,95 @@ extension RemoteTerminalModel {
     }
 
     func dismissKeptNote() { keptNote = nil }
+
+    // MARK: Device status (Round 18)
+
+    /// How often devices are listed again while Terminals is on screen and
+    /// the relay server has no presence stream: every 15 seconds, so 4 tunnel
+    /// opens a minute per device, within the server's 30 a minute even with
+    /// several devices and the 6 a minute of a watched terminal's writers.
+    static let presencePoll: Duration = .seconds(15)
+
+    /// Keeps each device's Online or Offline current while a list that shows
+    /// it is on screen and the app is active. With the relay server's
+    /// presence stream (one socket, no tunnels) a Mac that drops off shows
+    /// Offline the moment the server knows; without it (an older server, or
+    /// while the stream is down) every device is listed again every 15
+    /// seconds. Runs until cancelled.
+    func followPresence() async {
+        #if DEBUG
+        if RemoteFixture.isActive {
+            // `-witerm.debug.fixtureNoPresence YES`: as against an older relay server.
+            if UserDefaults.standard.bool(forKey: "witerm.debug.fixtureNoPresence") {
+                while !Task.isCancelled {
+                    listTerminals()
+                    try? await Task.sleep(for: Self.presencePoll)
+                }
+                return
+            }
+            for await change in FixtureMac.shared.presenceChanges() { applyPresence(change) }
+            return
+        }
+        #endif
+        while !Task.isCancelled {
+            let ids = (pairedDevices + sharedGrants).map(\.id)
+            if ids.isEmpty {
+                try? await Task.sleep(for: .seconds(5))
+                continue
+            }
+            if (presenceUnsupportedUntil ?? .distantPast) < Date(), let pairing = try? pairingClient() {
+                do {
+                    for try await change in RelayPresence.watch(pairing: pairing, grantIDs: ids) {
+                        applyPresence(change)
+                        // Devices paired or unpaired meanwhile: watch again.
+                        if Set((pairedDevices + sharedGrants).map(\.id)) != Set(ids) { break }
+                    }
+                    continue
+                } catch RelayPresence.Failure.unsupported {
+                    presenceUnsupportedUntil = Date().addingTimeInterval(600)
+                } catch {
+                    if Task.isCancelled { return }
+                    // The stream dropped (network, server restart): list now,
+                    // then watch again shortly.
+                    listTerminals()
+                    try? await Task.sleep(for: .seconds(5))
+                    continue
+                }
+            }
+            listTerminals()
+            try? await Task.sleep(for: Self.presencePoll)
+        }
+    }
+
+    /// What the presence stream says: a Mac that dropped off is Offline at
+    /// once (kept terminals on it are let go; their links went with it); one
+    /// that came back is listed, which shows its terminals and Online.
+    private func applyPresence(_ change: [String: Bool]) {
+        for (id, online) in change {
+            guard let grant = grants.first(where: { $0.id == id }) else { continue }
+            if online {
+                if listing[id] != .online { listTerminals(on: grant) }
+            } else if listing[id] != .offline {
+                listing[id] = .offline
+                #if DEBUG
+                Self.layoutLog.notice("presence offline grant=\(id, privacy: .public)")
+                #endif
+                for entry in kept where entry.grant.id == id { disconnectKept(entry, acknowledged: false) }
+            }
+        }
+    }
+
+    /// A terminal's link to `grant`'s device failed: if the relay said the
+    /// device is offline, Terminals says so now; after any other network
+    /// failure the device is listed again at once, which answers host_offline
+    /// when it has gone.
+    fileprivate func linkDropped(_ error: Error, on grant: DeviceGrant) {
+        if (error as? RelayError) == .offline {
+            listing[grant.id] = .offline
+        } else if Self.isTransient(error) {
+            listTerminals(on: grant)
+        }
+    }
 
     // MARK: Kept terminals in the background
 

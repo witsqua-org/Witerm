@@ -19,6 +19,7 @@ struct TerminalsHome: View {
     @State private var search = ""
     @State private var favoritesOnly = false
     @Environment(NetworkStatus.self) private var network: NetworkStatus?
+    @Environment(\.scenePhase) private var scenePhase
     /// A Shared with You terminal whose End Invitation… was chosen, while
     /// its confirmation shows.
     @State private var endingInvitation: EndingInvitation?
@@ -38,6 +39,9 @@ struct TerminalsHome: View {
         return ssh.profiles.count + terminals >= Self.filterThreshold
     }
     static let filterThreshold = 8
+    #if DEBUG
+    private static let layoutProbe = ProcessInfo.processInfo.arguments.contains("--witerm-ui-test-layout-probe")
+    #endif
 
     /// One device's place in the list.
     @MainActor struct DeviceSection: Identifiable {
@@ -180,6 +184,14 @@ struct TerminalsHome: View {
         }
         // Every device's terminals, each time the list appears.
         .task { listAll() }
+        // Round 18: Online and Offline stay current while the list is on
+        // screen and the app is active, and again at once when the network
+        // comes back.
+        .task(id: PresenceTrigger(active: scenePhase == .active, online: network?.online != false)) {
+            guard scenePhase == .active, network?.online != false else { return }
+            listAll()
+            await followPresence(servers: servers, macs: macs)
+        }
         // Pull down to check the relay servers and list every device again.
         .refreshable {
             servers.servers.forEach { $0.check() }
@@ -282,6 +294,11 @@ struct TerminalsHome: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
         .accessibilityIdentifier("deviceSection-\(section.grant.host.id)")
+        #if DEBUG
+        // For tests that time how soon Offline shows (Round 18).
+        .accessibilityValue(Self.layoutProbe ? FixtureMac.shared.wentOffline[section.grant.id]
+            .map { String(format: "offlineAt=%.3f", $0.timeIntervalSince1970) } ?? "" : "")
+        #endif
     }
 
     /// Opening one of this device's terminals, or why it didn't open, beside
@@ -462,6 +479,27 @@ struct TerminalsHome: View {
         if ended { value += String(localized: ", disconnected", bundle: .main) }
         if ssh.isFavorite(profile) { value += String(localized: ", favorite", bundle: .main) }
         return value
+    }
+}
+
+/// What restarts following devices' status: the app becoming active, the
+/// network coming back.
+struct PresenceTrigger: Equatable {
+    let active: Bool
+    let online: Bool
+}
+
+/// Follows every relay server's devices' status until cancelled (the list
+/// leaving the screen, the app going inactive).
+@MainActor func followPresence(servers: ServerList, macs: RemoteModels) async {
+    let followers = servers.relayServers.map { server in
+        let model = macs.model(for: server)
+        return Task { await model.followPresence() }
+    }
+    await withTaskCancellationHandler {
+        for follower in followers { await follower.value }
+    } onCancel: {
+        followers.forEach { $0.cancel() }
     }
 }
 

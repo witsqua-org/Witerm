@@ -72,6 +72,7 @@ type Service struct {
 	mu                       sync.Mutex
 	hosts                    map[string]*host
 	tunnels                  map[string]*tunnel
+	watchers                 map[*watcher]struct{}
 	sockets                  int
 	closed                   bool
 	ctx                      context.Context
@@ -94,7 +95,7 @@ type Authorizer interface {
 
 func New(auth Authorizer, options ...Options) *Service {
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Service{pairing: auth, hosts: map[string]*host{}, tunnels: map[string]*tunnel{}, ctx: ctx, cancel: cancel, done: make(chan struct{})}
+	s := &Service{pairing: auth, hosts: map[string]*host{}, tunnels: map[string]*tunnel{}, watchers: map[*watcher]struct{}{}, ctx: ctx, cancel: cancel, done: make(chan struct{})}
 	if len(options) > 0 {
 		s.allowLoopbackDevelopment = options[0].AllowLoopbackDevelopment
 	}
@@ -108,6 +109,7 @@ func (s *Service) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/relay/host", s.hostHandler)
 	mux.HandleFunc("POST /v1/relay/tunnels", s.createHandler)
 	mux.HandleFunc("GET /v1/relay/tunnels/{id}", s.tunnelHandler)
+	mux.HandleFunc("GET /v1/relay/presence", s.presenceHandler)
 }
 func (s *Service) Close() {
 	s.mu.Lock()
@@ -118,6 +120,9 @@ func (s *Service) Close() {
 		}
 		for _, t := range s.tunnels {
 			s.dropTunnelLocked(t)
+		}
+		for w := range s.watchers {
+			w.cancel()
 		}
 		s.cancel()
 	}
@@ -227,10 +232,15 @@ func (s *Service) hostHandler(w http.ResponseWriter, r *http.Request) {
 		s.mu.Unlock()
 		return
 	}
-	if old := s.hosts[identity.Device.ID]; old != nil {
-		s.dropHostLocked(old)
+	old := s.hosts[identity.Device.ID]
+	if old != nil {
+		s.dropHostQuietlyLocked(old)
 	}
 	s.hosts[identity.Device.ID] = h
+	// A replaced connection was online already: nothing to tell watchers.
+	if old == nil {
+		s.notifyPresenceLocked(identity.Device.ID, true)
+	}
 	s.mu.Unlock()
 	defer func() { s.mu.Lock(); s.dropHostLocked(h); s.mu.Unlock() }()
 	// This write precedes the offer consumer even when an offer was queued while
@@ -467,6 +477,16 @@ func (s *Service) dropHostLocked(h *host) {
 	if s.hosts[h.identity.Device.ID] != h {
 		return
 	}
+	s.dropHostQuietlyLocked(h)
+	s.notifyPresenceLocked(h.identity.Device.ID, false)
+}
+
+// dropHostQuietlyLocked drops a host without telling presence watchers, for
+// a connection replaced by a new one from the same Mac.
+func (s *Service) dropHostQuietlyLocked(h *host) {
+	if s.hosts[h.identity.Device.ID] != h {
+		return
+	}
 	delete(s.hosts, h.identity.Device.ID)
 	h.cancel()
 	for _, t := range s.tunnels {
@@ -483,6 +503,7 @@ func (s *Service) revoke(id string) {
 			s.dropTunnelLocked(t)
 		}
 	}
+	s.revokePresenceLocked(id)
 }
 
 func (s *Service) monitor() {
@@ -495,10 +516,17 @@ func (s *Service) monitor() {
 			return
 		case <-ticker.C:
 			s.mu.Lock()
+			watchers := make([]*watcher, 0, len(s.watchers))
+			for w := range s.watchers {
+				watchers = append(watchers, w)
+			}
 			hosts := make([]*host, 0, len(s.hosts))
 			routes := make([]*tunnel, 0, len(s.tunnels))
 			identities := make([]pairing.RelayIdentity, 0, len(s.hosts)+len(s.tunnels)*2)
 			ids := make([]string, 0, len(s.tunnels))
+			for _, w := range watchers {
+				identities = append(identities, w.identity)
+			}
 			for _, h := range s.hosts {
 				hosts = append(hosts, h)
 				identities = append(identities, h.identity)
@@ -513,13 +541,18 @@ func (s *Service) monitor() {
 				}
 			}
 			s.mu.Unlock()
-			if len(hosts) == 0 && len(routes) == 0 {
+			if len(hosts) == 0 && len(routes) == 0 && len(watchers) == 0 {
 				continue
 			}
 			ctx, cancel := context.WithTimeout(s.ctx, 750*time.Millisecond)
 			devices, grants, err := s.pairing.CheckRelayState(ctx, identities, ids)
 			cancel()
 			s.mu.Lock()
+			for _, w := range watchers {
+				if err != nil || !devices[w.identity.Device.ID] || !s.pairing.RelaySessionActive(w.identity) {
+					w.cancel()
+				}
+			}
 			for _, h := range hosts {
 				if err != nil || !devices[h.identity.Device.ID] || !s.pairing.RelaySessionActive(h.identity) {
 					s.dropHostLocked(h)

@@ -34,11 +34,48 @@ import WitermCore
     /// How long after `exit` the terminal ends, so a test can leave it first.
     static let exitDelay: Duration = .seconds(10)
 
+    /// Grants whose Mac isn't connected to the relay server now.
+    private(set) var offline: Set<String> = RemoteFixture.offline
+    /// When each went offline, for tests that time how soon the list says so.
+    private(set) var wentOffline: [String: Date] = [:]
+    private var presenceWatchers: [UUID: AsyncStream<[String: Bool]>.Continuation] = [:]
+
     override private init() {
         super.init()
         let center = NotificationCenter.default
         center.addObserver(self, selector: #selector(backgrounded), name: UIApplication.didEnterBackgroundNotification, object: nil)
         center.addObserver(self, selector: #selector(returning), name: UIApplication.willEnterForegroundNotification, object: nil)
+        // Round 18: `-witerm.debug.fixtureOfflineAfter <seconds>` takes Studio
+        // offline that long after the fixture starts, as when a Mac's relay
+        // connection drops: its links fail and it refuses new ones.
+        let after = UserDefaults.standard.double(forKey: "witerm.debug.fixtureOfflineAfter")
+        if after > 0 {
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(after))
+                self.goOffline("fixture-grant-studio")
+            }
+        }
+    }
+
+    /// The relay server's presence stream, as the fixture's Macs come and go.
+    func presenceChanges() -> AsyncStream<[String: Bool]> {
+        let id = UUID()
+        let (stream, continuation) = AsyncStream.makeStream(of: [String: Bool].self)
+        presenceWatchers[id] = continuation
+        continuation.onTermination = { _ in Task { @MainActor in FixtureMac.shared.presenceWatchers[id] = nil } }
+        return stream
+    }
+
+    /// `grantID`'s Mac drops off the relay server.
+    func goOffline(_ grantID: String) {
+        guard !offline.contains(grantID) else { return }
+        offline.insert(grantID)
+        wentOffline[grantID] = Date()
+        let sessions = Set((RemoteFixture.sessions[grantID] ?? []).map(\.id))
+        for link in links.values.flatMap({ $0 }) where sessions.contains(link.session.id) {
+            end(link, error: RelayError.transport)
+        }
+        for watcher in presenceWatchers.values { watcher.yield([grantID: false]) }
     }
 
     /// A grant's terminals as its Mac lists them now: the grid in use.
@@ -53,7 +90,7 @@ import WitermCore
     func attach(grant: DeviceGrant, sessionID: String, columns: Int, rows: Int, mode: LocalAttachmentMode,
                 history: Bool) async throws -> FixtureLink {
         try await Task.sleep(for: Self.latency)
-        guard !RemoteFixture.offline.contains(grant.id) else { throw RelayError.offline }
+        guard !offline.contains(grant.id) else { throw RelayError.offline }
         guard let listed = sessions(for: grant.id).first(where: { $0.id == sessionID }) else { throw RelayError.sessionUnavailable }
         if mode == .control {
             guard grant.permission == .control, listed.access != .view else { throw RelayError.readOnly }

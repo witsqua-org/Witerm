@@ -821,3 +821,26 @@ iOS has one word for ending a connection: **Disconnect**, for paired terminals a
 Tests that fail first (before, the row had no Connected badge after Back, and the menu said Leave): `PairedKeepConnectedTests` (5): Back keeps the terminal connected and reopens it with the same link and no cover; Disconnect by swipe (a full swipe only reveals it), long press and the ⋯ menu; a fourth terminal disconnects the oldest, with the note; the fixture Mac ending a kept terminal (`exit`) takes its row away; Unpair lets its kept terminals go. Unit tests: the renderer takes output off screen (`testHostTakesOutputOffScreen`), the eviction order, and the tunnel gate.
 
 **Fixture (DEBUG):** typing `exit` and Return in a fixture terminal ends it 10 s later on every link and drops it from the list, as a shell would.
+
+### 4. Offline shows at once
+
+The owner: "The home screen indicators should update immediately when a device goes offline."
+
+**How status was learned.** Only by listing a device's terminals through a relay tunnel, and only when the list appeared, on pull to refresh, on returning to the app, or on Back: a Mac that dropped off while the list was on screen stayed Online indefinitely. A terminal's link failing didn't touch the status either.
+
+**Now, three ways, cheapest first:**
+
+1. **Events.** When any terminal's link to a device fails (on screen or kept after Back), the device is listed again at once; the relay server answers `host_offline` when the Mac has gone, and `RelayError.offline` from anywhere sets Offline directly (`RemoteTerminalModel.linkDropped`). The server drops a Mac's tunnels the moment it drops the Mac, so this is as fast as the server.
+2. **The presence stream** (new, in the server's code, **not deployed**): while Terminals or Devices is on screen and the app is active, the phone keeps one WebSocket per relay server, `GET /v1/relay/presence`, and the server pushes each watched grant's Mac connecting or dropping. One socket replaces a tunnel per check, so it costs neither the 4-tunnel cap nor the 30-a-minute rate (one open when it starts). Design and limits: [protocol/relay-v1.md](../../protocol/relay-v1.md), "Presence"; Go in `server/internal/relay/presence.go`, Swift in `RelayPresence` (WitermCore). It isn't listed among `/v1/info`'s capabilities; the phone tries it and treats 404 as "not here".
+3. **Polling** when there's no presence stream (today's deployed server, or while the stream is down): every device is listed again every 15 seconds while a list is on screen (4 tunnel opens a minute per device; listings wait for a free tunnel), and at once when the app becomes active or the network comes back (`NetworkStatus`' `NWPathMonitor`).
+
+Devices' rows now say Online or Offline too, from the same state.
+
+**Measured** on the simulator with the fixture Mac dropping off the relay (`-witerm.debug.fixtureOfflineAfter`), from the drop to the test seeing Offline in Studio's header (`DeviceStatusTests`, polling every 50 ms):
+
+| | Before | After, with presence | After, polling (`-witerm.debug.fixtureNoPresence`) |
+|---|---|---|---|
+| Terminals on screen, nothing open | never (over 40 s) | 0.24 s | 4.2 s (at most 15 s) |
+| A terminal kept connected after Back | never (over 40 s); its Connected badge went, the device stayed Online | 0.17 s | 0.24 s (its link failing lists the device at once) |
+
+On a real relay server, "the moment the server knows" is at once for a Mac that disconnects cleanly (its service stops, the Mac sleeps with Wi-Fi off cleanly) and up to about 20 seconds for one that vanishes (the server's 15-second pings with a 5-second deadline). Not run: the presence stream against a deployed server (it isn't deployed); the Go integration test runs it end to end against PostgreSQL (`TestPresenceStreamIntegration`: Online in the snapshot, Offline under 2 s after the Mac's host connection closes, another device sees nothing).

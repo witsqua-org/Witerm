@@ -1,0 +1,42 @@
+{
+  "limits": {
+    "max_grants": 16,
+    "max_streams_per_device": 2
+  },
+  "watch": {
+    "grant_ids": [
+      "11111111-1111-4111-8111-111111111111",
+      "22222222-2222-4222-8222-222222222222"
+    ],
+    "type": "watch"
+  },
+  "snapshot": {
+    "hosts": [
+      {
+        "grant_id": "11111111-1111-4111-8111-111111111111",
+        "online": true
+      },
+      {
+        "grant_id": "22222222-2222-4222-8222-222222222222",
+        "online": false
+      }
+    ],
+    "type": "presence"
+  },
+  "update": {
+    "hosts": [
+      {
+        "grant_id": "11111111-1111-4111-8111-111111111111",
+        "online": false
+      }
+    ],
+    "type": "presence"
+  },
+  "invalid_watch": [
+    {},
+    {"type": "watch", "grant_ids": []},
+    {"type": "watch", "grant_ids": ["not-an-id"]},
+    {"type": "watch", "grant_ids": ["11111111-1111-4111-8111-111111111111", "11111111-1111-4111-8111-111111111111"]},
+    {"type": "watch", "grant_ids": ["11111111-1111-4111-8111-111111111111"], "extra": true}
+  ]
+}

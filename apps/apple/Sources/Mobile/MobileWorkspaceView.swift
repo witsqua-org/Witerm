@@ -41,6 +41,7 @@ struct MobileWorkspaceView: View {
         .task {
             #if DEBUG
             RemoteFixture.cleanUpIfAsked()
+            if RemoteFixture.isActive { _ = FixtureMac.shared }
             #endif
             await ssh.load()
             guard !Task.isCancelled else { return }
