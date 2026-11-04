@@ -228,8 +228,10 @@ import XCTest
 
     /// Runs a saved snippet from the key row's Snippets key.
     private func runSnippet(_ name: String) {
-        if !keyboard.waitForExistence(timeout: 1.5) { app.toggleTerminalKeyboard() }
-        XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+        // The DEBUG stand-in isn't a system keyboard: its key row says it's up.
+        let up = { [self] in keyboard.exists || (standInKeyboard && app.buttons["terminalKey-hideKeyboard"].isHittable) }
+        if until(1.5, up) == nil { app.toggleTerminalKeyboard() }
+        XCTAssertNotNil(until(5, up), "The keyboard isn't up")
         let key = app.buttons["terminalKey-snippets"]
         XCTAssertTrue(key.waitForExistence(timeout: 5))
         for _ in 0..<6 where !key.isHittable {
