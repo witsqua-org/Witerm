@@ -946,3 +946,45 @@ Tests that fail first: `PairedConnectedDevicesTests` (4: the count and the live 
 **Fixture (DEBUG):** `FixtureMac` lists `attached` like the service, this device's links included. `-witerm.debug.fixtureWatchers 1`: Studio's own window and "Sam’s iPhone" watch Terminal 1. `-witerm.debug.fixtureOlderMac 1`: the Macs list `writers` but not `attached`. The fixture's invitation terminal ("Demo") now lists neither, as a real guest's.
 
 **Left in place:** `TerminalSurface.watchesOtherGrid` (Round 19), now unused by the title, since the SSH crew was changing `TerminalSurface` at the same time; it can go later.
+
+## Round 20: iOS SSH
+
+Two reports from the owner on the iPhone 17 Pro, 2026-11-04, worked on the iPhone 18 Pro simulator, now with the real software keyboard (see 3), against the disposable OpenSSH fixture. The owner's own server was never contacted. Captures: `.build/screenshots/round20-ssh/`.
+
+### 1. "After entering `ls`, it got stuck, and I couldn't scroll"
+
+**What was tried.** `SSHTypingStuckTests.testLsThenTypingAndScrollingStillWork` types on the system keyboard's own keys (not XCUITest's typing): `ls` as the first command, in a folder with two entries and one with 240 (more than a screen), `ls --color` in `/etc`, with the keyboard down (output under the floating keyboard button, which moves), and in landscape; after each, it types `echo` and checks the host answered, and swipes to check scrolling. Also with 150 ms of added latency each way (a loopback proxy), a prompt like a Linux distribution's bash (it sets the window title and folder, OSC 0 and 7, every time; `ls` aliased to color), and the first-use background tip shown. In English, all of it worked: output in 0.2–0.5 s, typing reached the host every time, swipes scrolled (for example 69 → 55 rows back), and the app idled after each step. The layout-loop, long-output-pause, catch-up-picture and gesture suspects showed nothing.
+
+**Cause.** The owner's language is Chinese, and a Chinese app on an iPhone gets the **Pinyin** keyboard. With the app in Chinese the simulator gave it too, and then `ls` and Return did exactly what the owner described: while composing, nothing appeared in the terminal, and Return, which Pinyin labels **确认** (Confirm) while composing, only put the letters on the line; nothing ran, and with only the welcome text there was nothing to scroll (`ls-before-2/r20-ls-home-1-output.png`). Pinyin composes letters as marked text until a candidate or Confirm commits them, as in every iOS text field. SwiftTerm 1.19 sends nothing until the commit, which is right, but it also draws nothing meanwhile, so the terminal looked dead.
+
+**Change.** Letters being composed show at the cursor, underlined in the tint and on the terminal's own background, as in any iOS text field and in the Mac's Terminal (`TerminalInputView.composingText`, `placeComposing`). Nothing is sent until the keyboard commits; Confirm puts the letters on the line, and Return runs it; a candidate types its characters. The grid never changes for it. SwiftTerm's `setMarkedText(_:selectedRange:)` and `unmarkText()` are public but not open, so the subclass gives its own class Objective-C methods for those two selectors that call SwiftTerm's and then place the composition (`composingHooks`); nothing else of SwiftTerm changes, and SwiftTerm stays at 1.19.0. It applies to paired terminals too (the same renderer).
+
+**Diagnostics (DEBUG).** `com.witerm` / `terminal-input` logs the shape of each committed input (length, Return, ASCII, whether it commits a composition as typed, the keyboard's language) and when a composition begins and ends, never the text; `com.witerm` / `ssh-connect` logs the order of a connection attempt. With the phone on a Mac: `log stream --predicate 'subsystem == "com.witerm" AND category IN {"terminal-input", "ssh-connect", "terminal-layout", "terminal-gestures"}'`.
+
+**Not reproduced otherwise; still unverified on the phone.** Nothing else wedged: in landscape with the software keyboard up the grid was 85 × 9 (the handoff's estimate; a swipe down there also hides the keyboard, `.interactive`). Whether the owner's phone was in Chinese with Pinyin is a guess from the owner's language, not confirmed. If it recurs on the phone in English, the DEBUG logs above (with `terminal-layout` and `terminal-gestures`) are what to capture.
+
+Tests that fail first: `SSHTypingStuckTests.testLsOnAComposingKeyboardRuns` (before: nothing at the cursor while composing; Confirm committed `ls` as typed, `insertText count=2 commitsAsTyped=true`, and only a second Return ran it; after: `composingShown=1` while composing, committed in 0.65 s, Return ran it in 0.56 s). Unit test: `MobileTerminalInputTests.testComposedLettersShowAtTheCursorAndSendNothingUntilCommitted`, through the keyboard's Objective-C selectors.
+
+### 2. Face ID before connecting
+
+The owner's rule: "Face ID verification must be successfully completed before establishing a connection."
+
+**Before (on `main`).** Protected credentials already asked first (`SSHWorkspaceUI.open` → `savedCredentials` → `SSHUnlock`, then `SSHWorkspaceModel.connect`). Three paths connected without Face ID: credentials saved before protection (Round 12) were read with no prompt (`main`'s own unit test asserted "An unprotected credential must not ask for Face ID"); **Cancel** opened the form to type the password and connect; and **Enter Password**, the button after a failed match, did the same. Separately, a jump chain missing a hop's credential, or with an unusable key, dialed its first hop before failing (`testMissingOrUnusableCredentialFailsBeforeAnyHopIsReached`: `connectionRefused` from the closed jump port, before; `missingCredential` and `unsupportedPrivateKey`, after).
+
+**After.** `SSHProfileStore.credentials(_:unlock:)` reads any saved credential, protected or not, only with an `SSHUnlock` that succeeded (`isUnlocked`); otherwise it throws and reads nothing. `SSHUnlock.unlock(reason:)` evaluates `.deviceOwnerAuthentication`: Face ID first, then the system's own Enter Passcode, as `.userPresence` on the items already allows; nothing types the SSH password instead. Cancel or failure connects nothing and says on the host's screen, or on the iPhone's list (which now offers the issue's next step too), "Not connected: “*host*” needs Face ID to use its saved credentials." (Touch ID, Optic ID, or the passcode or login password where that's what protects them), with **Try Again**. `SSHConnection.connect` checks every hop's credential and key before the network. The order, from the DEBUG `ssh-connect` log of `SSHSavedCredentialTests` (`.build/screenshots/round20-ssh/applog-faceid-after.log`): `unlock asked` → `unlock unlocked` → `network start` → `host key received`; after a cancel, `unlock asked` → `unlock cancelled` and nothing else; Try Again asks again before connecting.
+
+| Path | Face ID first? |
+|---|---|
+| Tap a host, Reconnect, Try Again, Check Connection… | Yes (all go through `SSHWorkspaceUI.open`) |
+| Jump hosts with saved credentials | Yes, once for every hop, before the first hop is dialed |
+| New host key: the trust prompt's fresh handshake | Uses the credentials read for the same attempt, after its Face ID |
+| Credentials saved before protection | Yes (new); saved again with protection after connecting |
+| Returning within 3 minutes of backgrounding | Nothing new connects: the same connection carries on, no prompt. Past 3 minutes the connection is closed, and connecting again asks |
+| Port forwarding | Runs on an open connection; never connects on its own |
+| Hosts without saved credentials | Unchanged: the form asks for the password |
+
+Shared with the Mac (Touch ID or the login password).
+
+### 3. The simulator's keyboard
+
+Switched by the integrator with the owner's approval (`HardwareKeyboardLastSeen` set to NO inside the simulated device); see [handoff.md](../handoff.md), "The simulator's keyboard". The real software keyboard appeared in every Round 20 SSH run, and the two tests that needed it pass without the stand-in.
