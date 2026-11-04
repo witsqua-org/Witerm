@@ -184,6 +184,9 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
     var keyboardButton: (() -> Void)? = nil
     /// A tap on the terminal while watching one this device may type in.
     var tapToType: (() -> Void)? = nil
+    /// Round 22: the Mac is being asked for typing (a tap or the keyboard
+    /// button): the keyboard button stays, with a spinner, until it rises.
+    var keyboardPending = false
 
     func makeUIView(context: Context) -> UIView {
         let container = UIView()
@@ -202,7 +205,8 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         view.terminal.setBarActions(barActions)
         view.terminal.tapToType = tapToType
         view.setKeyboardButton(keyboardButton, identifier: "remoteKeyboard",
-                               hint: String(localized: "Starts typing in this terminal.", bundle: .main))
+                               hint: String(localized: "Starts typing in this terminal.", bundle: .main),
+                               pending: keyboardPending)
         host.coordinator.requestKeyboardToggle(keyboardRequest, terminal: view.terminal)
         finder?.terminal = view.terminal
     }
@@ -345,30 +349,80 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             keyboardButton.largeContentTitle = label
             keyboardButton.largeContentImage = UIImage(systemName: "keyboard")
             keyboardButton.isHidden = true
-            keyboardButton.addAction(UIAction { [weak self] _ in self?.keyboardButtonAction?() }, for: .touchUpInside)
+            keyboardButton.addAction(UIAction { [weak self] _ in self?.keyboardButtonTapped() }, for: .touchUpInside)
             addSubview(keyboardButton)
             NotificationCenter.default.addObserver(self, selector: #selector(keyboardFocusChanged),
                                                    name: .witermTerminalFocusChanged, object: terminal)
         }
 
-        /// The keyboard button's action, or nil for no button. A paired
-        /// terminal passes one only while watching one it may type in.
-        func setKeyboardButton(_ action: (() -> Void)?, identifier: String, hint: String? = nil) {
+        /// The keyboard button's action while watching (a paired terminal
+        /// asks the Mac for typing), or nil. `pending`: that request is under
+        /// way, so the button stays, with a spinner, until the keyboard rises.
+        func setKeyboardButton(_ action: (() -> Void)?, identifier: String, hint: String? = nil, pending: Bool = false) {
             keyboardButtonAction = action
             keyboardButton.accessibilityIdentifier = identifier
             keyboardButton.accessibilityHint = hint
+            keyboardPending = pending
             updateKeyboardButton()
         }
 
+        private var keyboardPending = false
+
         @objc private func keyboardFocusChanged() { updateKeyboardButton() }
 
+        /// Round 22: one rule for the bottom right. Keyboard up: the key
+        /// row's Hide Keyboard. Keyboard down: this button, whenever the
+        /// keyboard can come up: the terminal types (SSH, or a paired
+        /// terminal that still types, as while its switch to watching
+        /// waits), or watching may ask to type. Before, a paired terminal
+        /// showed it only while watching, so a keyboard that went down while
+        /// it still typed left neither button.
+        var keyboardButtonShown: Bool {
+            guard !terminal.isFirstResponder else { return false }
+            return terminal.acceptsInput || keyboardButtonAction != nil || keyboardPending
+        }
+
+        private func keyboardButtonTapped() {
+            guard !keyboardPending else { return }
+            if terminal.acceptsInput {
+                guard terminal.window != nil, !terminal.isFirstResponder else { return }
+                _ = terminal.becomeFirstResponder()
+            } else {
+                keyboardButtonAction?()
+            }
+        }
+
         private func updateKeyboardButton() {
-            let hidden = keyboardButtonAction == nil || terminal.isFirstResponder
+            let hidden = !keyboardButtonShown
+            if keyboardButton.configuration?.showsActivityIndicator != keyboardPending {
+                // The system button's own activity indicator: the request
+                // was heard, and the keyboard follows (Round 22).
+                keyboardButton.configuration?.showsActivityIndicator = keyboardPending
+                keyboardButton.accessibilityValue = keyboardPending ? String(localized: "Showing Keyboard…", bundle: .main) : nil
+            }
+            #if DEBUG
+            if keyboardButton.isHidden != hidden { logFloatingButtons("keyboardButton " + (hidden ? "hidden" : "shown")) }
+            #endif
             guard keyboardButton.isHidden != hidden else { return }
             keyboardButton.isHidden = hidden
             updateAccessibilityElements()
             setNeedsLayout()
         }
+
+        #if DEBUG
+        /// DEBUG, for the owner's phone (Round 22): each time a floating
+        /// button shows or hides, with the state that decided it, never
+        /// terminal content. Category `terminal-layout`, lines `buttons …`.
+        func logFloatingButtons(_ event: String) {
+            func rect(_ r: CGRect) -> String { String(format: "%.0f,%.0f,%.0fx%.0f", r.minX, r.minY, r.width, r.height) }
+            let line = event + " focused=\(terminal.isFirstResponder) acceptsInput=\(terminal.acceptsInput)"
+                + " action=\(keyboardButtonAction != nil) pending=\(keyboardPending) mode=\(mode == .view ? "view" : "control")"
+                + String(format: " pos=%.3f canScroll=%d overlap=%.1f", terminal.scrollPosition, terminal.canScroll ? 1 : 0, keyboardOverlap)
+                + " latest=" + (latestButton.isHidden ? "hidden" : rect(latestButton.frame))
+                + " keyboard=" + (keyboardButton.isHidden ? "hidden" : rect(keyboardButton.frame))
+            Self.layoutLog.notice("buttons \(line, privacy: .public)")
+        }
+        #endif
 
         /// The floating buttons lie over the reading text (Round 18), and the
         /// text comes first in `accessibilityElements`, so without this a
@@ -496,6 +550,9 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             else if output { latestButton.accessibilityValue = String(localized: "New output", bundle: .main) }
             guard latestButton.isHidden != hidden else { return }
             latestButton.isHidden = hidden
+            #if DEBUG
+            logFloatingButtons("latest " + (hidden ? "hidden" : "shown"))
+            #endif
             updateAccessibilityElements()
             setNeedsLayout()
         }
@@ -719,10 +776,37 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
 
         /// Only noted: the space changes once the keyboard has moved (or
         /// the key row reports where it is), as the bar's return does.
-        @objc private func keyboardWillMove(_ note: Notification) { recordKeyboard(note) }
+        /// Except when the keyboard is leaving for good (Round 22): then
+        /// the text takes the whole height at once, under the keyboard, so
+        /// the keyboard slides away over the final text. Before, the text
+        /// waited for the keyboard to have gone: a black band grew under it
+        /// as the keyboard slid down and stayed about 0.2 s, and then every
+        /// row moved at once (the owner's flicker when dismissing it).
+        @objc private func keyboardWillMove(_ note: Notification) {
+            recordKeyboard(note)
+            guard let end = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue,
+                  let screen = window?.windowScene?.screen else { return }
+            // UIKit says the keyboard will leave from inside the terminal's
+            // `resignFirstResponder`, while it still has it.
+            let resigned = !terminal.isFirstResponder || terminal.isResigningFocus
+            let leaving = resigned && end.minY >= screen.coordinateSpace.bounds.maxY - 0.5
+            guard leaving != keyboardLeaving else { return }
+            keyboardLeaving = leaving
+            #if DEBUG
+            Self.layoutLog.notice("keyboard leaving=\(leaving, privacy: .public)")
+            #endif
+            guard leaving, window != nil else { return }
+            setNeedsLayout()
+            UIView.performWithoutAnimation { layoutIfNeeded() }
+        }
+
+        /// The keyboard is on its way off screen and this terminal no longer
+        /// has it: its space counts as nothing from now on.
+        private var keyboardLeaving = false
 
         @objc private func keyboardDidMove(_ note: Notification) {
             recordKeyboard(note)
+            if note.name == UIResponder.keyboardDidHideNotification { keyboardLeaving = false }
             keyboardMayHaveMoved()
         }
 
@@ -746,6 +830,10 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         /// while the key row hasn't rotated yet.
         private func measuredKeyboardOverlap() -> CGFloat? {
             guard let screen = window?.windowScene?.screen else { return 0 }
+            if keyboardLeaving {
+                // Until the keyboard has gone, or this terminal takes it again.
+                if terminal.isFirstResponder, !terminal.isResigningFocus { keyboardLeaving = false } else { return 0 }
+            }
             let space = screen.coordinateSpace, row = keyRowFrame
             return TerminalKeyboardOverlap.bottom(view: convert(bounds, to: space), screen: space.bounds, keyRow: row?.frame,
                                                   keyRowWindow: row?.window, reported: Self.reportedKeyboard,
@@ -785,10 +873,23 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
                 let pixel = 1 / max(1, traitCollection.displayScale)
                 // Large accessibility fonts can require horizontal scrolling
                 // to preserve the protocol's minimum 20-column input grid.
-                terminal.frame = CGRect(origin: .zero, size: CGSize(
+                let cellHeight = grid.height / CGFloat(rows)
+                var frame = CGRect(origin: .zero, size: CGSize(
                     width: max(content.width, grid.width / CGFloat(columns) * 20 + pixel),
-                    height: max(content.height, grid.height / CGFloat(rows) * 5 + pixel)
+                    height: max(content.height, cellHeight * 5 + pixel)
                 ))
+                // Round 22: the part of a row left over goes to the top, as
+                // for a watched grid, so the last line sits on the bottom
+                // edge either way and a switch between typing and watching
+                // lands every row where it was (a cross-fade between rows
+                // half a row apart read as a flicker).
+                if frame.height == content.height, cellHeight > 0 {
+                    let whole = (content.height / cellHeight * (1 + 1e-9)).rounded(.down)
+                    let height = min(content.height, whole * cellHeight + pixel)
+                    frame.origin.y = content.height - height
+                    frame.size.height = height
+                }
+                terminal.frame = frame
                 pinToBottomIfFollowing()
             }
             scroll.contentSize = CGSize(width: terminal.frame.maxX, height: terminal.frame.maxY)
@@ -1440,6 +1541,9 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         /// Drags a selection's start or end handle; anywhere else a drag scrolls.
         private var handleRecognizer: UIPanGestureRecognizer?
         var acceptsInput: Bool { mode == .control && inputEnabled }
+        /// A typing renderer whose link is being let go (it takes no more
+        /// keys and is about to be replaced).
+        var isFrozenTyper: Bool { mode == .control && !inputEnabled }
         /// The view scrolled or got output; `true` for output.
         var scrollStateChanged: ((Bool) -> Void)?
 
@@ -1488,10 +1592,9 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             press.delegate = pressGate
             addGestureRecognizer(press)
             selectionPressRecognizer = press
+            // Round 22: it waits for SwiftTerm's double tap to fail, except
+            // on a renderer about to be replaced (`TapGate`).
             let tap = UITapGestureRecognizer(target: self, action: #selector(focusTap(_:)))
-            for recognizer in gestureRecognizers ?? [] {
-                if let other = recognizer as? UITapGestureRecognizer, other.numberOfTapsRequired == 2 { tap.require(toFail: other) }
-            }
             tap.delegate = tapGate
             addGestureRecognizer(tap)
             focusTapRecognizer = tap
@@ -2027,9 +2130,15 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             return became
         }
 
+        /// Inside `resignFirstResponder`, where UIKit already tells the
+        /// keyboard to leave (Round 22).
+        private(set) var isResigningFocus = false
+
         override func resignFirstResponder() -> Bool {
             if isFirstResponder { postFocus(false, will: true) }
+            isResigningFocus = true
             let resigned = super.resignFirstResponder()
+            isResigningFocus = false
             if resigned { placeComposing() }
             if resigned { postFocus(false) } else if isFirstResponder { postFocus(true) }
             return resigned
@@ -2557,6 +2666,10 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
     /// Notes whether a tap's touch landed on moving output (a fling, the
     /// grid's sideways scroll, or a program's wheel coast), which it only
     /// stops, so that tap never starts typing.
+    ///
+    /// Round 22: the tap waits for SwiftTerm's double tap to fail (so a
+    /// double tap selects), except on a renderer about to be replaced
+    /// (`showsKeyboard`), where it recognizes along with it.
     @MainActor final class TapGate: NSObject, UIGestureRecognizerDelegate {
         private weak var terminal: TerminalInputView?
 
@@ -2567,6 +2680,34 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             terminal.tapStoppedScrolling = terminal.isDecelerating || terminal.isDragging
                 || (terminal.superview as? UIScrollView)?.isDecelerating == true
             return true
+        }
+
+        /// A tap that asks for typing on a typing renderer frozen while
+        /// hiding the keyboard switches it to watching: that renderer is
+        /// replaced within a round trip, which cancelled a tap still waiting
+        /// for the double tap (the owner's one tap right after hiding the
+        /// keyboard, lost). Every other tap waits, so a double tap selects:
+        /// not waiting on an SSH terminal brought the keyboard up on the
+        /// first tap, and the grid's resize for it cleared the word the
+        /// second tap selected.
+        private var showsKeyboard: Bool {
+            guard let terminal, !terminal.selection.active else { return false }
+            return terminal.isFrozenTyper && terminal.tapToType != nil
+        }
+
+        private static func isMultiTap(_ other: UIGestureRecognizer) -> Bool {
+            (other as? UITapGestureRecognizer).map { $0.numberOfTapsRequired >= 2 } ?? false
+        }
+
+        func gestureRecognizer(_ recognizer: UIGestureRecognizer,
+                               shouldRequireFailureOf other: UIGestureRecognizer) -> Bool {
+            guard Self.isMultiTap(other), other.view === terminal else { return false }
+            return !showsKeyboard
+        }
+
+        func gestureRecognizer(_ recognizer: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+            Self.isMultiTap(other) && other.view === terminal && showsKeyboard
         }
     }
 

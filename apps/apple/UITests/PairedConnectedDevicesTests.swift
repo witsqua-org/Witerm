@@ -157,11 +157,14 @@ import XCTest
         XCTAssertTrue(surface.exists)
     }
 
-    /// The Mac types in "build": the title counts it; a tap keeps watching
-    /// and says so without naming anyone, and offers the list.
-    func testATapWhileTheMacTypesSaysWatchingWithoutNamingAnyone() {
-        launch()
-        open("fixture-s2")
+    /// Another paired device types in Terminal 1 (the fixture's Alex's iPad,
+    /// which doesn't type alongside): the title counts it; a tap keeps
+    /// watching and says so without naming anyone, and offers the list.
+    /// Round 22: this was "build", where the Mac types; the Mac always types
+    /// alongside, so a tap there types (`TerminalFloatingButtonsTests`).
+    func testATapWhileAnotherDeviceTypesSaysWatchingWithoutNamingAnyone() {
+        launch(extra: ["-witerm.debug.fixtureOtherTyper", "600"])
+        open("fixture-s1")
         XCTAssertTrue(until(10) { probeText("mode") == "view" }, "Didn't open watching")
         XCTAssertTrue(until(5) { status.label.contains("2 devices connected") }, "Title: \(status.label)")
         XCTAssertFalse(status.label.contains("Typing on"), status.label)
@@ -176,12 +179,12 @@ import XCTest
         XCTAssertTrue(words.exists, "Notice: \(notice.debugDescription)")
         XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Typing on")).firstMatch.exists,
                        "Something names who types")
-        XCTAssertEqual(probeText("mode"), "view", "A tap took typing from the Mac")
+        XCTAssertEqual(probeText("mode"), "view", "A tap took typing from the iPad")
         shot("r20-7-refused-tap")
         app.buttons["remoteNoticeConnectedDevices"].tap()
         XCTAssertTrue(app.navigationBars["Connected Devices"].waitForExistence(timeout: 5))
-        XCTAssertEqual(row("mac").label, "Studio")
-        XCTAssertTrue(until(8) { value(row("mac")) == "Typing, Sets the terminal size" }, "Mac: \(value(row("mac")))")
+        XCTAssertEqual(row("device-0").label, "Alex’s iPad")
+        XCTAssertTrue(until(8) { value(row("device-0")) == "Typing, Sets the terminal size" }, "iPad: \(value(row("device-0")))")
         XCTAssertEqual(value(row("this")), "Watching")
         shot("r20-8-refused-sheet")
         closeConnectedDevices()
@@ -220,10 +223,10 @@ import XCTest
         print("PROBE r21 rows s1=\(rowValue("fixture-s1")) | s2=\(rowValue("fixture-s2")) | s3=\(rowValue("fixture-s3"))")
         shot("r21-1-rows")
 
-        // Open "build" (the Mac types, so it watches), then Back: kept, and
-        // now this iPhone counts, as in the title.
+        // Open "build" (the Mac types; this iPhone types alongside it, Round
+        // 22), then Back: kept, and now this iPhone counts, as in the title.
         open("fixture-s2")
-        XCTAssertTrue(until(10) { probeText("mode") == "view" }, "Didn't open watching")
+        XCTAssertTrue(until(10) { probeText("mode") == "control" }, "Didn't open typing alongside the Mac")
         XCTAssertTrue(until(5) { status.label.contains("2 devices connected") }, "Title: \(status.label)")
         if notice.exists { notice.buttons["Dismiss"].tap() }
         goBack()
@@ -262,7 +265,7 @@ import XCTest
         XCTAssertEqual(rowValue("fixture-s2"), "Studio")
         shot("r21-4-older-mac-rows")
         open("fixture-s2")
-        XCTAssertTrue(until(10) { probeText("mode") == "view" }, "Didn't open watching")
+        XCTAssertTrue(until(10) { probeText("mode") == "control" }, "Didn't open typing alongside the Mac")
         if notice.exists { notice.buttons["Dismiss"].tap() }
         goBack()
         XCTAssertTrue(connectedBadge("fixture-s2").waitForExistence(timeout: 5))
@@ -276,7 +279,7 @@ import XCTest
     func testOlderMacsAndInvitationsShowNoCountAndNoSheet() {
         launch(extra: ["-witerm.debug.fixtureOlderMac", "1"])
         open("fixture-s2")
-        XCTAssertTrue(until(10) { probeText("mode") == "view" }, "Didn't open watching")
+        XCTAssertTrue(until(10) { probeText("mode") == "control" }, "Didn't open typing alongside the Mac")
         RunLoop.current.run(until: Date().addingTimeInterval(1))
         // The status reads with the terminal's name first ("build, Studio").
         XCTAssertTrue(status.label.hasSuffix("Studio") && !status.label.contains("devices connected")

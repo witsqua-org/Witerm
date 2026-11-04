@@ -538,6 +538,8 @@ final class RemoteTerminalModel {
         selectedSession = session
         reconnectMode = targetMode
         let switching = previous != nil
+        switchChangesMode = changingMode
+        if !(changingMode && targetMode == .view) { typeAfterSwitch = false }
         connectionState = switching ? .switching : .connecting
         // The keyboard is the switch: shown types, hidden watches.
         busy = changingMode ? (targetMode == .view ? String(localized: "Hiding Keyboard…", bundle: .main) : String(localized: "Showing Keyboard…", bundle: .main)) : String(localized: "Opening terminal…", bundle: .main)
@@ -594,6 +596,12 @@ final class RemoteTerminalModel {
                     self.busy = nil
                     self.work = nil
                     self.automaticAttempts = 0
+                    // A tap or the keyboard button while the keyboard's
+                    // switch to watching was under way: type now (Round 22).
+                    if self.typeAfterSwitch {
+                        self.typeAfterSwitch = false
+                        if targetMode == .view { self.requestTyping() }
+                    }
                 } catch {
                     guard let self, self.generation == token, !Task.isCancelled else { return }
                     // Coming back never takes control by force: when another
@@ -624,6 +632,32 @@ final class RemoteTerminalModel {
     #if DEBUG
     static let layoutLog = Logger(subsystem: "com.witerm", category: "terminal-layout")
     #endif
+
+    /// Round 22: the open terminal is switching between typing and watching
+    /// (the keyboard went up or down), and to which.
+    var switchingTo: LocalAttachmentMode? {
+        connectionState == .switching && switchChangesMode ? reconnectMode : nil
+    }
+    private var switchChangesMode = false
+    /// Asked to type while the switch to watching was under way.
+    private var typeAfterSwitch = false
+
+    /// Round 22: the keyboard went down and this device is changing to
+    /// watching. Nothing the person sees changes for it (the title, Back),
+    /// so hiding the keyboard is one transition.
+    var hidingKeyboard: Bool { switchingTo == .view }
+
+    /// The keyboard button or a tap asks to type: now, or once the switch
+    /// to watching that hiding the keyboard started is done, instead of
+    /// dropping the request.
+    func requestTyping() {
+        if hidingKeyboard {
+            if canRequestControl { typeAfterSwitch = true }
+            return
+        }
+        guard isInteractive, mode == .view else { return }
+        switchMode()
+    }
 
     func switchMode() {
         guard isInteractive, canRequestControl, let session = selectedSession else { return }
@@ -978,10 +1012,17 @@ final class RemoteTerminalModel {
         return listed.writers != nil && mode == .view && canRequestControl
     }
 
-    /// Someone else types in the open terminal, as of the latest list.
+    /// Another paired device types in the open terminal, as of the latest
+    /// list, so the Mac may refuse this one (it types alongside only when
+    /// that device's access allows it, which this device can't see).
+    /// Round 22: the Mac itself doesn't count. Its window and the `witerm`
+    /// command always type alongside (protocol/local-agent-v1.md, Typing),
+    /// so the Mac accepts this device then; counting it made a tap on a
+    /// terminal open on the Mac only say "Typing wasn’t available" (the
+    /// owner's "one tap doesn't bring up the keyboard").
     var othersType: Bool {
-        if let devices = connectedDevices { return devices.contains { $0.kind != .thisDevice && $0.typing } }
-        return openWriters?.isEmpty == false
+        if let devices = connectedDevices { return devices.contains { $0.kind == .paired && $0.typing } }
+        return openWriters?.contains { $0.name != nil } == true
     }
 
     /// A tap on a watched terminal kept watching because someone else types

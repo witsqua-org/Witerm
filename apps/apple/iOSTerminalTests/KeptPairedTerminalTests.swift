@@ -60,6 +60,60 @@ import XCTest
         surface.removeFromSuperview()
     }
 
+    /// Round 22: with the keyboard down the keyboard button shows whenever
+    /// the keyboard can come up, also on a paired terminal that still types
+    /// (before, only a watching one passed an action, so a keyboard that
+    /// went down while typing left no button), and it brings the keyboard
+    /// up itself. A terminal that can only watch gets none.
+    func testKeyboardButtonShowsWhenTheKeyboardIsDownWhileTyping() async throws {
+        let session = LocalSessionInfo(id: UUID().uuidString, name: "Typing", createdAt: .now, columns: 45, rows: 40)
+        let typing = RemoteNativeTerminalView.TerminalSurface(mode: .control, session: session, fontSize: 14, isInteractive: true)
+        typing.setKeyboardButton(nil, identifier: "remoteKeyboard")
+        typing.frame = frame
+        window.rootViewController?.view.addSubview(typing)
+        await settle(typing)
+        XCTAssertNotNil(typing.shownKeyboardButtonFrame, "Typing with the keyboard down: no keyboard button")
+        typing.removeFromSuperview()
+        let watching = RemoteNativeTerminalView.TerminalSurface(mode: .view, session: session, fontSize: 14, isInteractive: true)
+        watching.setKeyboardButton(nil, identifier: "remoteKeyboard")
+        watching.frame = frame
+        window.rootViewController?.view.addSubview(watching)
+        await settle(watching)
+        XCTAssertNil(watching.shownKeyboardButtonFrame, "Can only watch: no keyboard button")
+        watching.setKeyboardButton({}, identifier: "remoteKeyboard", pending: true)
+        await settle(watching)
+        XCTAssertNotNil(watching.shownKeyboardButtonFrame, "Asking the Mac: the button stays, with its spinner")
+        watching.removeFromSuperview()
+    }
+
+    /// Round 22: a typing grid leaves its part row at the top, as a
+    /// watched one does, so the last row sits on the bottom edge either way
+    /// and switching between them moves no row.
+    func testTypingAndWatchingGridsEndOnTheBottomEdge() async throws {
+        let probe = RemoteNativeTerminalView.TerminalSurface(mode: .control, session: LocalSessionInfo(
+            id: "p", name: "p", createdAt: .now, columns: 45, rows: 40), fontSize: 14, isInteractive: true)
+        let cell = cellSize(probe)
+        // A height with a part row left over.
+        let view = CGRect(x: 0, y: 120, width: window.bounds.width, height: (cell.height * 30.4).rounded())
+        let typing = RemoteNativeTerminalView.TerminalSurface(mode: .control, session: LocalSessionInfo(
+            id: UUID().uuidString, name: "T", createdAt: .now, columns: 45, rows: 30), fontSize: 14, isInteractive: true)
+        typing.frame = view
+        window.rootViewController?.view.addSubview(typing)
+        await settle(typing)
+        let rows = typing.terminal.getTerminal().rows
+        XCTAssertEqual(rows, 30)
+        let typingBottom = typing.convert(CGPoint(x: 0, y: typing.terminal.frame.minY + CGFloat(rows) * cell.height), from: typing.terminal.superview)
+        XCTAssertEqual(typingBottom.y, typing.bounds.maxY, accuracy: 1, "The typing grid's last row isn't on the bottom edge")
+        let watching = RemoteNativeTerminalView.TerminalSurface(mode: .view, session: LocalSessionInfo(
+            id: UUID().uuidString, name: "W", createdAt: .now, columns: 45, rows: rows), fontSize: 14, isInteractive: true)
+        watching.frame = view
+        window.rootViewController?.view.addSubview(watching)
+        await settle(watching)
+        XCTAssertEqual(watching.terminal.frame.minY, typing.terminal.frame.minY, accuracy: 0.5, "Typing and watching rows differ")
+        typing.removeFromSuperview()
+        watching.removeFromSuperview()
+    }
+
     /// The button never covers the cursor, and prefers blank cells; only
     /// the button moves, never the grid.
     func testKeyboardButtonStaysOffTheCursor() async throws {

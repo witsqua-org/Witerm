@@ -237,6 +237,32 @@ import XCTest
         for key in keys { XCTAssertGreaterThanOrEqual(key.bounds.width, 44); XCTAssertGreaterThanOrEqual(key.bounds.height, 44) }
     }
 
+    /// Round 22: Hide Keyboard ends the row on the floating buttons' column
+    /// (`FloatingTerminalButton.trailing` from the edge), with the bar's
+    /// actions before it, so Jump to Latest and the keyboard button line up
+    /// with it; before, it sat 6 pt from the edge (10 pt right of them) and
+    /// the actions came after it.
+    func testHideKeyboardEndsTheRowOnTheFloatingButtonsColumn() throws {
+        let terminal = input()
+        let accessory = try XCTUnwrap(terminal.inputAccessoryView as? MobileTerminalAccessory)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 874, height: 402))
+        window.addSubview(accessory)
+        func hideFrame(width: CGFloat) throws -> CGRect {
+            accessory.frame = CGRect(x: 0, y: 300, width: width, height: accessory.intrinsicContentSize.height)
+            accessory.setNeedsLayout()
+            accessory.layoutIfNeeded()
+            let hide = try XCTUnwrap(visibleButtons(accessory).first { $0.accessibilityIdentifier == "terminalKey-hideKeyboard" })
+            return hide.convert(hide.bounds, to: accessory)
+        }
+        XCTAssertEqual(try hideFrame(width: 402).maxX, 402 - FloatingTerminalButton.trailing, accuracy: 0.5)
+        XCTAssertEqual(try hideFrame(width: 402).width, FloatingTerminalButton.side, accuracy: 0.5)
+        terminal.setBarActions(AnyView(TerminalKeyRowActions { Button("Item") {} }))
+        let hide = try hideFrame(width: 750)
+        // With the actions key there too, Hide Keyboard still ends the row.
+        XCTAssertEqual(hide.maxX, 750 - FloatingTerminalButton.trailing, accuracy: 0.5, "Hide Keyboard ends the row")
+        terminal.setBarActions(nil)
+    }
+
     private func visibleButtons(_ view: UIView) -> [UIButton] {
         guard !view.isHidden else { return [] }
         return (view as? UIButton).map { [$0] } ?? view.subviews.flatMap(visibleButtons)

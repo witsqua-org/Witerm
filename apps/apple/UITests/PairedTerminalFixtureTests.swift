@@ -208,10 +208,16 @@ import XCTest
     }
 
     func testTappingWhileSomeoneElseTypesKeepsWatching() {
-        launch()
-        open("fixture-s2")
+        // Round 22: another paired device that doesn't type alongside (the
+        // fixture's Alex's iPad); the Mac's own window always does, so a tap
+        // where only it types starts typing (`TerminalFloatingButtonsTests`).
+        launch(extra: ["-witerm.debug.fixtureOtherTyper", "600"])
+        open("fixture-s1")
         XCTAssertTrue(until(10) { probeText("mode") == "view" }, "Didn't open watching")
-        // Round 20: the title counts who is connected (the Mac types here)
+        if app.descendants(matching: .any)["remoteTerminalNotice"].firstMatch.exists {
+            app.descendants(matching: .any)["remoteTerminalNotice"].firstMatch.buttons["Dismiss"].tap()
+        }
+        // Round 20: the title counts who is connected (the iPad types here)
         // and never names who types.
         let status = app.descendants(matching: .any)["terminalInputStatus"].firstMatch
         XCTAssertTrue(until(5) { status.exists && status.label.contains("2 devices connected") }, status.label)

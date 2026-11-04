@@ -7,9 +7,11 @@ import WitermCore
 /// a paired terminal on the simulator without a Mac or a relay server. It
 /// keeps each fixture terminal's grid and who types there as the Mac's
 /// service does (docs/../protocol/local-agent-v1.md): typing attaches set
-/// the grid; watching ones are told it; one device types at a time (the
-/// fixture's Macs don't type alongside); a terminal someone else types in
-/// refuses typing. Output is a numbered screen, so a grid that doesn't fill
+/// the grid; watching ones are told it; the Mac's own window types
+/// alongside this device, as the service's local clients do; another
+/// paired device that types there refuses typing (the fixture's don't
+/// type alongside). A writer joining the Mac sets the grid at once (the
+/// service keeps the Mac's until it types: the fixture's Mac never types). Output is a numbered screen, so a grid that doesn't fill
 /// the view shows. In memory only; nothing leaves the app.
 ///
 /// While the app is in the background past the relay server's ping deadline
@@ -20,7 +22,12 @@ import WitermCore
     /// The relay server's ping interval plus its deadline.
     static let serverTimeout: TimeInterval = 20
     /// A relay round trip, roughly, so opening isn't instant.
-    static let latency: Duration = .milliseconds(150)
+    /// Round 22: `-witerm.debug.fixtureLatency <seconds>` makes it slower,
+    /// as over a slow relay, so tests can see what shows while it waits.
+    static let latency: Duration = {
+        let seconds = UserDefaults.standard.double(forKey: "witerm.debug.fixtureLatency")
+        return seconds > 0 ? .milliseconds(Int(seconds * 1000)) : .milliseconds(150)
+    }()
 
     private var grids: [String: (columns: Int, rows: Int)] = [:]
     private var links: [String: [FixtureLink]] = [:]
@@ -150,9 +157,13 @@ import WitermCore
         guard let listed = sessions(for: grant.id).first(where: { $0.id == sessionID }) else { throw RelayError.sessionUnavailable }
         if mode == .control {
             guard grant.permission == .control, listed.access != .view else { throw RelayError.readOnly }
-            // Someone else types there (the fixture's Mac, or another link).
+            // Another paired device types there (the fixture's don't type
+            // alongside), or another link does. The Mac itself always types
+            // alongside, as the service's own clients do (Round 22; before,
+            // the fixture refused here, unlike a real Mac).
             let typing = links[sessionID, default: []].contains { $0.mode == .control }
-            guard listed.writers?.isEmpty != false, !typing else { throw RelayError.sessionBusy }
+            let otherDevice = listed.writers?.contains { $0.name != nil } == true
+            guard !otherDevice, !typing else { throw RelayError.sessionBusy }
         }
         var grid = (columns: listed.columns, rows: listed.rows)
         let changed = mode == .control && (grid.columns != columns || grid.rows != rows)

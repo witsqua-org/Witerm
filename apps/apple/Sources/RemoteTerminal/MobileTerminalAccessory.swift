@@ -186,21 +186,29 @@ enum MobileKey: String, CaseIterable, Identifiable {
         barKeys.alignment = .center
         barKeys.spacing = 6
         barKeys.isLayoutMarginsRelativeArrangement = true
-        barKeys.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 0, leading: 2, bottom: 0, trailing: 6)
+        // Round 22: Hide Keyboard ends the row on the floating buttons'
+        // column (`FloatingTerminalButton.trailing` from the edge, which is
+        // the safe area's in landscape), so Jump to Latest above it and the
+        // keyboard button it stands in for line up with it. It was 6 pt
+        // from the edge: 10 pt right of them in portrait, and in landscape
+        // the actions key came after it.
+        barKeys.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 0, leading: 2, bottom: 0,
+                                                                   trailing: FloatingTerminalButton.trailing)
         barKeys.setContentHuggingPriority(.required, for: .horizontal)
         barKeys.setContentCompressionResistancePriority(.required, for: .horizontal)
         configureHideKeyboard()
         keys.axis = .horizontal
         // With Hide Keyboard pinned at the end, Esc, Ctrl, Tab and the
-        // arrows still fit a 402 pt iPhone (MobileTerminalInputTests).
-        keys.spacing = 5
+        // arrows still fit a 402 pt iPhone (MobileTerminalInputTests):
+        // 4 pt apart (5 before Round 22, which moved Hide Keyboard 10 pt in).
+        keys.spacing = 4
         keys.translatesAutoresizingMaskIntoConstraints = false
         scroll.addSubview(keys)
         let height = keys.heightAnchor.constraint(equalToConstant: keyHeight)
         keyHeightConstraint = height
         NSLayoutConstraint.activate([
             keys.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor, constant: 6),
-            keys.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor, constant: -6),
+            keys.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor, constant: -2),
             keys.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: 4),
             keys.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor, constant: -4),
             height
@@ -422,14 +430,15 @@ enum MobileKey: String, CaseIterable, Identifiable {
 
     /// The same glass capsule as the keyboard button it stands in for
     /// (`FloatingTerminalButton`), so it reads as a button to press, not
-    /// another key of the row.
+    /// another key of the row; since Round 22 its symbol is the same size
+    /// as the floating buttons' too (it was the keys' smaller callout).
     @objc private func styleHideKeyboard() {
-        FloatingTerminalButton.style(hideKeyboard, symbol: Self.hideSymbol, textStyle: .callout)
+        FloatingTerminalButton.style(hideKeyboard, symbol: Self.hideSymbol)
         applyOutline()
     }
 
     private func configureHideKeyboard() {
-        FloatingTerminalButton.style(hideKeyboard, symbol: Self.hideSymbol, textStyle: .callout)
+        FloatingTerminalButton.style(hideKeyboard, symbol: Self.hideSymbol)
         NotificationCenter.default.addObserver(self, selector: #selector(styleHideKeyboard),
                                                name: UIAccessibility.reduceTransparencyStatusDidChangeNotification, object: nil)
         let label = String(localized: "Hide Keyboard", bundle: .main)
@@ -465,7 +474,8 @@ enum MobileKey: String, CaseIterable, Identifiable {
             host.view.backgroundColor = .clear
             host.view.setContentHuggingPriority(.required, for: .horizontal)
             host.view.setContentCompressionResistancePriority(.required, for: .horizontal)
-            barKeys.addArrangedSubview(host.view)
+            // Before Hide Keyboard, which keeps the end of the row (Round 22).
+            barKeys.insertArrangedSubview(host.view, at: 0)
             let height = host.view.heightAnchor.constraint(equalToConstant: keyHeight)
             height.isActive = true
             barKeyHeights.append(height)

@@ -116,7 +116,7 @@ struct RemoteTerminalWorkspace: View {
         }
         .onChange(of: finding) { _, open in if !open { stopTypingIfKeyboardStaysHidden() } }
         // Typing and watching switch with a tick, as well as the title change.
-        .sensoryFeedback(.selection, trigger: model.isInteractive ? model.mode : nil)
+        .sensoryFeedback(.selection, trigger: model.isInteractive || model.hidingKeyboard ? model.mode : nil)
     }
 
     private var navigationTitle: String {
@@ -167,7 +167,7 @@ struct RemoteTerminalWorkspace: View {
                 .foregroundStyle(WitermTheme.ink)
             HStack(spacing: WitermMetrics.Space.xs) {
                 Image(systemName: terminalStatusImage)
-                    .foregroundStyle(model.isInteractive ? WitermTheme.positive : WitermTheme.secondary)
+                    .foregroundStyle(model.isInteractive || model.hidingKeyboard ? WitermTheme.positive : WitermTheme.secondary)
                     .imageScale(.small)
                     .accessibilityHidden(true)
                 Text(verbatim: statusFacts.joined(separator: " · "))
@@ -194,7 +194,7 @@ struct RemoteTerminalWorkspace: View {
     /// "3 devices connected", this device included, while connected and
     /// others are too; nil when it's alone or the Mac doesn't say.
     private var deviceCount: String? {
-        guard model.isInteractive else { return nil }
+        guard model.isInteractive || model.hidingKeyboard else { return nil }
         return ConnectedDevices.count(model.connectedDevices)
     }
 
@@ -220,7 +220,7 @@ struct RemoteTerminalWorkspace: View {
                                status: [terminalStatus, deviceCount].compactMap { $0 }.joined(separator: " · ")
                                    .nilIfEmpty ?? String(localized: "Connected", bundle: .main),
                                statusImage: terminalStatusImage,
-                               live: model.isInteractive, hue: model.selectedGrant?.host.identityHue) {
+                               live: model.isInteractive || model.hidingKeyboard, hue: model.selectedGrant?.host.identityHue) {
                     terminalActions
                 }
             }
@@ -288,7 +288,8 @@ struct RemoteTerminalWorkspace: View {
                     inputDestination: model.selectedGrant.map { $0.host.name + " · " + attachment.session.name },
                     barActions: typingBarHidden ? keyRowActions : nil,
                     keyboardButton: startTyping,
-                    tapToType: startTyping.map { _ in { typeOnTap() } }
+                    tapToType: startTyping.map { _ in { typeOnTap() } },
+                    keyboardPending: model.switchingTo == .control
                 )
                 .id(id)
                 // The renderer leaves the keyboard's space itself (see
@@ -358,7 +359,8 @@ struct RemoteTerminalWorkspace: View {
     /// disconnected, ended). Nil while connected otherwise; the keyboard
     /// itself shows whether you're typing.
     private var terminalStatus: String? {
-        if model.isInteractive {
+        // Round 22: the keyboard's switch to watching changes nothing here.
+        if model.isInteractive || model.hidingKeyboard {
             return model.canRequestControl ? nil : String(localized: "Can only watch", bundle: .main)
         }
         if let busy = model.busy { return busy }
@@ -367,7 +369,9 @@ struct RemoteTerminalWorkspace: View {
     }
 
     private var terminalStatusImage: String {
-        guard model.isInteractive else { return model.busy != nil ? "arrow.triangle.2.circlepath" : WitermSymbols.disconnected }
+        guard model.isInteractive || model.hidingKeyboard else {
+            return model.busy != nil ? "arrow.triangle.2.circlepath" : WitermSymbols.disconnected
+        }
         return model.canRequestControl ? WitermSymbols.connected : WitermSymbols.watching
     }
 
@@ -420,8 +424,12 @@ struct RemoteTerminalWorkspace: View {
     /// key row's Hide Keyboard takes its place), and when this device can
     /// only watch.
     private var startTyping: (() -> Void)? {
-        guard model.isInteractive, model.mode == .view, model.canRequestControl else { return nil }
-        return { model.switchMode() }
+        guard model.canRequestControl else { return nil }
+        // Round 22: also while the keyboard's own switch to watching is
+        // under way, so the button stays put and a tap then isn't lost.
+        if model.hidingKeyboard { return { model.requestTyping() } }
+        guard model.isInteractive, model.mode == .view else { return nil }
+        return { model.requestTyping() }
     }
 
     /// A tap on a watched terminal starts typing, as on an SSH terminal,
@@ -432,13 +440,19 @@ struct RemoteTerminalWorkspace: View {
     /// so, without asking: it never takes typing from anyone. Who types is
     /// in Connected Devices (Round 20).
     private func typeOnTap() {
+        #if DEBUG
+        // Round 22, for the owner's phone: why a tap did or didn't type.
+        // Who is connected only as kinds and modes, never names.
+        let devices = (model.connectedDevices ?? []).map { "\($0.kind)" + ($0.typing ? "+typing" : "") }.joined(separator: ",")
+        RemoteTerminalModel.layoutLog.notice("tapToType interactive=\(model.isInteractive, privacy: .public) mode=\(model.mode == .view ? "view" : "control", privacy: .public) hiding=\(model.hidingKeyboard, privacy: .public) othersType=\(model.othersType, privacy: .public) devices=[\(devices, privacy: .public)] writers=\(model.openWriters?.count ?? -1, privacy: .public)")
+        #endif
         if model.isInteractive, model.mode == .view, model.othersType {
             model.noteTypingUnavailable()
             UIAccessibility.post(notification: .announcement, argument: ConnectedDevices.watchingNotice)
             UINotificationFeedbackGenerator().notificationOccurred(.warning)
             return
         }
-        model.switchMode()
+        model.requestTyping()
     }
 
     /// The keyboard went down (Hide Keyboard, a swipe on the keyboard, or

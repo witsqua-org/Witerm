@@ -123,6 +123,18 @@ final class MacContinuityFlowTests: XCTestCase {
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         shot("09d-typing-again")
 
+        // Round 22, the owner's case: the Mac's own window types here, and it
+        // always lets a paired device type alongside it, so one tap on the
+        // watched text brings up the keyboard (before, the tap only said
+        // "Typing wasn’t available, so you’re watching.").
+        hideKey.tap()
+        XCTAssertTrue(keyboardButton.waitForExistence(timeout: 30), "Watching again offers the keyboard button")
+        RunLoop.current.run(until: Date().addingTimeInterval(3))
+        app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)).tap()
+        XCTAssertTrue(hideKey.waitForExistence(timeout: 30), "One tap where the Mac's window types didn't bring up the keyboard")
+        XCTAssertFalse(any("remoteTerminalNotice").exists, "The tap said typing wasn't available")
+        shot("09e-one-tap-typing")
+
         signal("phone-attached", UIDevice.current.name)
 
         // Type while the Mac is attached too. The keyboard is already up:

@@ -76,7 +76,11 @@ import XCTest
         XCTAssertEqual(core.cols, full.columns)
         XCTAssertEqual(core.rows, full.rows, "Hiding the keyboard must give every row back")
         XCTAssertEqual(lastVisibleLine(surface), "host:~$", "The prompt must stay in view; offset \(surface.terminal.contentOffset)")
-        XCTAssertEqual(surface.terminal.frame.height, surface.bounds.height, accuracy: 1, "No band under the terminal")
+        // Round 22: the part of a row left over is at the top, as for a
+        // watched grid, so the last row sits on the bottom edge.
+        XCTAssertEqual(surface.terminal.frame.maxY, surface.bounds.height, accuracy: 1, "No band under the terminal")
+        let cell = surface.terminal.getOptimalFrameSize().height / CGFloat(core.rows)
+        XCTAssertGreaterThan(surface.terminal.frame.height, surface.bounds.height - cell, "Less than a row left over")
     }
 
     /// Whatever height the keyboard leaves (it varies with the device, text
