@@ -93,10 +93,10 @@ struct IOSWelcomeTour: View {
                 Image(systemName: item.symbol)
                     .symbolRenderingMode(.monochrome)
                     .font(.system(size: 56, weight: .regular))
-                    .foregroundStyle(WitermTheme.ink)
+                    .foregroundStyle(.tint)
+                    // Round 18: a plain symbol, as on the system's What's New
+                    // pages, not one in a drawn tile.
                     .frame(width: 112, height: 112)
-                    .background(WitermTheme.surface, in: .rect(cornerRadius: WitermMetrics.Radius.xl, style: .continuous))
-                    .witermOutline(cornerRadius: WitermMetrics.Radius.xl)
                     .accessibilityHidden(true)
                 VStack(spacing: WitermMetrics.Space.s) {
                     Text(item.title)

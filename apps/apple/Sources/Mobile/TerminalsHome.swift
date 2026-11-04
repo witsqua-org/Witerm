@@ -242,7 +242,12 @@ struct TerminalsHome: View {
             let terminals = matching(section)
             switch section.listing {
             case .offline:
-                note(String(localized: "Offline. Its terminals appear here when it’s back online.", bundle: .main))
+                // Round 18: a plain row with a system label, as Settings
+                // says a thing is unavailable; no box of its own.
+                Label(String(localized: "Offline. Its terminals appear here when it’s back online.", bundle: .main),
+                      systemImage: WitermSymbols.disconnected)
+                    .font(WitermType.rowDetail)
+                    .foregroundStyle(.secondary)
                     .accessibilityIdentifier("deviceOffline-\(section.grant.host.id)")
             case .failed(let title, let recovery) where terminals.isEmpty:
                 VStack(alignment: .leading, spacing: WitermMetrics.Space.xxs) {

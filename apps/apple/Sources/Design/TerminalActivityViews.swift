@@ -55,6 +55,16 @@ struct TerminalActivityCard: View {
                 }
                 place
                 if let line = activity?.lastLine {
+                    #if os(iOS)
+                    // Round 18: plain monospaced text in the row, without a
+                    // box of its own inside the list's own cell.
+                    Text(verbatim: line)
+                        .font(WitermType.codeInline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    #else
                     Text(verbatim: line)
                         .font(WitermType.codeInline)
                         .foregroundStyle(WitermTheme.ink)
@@ -65,6 +75,7 @@ struct TerminalActivityCard: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(WitermTheme.statusFill, in: .rect(cornerRadius: WitermMetrics.Radius.s))
                         .witermOutline(cornerRadius: WitermMetrics.Radius.s)
+                    #endif
                 }
                 if let status {
                     StatusBadge(status, systemImage: WitermSymbols.disconnected)

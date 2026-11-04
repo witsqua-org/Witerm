@@ -64,6 +64,35 @@ struct IssueBanner<Actions: View>: View {
     }
 
     var body: some View {
+        #if os(iOS)
+        // Round 18: the system's group box and label, not a custom card
+        // with a colored border; the symbol keeps the warning color.
+        GroupBox {
+            VStack(alignment: .leading, spacing: WitermMetrics.Space.s) {
+                if let message {
+                    Text(message)
+                        .font(WitermType.rowDetail)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                actions
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } label: {
+            Label {
+                Text(title).fixedSize(horizontal: false, vertical: true)
+            } icon: {
+                Image(systemName: systemImage).foregroundStyle(WitermTheme.warning).accessibilityHidden(true)
+            }
+            .font(WitermType.rowDetail.weight(.semibold))
+        }
+        .accessibilityElement(children: .contain)
+        #else
+        macBody
+        #endif
+    }
+
+    private var macBody: some View {
         HStack(alignment: .top, spacing: WitermMetrics.Space.m) {
             Image(systemName: systemImage)
                 .font(WitermType.rowTitle)
@@ -142,9 +171,26 @@ struct StatusBadge: View {
         self.tone = tone
     }
 
+    var body: some View {
+        #if os(iOS)
+        // Round 18: a plain system label in the status color (symbol and
+        // text, so color is never the only signal), not a tinted capsule.
+        // `.titleAndIcon` keeps Form rows from splitting it into columns.
+        Label(title, systemImage: systemImage)
+            .labelStyle(.titleAndIcon)
+            .imageScale(.small)
+            .font(WitermType.meta.weight(.semibold))
+            .foregroundStyle(color)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityElement(children: .combine)
+        #else
+        capsule
+        #endif
+    }
+
     // An explicit stack rather than Label: Form rows restyle Labels and would
     // split the symbol from its text.
-    var body: some View {
+    private var capsule: some View {
         HStack(spacing: WitermMetrics.Space.xs) {
             Image(systemName: systemImage)
                 .imageScale(.small)
@@ -351,6 +397,16 @@ struct TerminalHeader<Actions: View>: View {
 
 extension View {
     /// Stable solid content surface. Glass stays in the control layer.
+    /// Grouped content on its own surface: the system's group box on iOS
+    /// (Round 18, native instead of a drawn card); the Mac keeps its card.
+    @ViewBuilder func witermGroupBox() -> some View {
+        #if os(iOS)
+        GroupBox { self }
+        #else
+        witermCard()
+        #endif
+    }
+
     func witermCard(padding: CGFloat = WitermMetrics.cardPadding) -> some View {
         modifier(WitermCard(padding: padding))
     }

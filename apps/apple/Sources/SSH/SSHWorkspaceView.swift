@@ -297,7 +297,7 @@ struct SSHTrustView: View {
                             .accessibilityLabel(String(localized: "Host fingerprint, \(String(prompt.key.fingerprint))", bundle: .main))
                             .accessibilityIdentifier("sshHostFingerprint")
                     }
-                    .witermCard()
+                    .witermGroupBox()
                     VStack(spacing: WitermMetrics.Space.s) {
                         PrimaryButton(String(localized: "Trust and Connect", bundle: .main), systemImage: "checkmark.shield", fullWidth: true) {
                             Task { await model.approveHostKey(prompt) }

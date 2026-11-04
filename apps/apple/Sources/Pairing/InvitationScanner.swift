@@ -80,7 +80,6 @@ private struct FallbackNote<Actions: View>: View {
     let title: String
     let detail: String
     let actions: Actions
-    @Environment(\.dynamicTypeSize) private var typeSize
 
     init(title: String, detail: String, @ViewBuilder actions: () -> Actions = { EmptyView() }) {
         self.title = title
@@ -88,20 +87,15 @@ private struct FallbackNote<Actions: View>: View {
         self.actions = actions()
     }
 
+    /// Round 18: the system's empty-state view, not a custom card.
     var body: some View {
-        HStack(alignment: .top, spacing: WitermMetrics.Space.m) {
-            if !typeSize.isAccessibilitySize {
-                IconTile(systemImage: "camera", tint: WitermTheme.secondary)
-            }
-            VStack(alignment: .leading, spacing: WitermMetrics.Space.xs) {
-                Text(title).font(WitermType.cardTitle).foregroundStyle(WitermTheme.ink)
-                Text(detail).font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
-                actions.padding(.top, WitermMetrics.Space.s)
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        ContentUnavailableView {
+            Label(title, systemImage: "camera")
+        } description: {
+            Text(detail)
+        } actions: {
+            actions
         }
-        .witermCard()
     }
 }
 

@@ -213,7 +213,7 @@ struct RemoteTerminalWorkspace: View {
                 }
                 .font(WitermType.rowDetail)
                 .padding(.horizontal, WitermMetrics.Space.l)
-                .background(WitermTheme.surface)
+                .background(.bar)
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("remoteTerminalNotice")
             }
@@ -229,7 +229,7 @@ struct RemoteTerminalWorkspace: View {
                 .font(WitermType.rowDetail)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, WitermMetrics.Space.l)
-                .background(WitermTheme.surface)
+                .background(.bar)
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("remoteKeptNote")
                 .task(id: note) {
@@ -401,51 +401,52 @@ struct RemoteTerminalWorkspace: View {
         }
     }
 
+    /// Round 18: the system's own empty-state view (and its progress view
+    /// while connecting) over a system material, instead of a custom card:
+    /// the kept last frame shows dimmed behind it, and the material follows
+    /// Reduce Transparency and Increase Contrast by itself.
     private var connectionOverlay: some View {
-        ScrollView {
-            connectionStatusContent
-                .padding(WitermMetrics.cardPadding)
-                .frame(maxWidth: WitermMetrics.readableWidth, alignment: .leading)
-                .background {
-                    if reduceTransparency || contrast == .increased {
-                        RoundedRectangle(cornerRadius: WitermMetrics.cardRadius, style: .continuous).fill(WitermTheme.surface)
-                    } else {
-                        RoundedRectangle(cornerRadius: WitermMetrics.cardRadius, style: .continuous).fill(.regularMaterial)
-                    }
+        Group {
+            if let busy = model.busy {
+                VStack(spacing: WitermMetrics.Space.l) {
+                    ProgressView(busy)
+                    Button(String(localized: "Cancel", bundle: .main)) { model.cancelWork() }
+                        .buttonStyle(.bordered)
                 }
-                .padding(WitermMetrics.Space.l)
-                .frame(maxWidth: .infinity, alignment: .top)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("remoteTerminalActivity")
+            } else {
+                connectionStatusContent
+            }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.regularMaterial)
     }
 
     /// What happened and one clear next step: Reconnect when it can work,
-    /// otherwise back to the sessions (the back button also goes there).
+    /// otherwise back to Terminals (the back button also goes there).
     private var connectionStatusContent: some View {
-        VStack(alignment: .leading, spacing: WitermMetrics.Space.m) {
-            if let busy = model.busy {
-                HStack(spacing: WitermMetrics.Space.m) {
-                    ProgressView().accessibilityHidden(true)
-                    Text(busy).font(WitermType.cardTitle)
-                    Spacer(minLength: WitermMetrics.Space.s)
-                    Button(String(localized: "Cancel", bundle: .main)) { model.cancelWork() }.touchTarget()
-                }
-                .accessibilityIdentifier("remoteTerminalActivity")
+        let ended = model.connectionState == .ended
+        let title = ended ? String(localized: "Terminal Ended", bundle: .main)
+            : (model.issue.map(title(of:)) ?? String(localized: "Disconnected", bundle: .main))
+        return ContentUnavailableView {
+            Label {
+                Text(title).accessibilityIdentifier("remoteDisconnectedStatus")
+            } icon: {
+                Image(systemName: ended ? "checkmark.circle" : (model.issue?.title == RemoteTerminalIssue(RelayError.offline).title
+                                                                 ? "wifi.slash" : WitermSymbols.disconnected))
+            }
+        } description: {
+            if let issue = model.issue { Text(issue.recovery) }
+        } actions: {
+            if model.canReconnect {
+                // The app's prominent button: system glass (bordered with
+                // Reduce Transparency), with the label color that keeps contrast.
+                PrimaryButton(String(localized: "Reconnect", bundle: .main), systemImage: "arrow.clockwise") { model.reconnect() }
+                    .accessibilityIdentifier("reconnectRemoteTerminal")
             } else {
-                Text(model.connectionState == .ended ? String(localized: "Terminal Ended", bundle: .main) : (model.issue.map(title(of:)) ?? String(localized: "Disconnected", bundle: .main)))
-                    .font(WitermType.cardTitle)
-                    .accessibilityIdentifier("remoteDisconnectedStatus")
-                if let issue = model.issue {
-                    Text(issue.recovery).font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
-                }
-                if model.canReconnect {
-                    VStack(alignment: .leading, spacing: WitermMetrics.Space.m) {
-                        PrimaryButton(String(localized: "Reconnect", bundle: .main), systemImage: "arrow.clockwise") { model.reconnect() }
-                            .accessibilityIdentifier("reconnectRemoteTerminal")
-                    }
-                } else {
-                    PrimaryButton(String(localized: "Back to Terminals", bundle: .main), systemImage: "list.bullet") { model.showSessions() }
-                        .accessibilityIdentifier("remoteDisconnectedSessionList")
-                }
+                PrimaryButton(String(localized: "Back to Terminals", bundle: .main), systemImage: "list.bullet") { model.showSessions() }
+                    .accessibilityIdentifier("remoteDisconnectedSessionList")
             }
         }
     }

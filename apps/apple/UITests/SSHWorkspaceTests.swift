@@ -410,11 +410,12 @@ import XCTest
         print("TERMINAL_GRID keyboard-up \(up) keyboard-down \(down) frame \(downFrame) \(terminal.label)")
         XCTAssertEqual(down.columns, up.columns, "The keyboard must never change the width")
         XCTAssertGreaterThan(down.rows, up.rows, "Hidden keyboard gives the rows back")
-        // Down to the keyboard button's strip (Round 16), which the text never runs under.
+        // Round 18: the text uses the full height and the keyboard button
+        // floats over its bottom right (no strip of its own any more).
         let keyboardButton = app.buttons["sshKeyboard"]
         XCTAssertTrue(keyboardButton.waitForExistence(timeout: 5), "The keyboard button shows while the keyboard is hidden")
-        XCTAssertGreaterThan(terminal.frame.maxY, window.maxY - 120, "The terminal must fill the screen again")
-        XCTAssertGreaterThanOrEqual(keyboardButton.frame.minY, terminal.frame.maxY, "The keyboard button never covers the text")
+        XCTAssertGreaterThan(terminal.frame.maxY, window.maxY - 60, "The terminal must fill the screen again")
+        XCTAssertLessThanOrEqual(keyboardButton.frame.maxY, terminal.frame.maxY, "The keyboard button floats over the text")
         XCTAssertGreaterThan(keyboardButton.frame.midX, window.midX, "The keyboard button is at the bottom right")
         XCTAssertGreaterThanOrEqual(keyboardButton.frame.width, 44)
         shot("terminal-keyboard-down")

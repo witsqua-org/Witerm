@@ -73,6 +73,8 @@ Swipes mirror the row's menu, never add actions of their own, and are also in th
 | Devices ▸ relay server | — | **Remove…** | No | Confirmation ("Remove Relay Server?"); its devices stay paired |
 | Settings ▸ Snippets | — | Delete (system) | Yes (system list editing) | As before |
 
+**Round 18 changes** ([HCI improvements](hci-improvements.md), Round 18): a connected row of either kind, paired terminal or SSH host, has a gray **Disconnect** trailing swipe that is never a full swipe (an SSH disconnect ends the remote shell); a paired terminal has it only while connected after Back, and the long-press menu has it too. Delete Host keeps the full swipe with Undo, only while the host isn't connected. The terminal menu's Leave became Disconnect on iOS.
+
 ### Duplicates removed
 
 | Function | Before | After (its one place) |

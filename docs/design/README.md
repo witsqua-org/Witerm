@@ -91,7 +91,7 @@ The tab bar hides while a terminal is open on compact layouts. With a hardware k
 
 ## Design system
 
-Set on 2026-11-03 from the [Mac](audit-mac.md) and [iOS](audit-ios.md) audits. Tokens live in `apps/apple/Sources/Design/WitermTheme.swift`; the names are shared and the Mac value comes first where they differ. Rule zero: prefer the system component. A list of things is a `List` or `Form` with standard rows; custom surfaces are for the terminal, banners, cards and the tour.
+Set on 2026-11-03 from the [Mac](audit-mac.md) and [iOS](audit-ios.md) audits. Tokens live in `apps/apple/Sources/Design/WitermTheme.swift`; the names are shared and the Mac value comes first where they differ. Rule zero: prefer the system component, and use a custom one only with a stated reason (Round 18, [native UI audit](native-ui-audit-ios.md)). A list of things is a `List` or `Form` with standard rows; an empty, offline or error state is `ContentUnavailableView`; grouped content outside a list is `GroupBox`; status is a `Label`; work in progress is `ProgressView`; confirmations are `.alert` or `.confirmationDialog`; buttons use the system styles (`.glassProminent` through `PrimaryButton`, `.bordered`, `.borderless`); colors are the system's semantic ones (`.secondary`, `.tint`, materials such as `.bar` and `.regularMaterial`) unless a token below says otherwise. Custom surfaces are for the terminal and its floating controls, the key row, identity hues (tiles, hue edges), previews of terminal colors, and the few listed with their reason in the audit.
 
 | Token | Mac | iOS | Use |
 |---|---|---|---|
@@ -120,12 +120,12 @@ Shared components are in `apps/apple/Sources/Design/Components.swift`. Use them 
 |---|---|
 | `PrimaryButton` | The one prominent action in a view. Glass on iOS/macOS 26+; bordered with Reduce Transparency or on older systems. |
 | `FloatingTerminalButton` (iOS) | Every button that floats over a terminal (the keyboard button, Jump to Latest) and Hide Keyboard on the key row: 44 pt, a capsule, system glass on iOS 26+, which carries its own depth; with Reduce Transparency (or earlier iOS) solid gray with a soft shadow (18%, 6 pt, 2 pt down), restyled when the setting changes. One placement rule: 16 pt from the trailing edge or the safe area if wider. The keyboard button floats 8 pt above the text's bottom and reserves no space (Round 18); with text or the cursor under it, it steps up a row at a time to blank cells (never over the cursor), and only the button moves. Jump to Latest sits 8 pt above it, or 8 pt above the text's bottom while the keyboard is up. Each has a spoken label and the Large Content Viewer. |
-| `witermCard()` | Solid content surface: 20 pt corners and padding, Surface fill. |
+| `witermCard()` | Solid content surface: 20 pt corners and padding, Surface fill. Mac only in practice; on iOS use `GroupBox` (`witermGroupBox()` gives a `GroupBox` on iOS and the card on the Mac). |
 | `witermOutline` | The edge of a card, field, chip or key with Increase Contrast (`WitermTheme.outline`); nothing otherwise. `witermCard` uses it on iOS. |
-| `IssueBanner` | A recoverable problem with recovery text and actions. Never color alone. |
+| `IssueBanner` | A recoverable problem with recovery text and actions. Never color alone. On iOS a system `GroupBox` with a `Label` title whose symbol keeps the warning color (Round 18); on the Mac a card with a warning border. |
 | `OfflineBanner` | No network path, above remote work only. Takes no space when online. |
 | `ActivityRow` | Real, cancellable work in progress. No invented percentages. |
-| `StatusBadge` | Symbol plus text in a neutral, positive, or warning tone. |
+| `StatusBadge` | Symbol plus text in a neutral, positive, or warning tone. On iOS a plain `Label` in that color (Round 18); on the Mac a tinted capsule. "Connected" means the same on a paired terminal's row and an SSH host's card. |
 | `TerminalHeader` | Destination, input state, and actions for iPad and iOS terminals. The Mac uses the window title, its subtitle, and the toolbar instead, so the terminal gets the whole pane. |
 | `TerminalActivityCard` | A live or recently disconnected terminal on a list: hue edge, address and folder, last line, what's running, and age. Reads `TerminalActivity`, which comes from the terminal's own renderer, updates at most once a second, and lives only in memory. |
 | `PageHeader`, `IconTile` | Pane titles; decorative icons hidden from VoiceOver. |

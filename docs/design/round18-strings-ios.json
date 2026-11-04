@@ -1,0 +1,13 @@
+{
+  "add": {
+    "Disconnected %@ to keep %lld terminals connected. It keeps running.": "已断开%@，以保持 %lld 个终端已连接。它会继续运行。",
+    "Disconnected from %@": "已断开“%@”",
+    "Disconnecting…": "正在断开…",
+    "Keeps running on %@.": "会在%@上继续运行。",
+    "The terminal keeps running on the other device.": "终端会在另一台设备上继续运行。"
+  },
+  "change": {},
+  "remove": [
+    "The terminal keeps running."
+  ]
+}
