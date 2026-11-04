@@ -768,3 +768,56 @@ For SSH, "typeable" is the test's check (keyboard up, the prompt on the last lin
 - The layout probe adds `mode`, `fitRows`, `gap`, `overflow`, `links`, `covers`, `coverMs` and `focused`.
 
 **Verification:** see [verification.md](../verification.md), Round 17: iOS.
+
+## Round 18: iOS
+
+Requests from the owner after Round 17 on the physical iPhone 17 Pro, on 2026-11-04, worked on the iPhone 18 Pro simulator through the DEBUG fixture Mac (`FixtureMac`) and the disposable OpenSSH fixture. The simulator was in hardware-keyboard mode this round (the key row alone, 18 pt of it over the terminal) and wasn't changed; the DEBUG stand-in keyboard (`-witerm.debug.softwareKeyboard YES`) covers the software keyboard. Captures: `.build/screenshots/round18-ios/` (`before/`, `before-soft/` with `terminal-layout.log`, `after/`).
+
+### 1. The obstruction at the bottom
+
+**Cause.** Round 16's keyboard button sat in a strip of its own under the text (8 + 44 + 8 pt), so with the keyboard down the text stopped 60 pt short of the bottom; a watched grid, which can't fill part of a row, then left up to one more row (15.7 pt) blank above the strip. Together that was a 76 pt band of background at the bottom of every paired terminal while watching (three rows lost, and a near-empty strip with one button in it), and a 60 pt band on an SSH terminal with the keyboard down. With the keyboard up there was no band, because the strip goes away while the key row is there; that's why it read as "much better" after Round 17. The home indicator's safe area wasn't part of it (it lies under the terminal, in the terminal's own background), and the watched grid was the size the phone set (Round 17's fit), except that the fit left out the strip.
+
+| | Before | After |
+|---|---|---|
+| Paired, watching, portrait (layout log) | `text=390x662 strip=60 grid=45x38 gridHeight=646`: 75.7 pt blank at the bottom | 45 × 42, 7.7 pt left over, at the top |
+| Paired, watching, landscape | 60 pt strip under the text | 85 × 17, 12.7 pt left over, at the top |
+| SSH, keyboard down, portrait / landscape | 45 × 38 and 85 × 14 with a 60 pt band | 45 × 42 and 85 × 17, no band |
+| Keyboard up (key row only; stand-in keyboard) | No band (45 × 41; 45 × 21) | Unchanged |
+
+**Change.** The keyboard button floats over the terminal (Round 17's floating-button style: 44 pt system glass, gray with Reduce Transparency) at the text's bottom right and reserves nothing: the text and its grid take the whole height (`TerminalSurface.contentBounds`, `watchingFit`). Jump to Latest sits just above it when both show.
+
+**When text is under it, the button moves; the content doesn't.** The HIG asks that controls over content not hide what matters, and that content stay stable. Lifting the text would bring the band back, and a faded control reads as disabled. So from its resting place the button steps up one row at a time, within the text's lower half, to the first place with only blank cells under it, and it never covers the cursor. With text everywhere (a full-screen program) it rests at the bottom unless the cursor is there, and then sits just above the cursor's row (`placeKeyboardButton`). It moves with a 0.2 s animation (none with Reduce Motion) after output and layout. Only the button moves: no grid change and no resize come from it.
+
+A watched grid's leftover of less than one row goes to the top, so the last line sits on the bottom edge; the surface's background is the terminal's own, as before. Round 14–17 guarantees hold: rotation fit and reflow (`TerminalLayoutTests`, `TerminalReflowTests`); a watcher never resizes the Mac's grid except with Round 17's stop-typing fit (now the whole view); and showing or hiding the keyboard changes the grid once (the strip's hold-for-focus logic went with the strip).
+
+Tests that fail first: `PairedTerminalFixtureTests.testTheTerminalUsesTheFullHeightWithTheKeyboardDown` (a 75.7 pt band while watching before; under one row in portrait and landscape, keyboard up and down, after) and `SSHTypingChromeTests.testTheTerminalUsesTheFullHeightWithTheKeyboardDown` (60 pt in portrait and landscape before; none after). Unit tests: `KeptPairedTerminalTests.testKeyboardButtonFloatsOverTheTextAndReservesNoSpace` and `testKeyboardButtonStaysOffTheCursor` (a full last line with the cursor at its end: the button rises clear of it with the grid unchanged, and returns when the screen clears). `TerminalKeyboardInsetTests.testWatchingFitIsTheKeyboardHiddenSizeAndFillsTheView` now expects the whole view.
+
+### 2. Back keeps a paired terminal connected
+
+Before, Back on a paired terminal detached it (and `RemoteTerminalWorkspace.onDisappear` aborted it), so reopening reconnected and redrew. Now Back (the button, the edge swipe, switching terminals from the title, an SSH terminal taking the tab) keeps it connected, as SSH terminals already were.
+
+- **The renderer belongs to the model** (`PairedTerminalHost`, like `SSHTerminalHost`), not to a view; the SwiftUI view only places its surface. Off screen it keeps taking the Mac's output, and since the phone acknowledges what its renderer has taken (Round 13 flow control), acknowledgements keep flowing: the Mac never stalls, or times out, a terminal that isn't on screen.
+- **Back while typing stops typing first**, as hiding the keyboard does (Rounds 16 and 17): the Mac gets the watching size, typing is let go with the detach ACK (the typing renderer stays until then), and a watching link with its own renderer takes over. All of this happens after the list is already back (`KeptPairedTerminal.State.releasing`). A release that fails disconnects the terminal; nothing is resent, and typing is never held off screen.
+- **Reopening is instant**: the same renderer and attachment, with no new link, no Opening…, and no resume cover. It shows watching; the keyboard button or a tap types, as usual.
+- **Terminals shows Connected** on a row with a live attachment, on screen or kept: the same green `StatusBadge` ("Connected", `WitermSymbols.connected`) as a connected SSH host's card, and ", connected" in its VoiceOver value.
+- **Limits.** The relay server allows a device 4 tunnels at once (`maxClientTunnels`). An attachment holds one for as long as it lasts, and listing a device's terminals (and, while watching, who types there) needs one for a moment. So **at most 3 paired attachments** stay connected, the one on screen included, across relay servers (`PairedKeepAlive.limit`). Opening a fourth disconnects the one left longest ago, after its detach ACK and before the new one attaches, and the new terminal says so for 8 seconds (dismissable, and spoken): "Disconnected “Terminal 1” to keep 3 terminals connected. It keeps running." Listings wait for a free tunnel (`TunnelGate`), so three kept terminals and several devices never ask for a fifth.
+- **Memory.** Each renderer keeps its screen and SwiftTerm's 500 lines of scrollback, so it's bounded; `PairedTerminalHost.approximateBytes` estimates about 0.5 MB of cells at 45 columns. Measured as the process footprint (layout probe) on the simulator: 67.2 MB with one terminal open, 69.1 MB with one kept and one open, 80.1 MB with two kept and one open, and 80.7 MB at the limit with a fourth opened (three live). That's about 13.5 MB for three live paired terminals, most of it the first renderer's caches.
+- **Background.** Round 17's 3-minute rule applies to every kept terminal too. Each is detached with its ACK five seconds before iOS's background time ends (its screen and renderer kept), resumed in place with a new watching link when the app returns within 3 minutes, and disconnected after that.
+- **Endings still end them.** Revocation (a kept link failing with a trust error removes the device and shows No Longer Paired); Unpair and End Invitation… (each kept terminal of that grant is detached with its ACK first); the Mac ending the terminal (its row leaves at once); a device listing that no longer has the grant. A transient network failure of a kept link is resumed in place once; if that fails, it's disconnected and its row stops saying Connected.
+
+### 3. Disconnect
+
+iOS has one word for ending a connection: **Disconnect**, for paired terminals and SSH hosts alike.
+
+| Where | Paired terminal | SSH host |
+|---|---|---|
+| Row, trailing swipe | Disconnect (gray), only while connected; never a full swipe | Disconnect (gray) while connected, never a full swipe; Delete Host (red, full swipe, Undo) while not connected |
+| Row, long press | Disconnect, only while connected; on Shared with You, also End Invitation… (red, confirmed) after a divider | Favorite, Edit Host, Host Keys, then Disconnect, then Delete Host (red) last, after a divider |
+| Terminal ⋯ menu | Disconnect, last, where Leave was | Disconnect, last (no longer red) |
+| Hardware keyboard | Disconnect (Leave is gone from the iOS command list) | Disconnect |
+
+**No full swipe, no confirmation.** Disconnecting is reversible (reopening connects again, and a paired terminal keeps running on its Mac), so it asks nothing and isn't red. But an SSH disconnect ends the remote shell, so a single full swipe shouldn't do it by accident, and a swipe should behave the same on every connected row; the full swipe stays with Delete Host, which Undo restores. Delete Host never sits beside Disconnect in a swipe, and in menus it's last, red, after a divider. The phone can't end a Mac terminal (`close` is never accepted remotely, [protocol/relay-v1.md](../../protocol/relay-v1.md)), so the paired item's hint says where it keeps running: "Keeps running on *device*." in the terminal menu, and "The terminal keeps running on the other device." on rows. The Mac keeps Leave for its windows.
+
+Tests that fail first (before, the row had no Connected badge after Back, and the menu said Leave): `PairedKeepConnectedTests` (5): Back keeps the terminal connected and reopens it with the same link and no cover; Disconnect by swipe (a full swipe only reveals it), long press and the ⋯ menu; a fourth terminal disconnects the oldest, with the note; the fixture Mac ending a kept terminal (`exit`) takes its row away; Unpair lets its kept terminals go. Unit tests: the renderer takes output off screen (`testHostTakesOutputOffScreen`), the eviction order, and the tunnel gate.
+
+**Fixture (DEBUG):** typing `exit` and Return in a fixture terminal ends it 10 s later on every link and drops it from the list, as a shell would.

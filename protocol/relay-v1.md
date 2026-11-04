@@ -132,6 +132,14 @@ The server closes a tunnel when a leg's queue passes 16 messages or 256 KiB. It 
 - After the window, the client has let go; coming back reconnects the visible way below.
 - Keys typed while a link is being replaced are dropped, never sent later.
 
+**Terminals kept after Back** (iOS, Round 18). Leaving a terminal with Back doesn't detach it: it stays attached, watching, off screen, and its renderer keeps taking output, so its acknowledgements keep the Mac's window moving like any other attachment's. Nothing new crosses the wire:
+
+- A terminal left while typing first sends `resize` (the watching size, best effort), then `detach` and waits for the ACK, then attaches again with `mode: view` and `history`: the same sequence as hiding the keyboard.
+- Reopening it uses the same attachment; nothing is sent.
+- A client keeps at most 3 attachments at once (the one shown included), so one of the server's 4 tunnels per device stays free for `list`. Opening another detaches the attachment left longest ago, with its ACK, before attaching.
+- The background window above applies to each kept attachment; past it each is detached.
+- **Disconnect** is `detach`. A client never sends `close`; the terminal keeps running on the Mac.
+
 After the window, after a resume that failed, and after a network drop while active, the iOS client reconnects on its own, with backoff and at most four tries; never after leaving, revocation, or the session ending.
 
 ## Mac side
