@@ -3702,6 +3702,17 @@
         }
       }
     },
+    "Disconnected %@ to keep %lld terminals connected. It keeps running." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已断开%@，以保持 %lld 个终端已连接。它会继续运行。"
+          }
+        }
+      }
+    },
     "Disconnected after 3 minutes in the background. Reconnecting opens a new shell." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3719,6 +3730,17 @@
         }
       }
     },
+    "Disconnected from %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已断开“%@”"
+          }
+        }
+      }
+    },
     "Disconnected. Check that this device is still paired, then reconnect." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3732,6 +3754,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "连接已断开。请确认此设备仍已配对，然后重新连接。"
+          }
+        }
+      }
+    },
+    "Disconnecting…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在断开…"
           }
         }
       }
@@ -5818,6 +5851,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "继续观看；你的按键不会发送"
+          }
+        }
+      }
+    },
+    "Keeps running on %@." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "会在%@上继续运行。"
           }
         }
       }
@@ -11993,19 +12037,13 @@
         }
       }
     },
-    "The terminal keeps running." : {
+    "The terminal keeps running on the other device." : {
       "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The terminal keeps running."
-          }
-        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "终端会继续运行。"
+            "value" : "终端会在另一台设备上继续运行。"
           }
         }
       }
