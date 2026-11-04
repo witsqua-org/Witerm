@@ -203,6 +203,15 @@ enum RemoteWire {
       session.name.rangeOfCharacter(from: .controlCharacters) == nil,
       session.createdAt.timeIntervalSince1970.isFinite
     else { throw RelayError.invalidMessage }
+    if let attached = session.attached {
+      // The service has at most 32 connections; names are paired names.
+      guard attached.count <= 32, attached.filter(\.thisDevice).count <= 1,
+        attached.filter(\.gridOwner).count <= 1,
+        attached.allSatisfy({ device in
+          device.name.map { !$0.isEmpty && $0.unicodeScalars.count <= 64 && $0.rangeOfCharacter(from: .controlCharacters) == nil } ?? true
+        })
+      else { throw RelayError.invalidMessage }
+    }
   }
   static func error(_ code: LocalAgentErrorCode?) -> RelayError {
     switch code {

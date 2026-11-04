@@ -546,7 +546,30 @@ final class RemoteAccessFixtureTests: XCTestCase {
     // Who else can type: this Mac as {}, another device by name; an older
     // service (the second session) omits it.
     XCTAssertEqual(sessions.map(\.writers), [[LocalWriterInfo(name: nil), LocalWriterInfo(name: "iPad")], nil])
+    // Round 20: everyone attached, the requester included, by name only;
+    // an older service omits it.
+    XCTAssertEqual(sessions.map(\.attached), [[
+      LocalConnectedDevice(name: nil, mode: .control),
+      LocalConnectedDevice(name: "iPad", mode: .control, gridOwner: true),
+      LocalConnectedDevice(name: "iPhone", mode: .view, thisDevice: true),
+      LocalConnectedDevice(name: "Alex’s iPhone", mode: .view),
+    ], nil])
     try sessions.forEach(RemoteWire.validate)
+    // Encoding leaves false flags out and round-trips.
+    let wire = try RemoteWire.encoder().encode(sessions[0])
+    XCTAssertEqual(try RemoteWire.decoder().decode(LocalSessionInfo.self, from: wire), sessions[0])
+    let text = String(decoding: wire, as: UTF8.self)
+    XCTAssertFalse(text.contains("false"), text)
+    XCTAssertFalse(text.contains("device_id") || text.contains("public_key") || text.contains("pairing_id"), text)
+    // A list that names a device twice as the requester, or with a
+    // control character, fails closed.
+    let twice = LocalSessionInfo(id: sessions[0].id, name: "build", createdAt: sessions[0].createdAt, columns: 80, rows: 24,
+                                 attached: [LocalConnectedDevice(name: "a", mode: .view, thisDevice: true),
+                                            LocalConnectedDevice(name: "b", mode: .view, thisDevice: true)])
+    XCTAssertThrowsError(try RemoteWire.validate(twice))
+    let control = LocalSessionInfo(id: sessions[0].id, name: "build", createdAt: sessions[0].createdAt, columns: 80, rows: 24,
+                                   attached: [LocalConnectedDevice(name: "a\u{7}", mode: .view)])
+    XCTAssertThrowsError(try RemoteWire.validate(control))
     XCTAssertEqual(fixture.local_share_request.operation, .share)
     XCTAssertEqual(fixture.local_share_request.keepPrivate, false)
     XCTAssertEqual(fixture.local_share_request.remoteTyping, false)

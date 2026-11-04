@@ -213,11 +213,13 @@ final class AgentBroker: @unchecked Sendable {
             if let remote = try peer() {
                 // A paired device sees only the sessions it may reach and what
                 // it may do there. A device paired with this Mac also learns
-                // who else can type, by name only; an invitation's guest doesn't.
+                // who else can type and who is attached, by name only; an
+                // invitation's guest doesn't.
                 let guest = invite(remote) != nil
                 reply(sessions: sessions.filter { reachable($0.id, by: remote) }
                     .map { $0.forPeer(access: remoteAccess($0.id, for: remote),
-                                      writers: guest ? nil : otherWriters($0.id, excluding: remote)) })
+                                      writers: guest ? nil : otherWriters($0.id, excluding: remote),
+                                      attached: guest ? nil : attachedDevices($0.id, for: remote)) })
             } else {
                 reply(sessions: sessions.map { withSharing($0) })
             }
@@ -433,6 +435,38 @@ final class AgentBroker: @unchecked Sendable {
                 return seen.insert(connection.peer?.deviceID ?? "").inserted ? LocalWriterInfo(name: name) : nil
             }
             .sorted { ($0.name ?? "") < ($1.name ?? "") }
+    }
+
+    /// Every device attached to a session now, as a paired device may see
+    /// it: this Mac (its app, any window, or `witerm`) once without a name,
+    /// each paired device once by name, the requesting one marked. A device
+    /// types when any of its attachments may; the grid's owner, while it is
+    /// attached, is marked too. Never keys or pairings.
+    private func attachedDevices(_ id: String, for peer: LocalRemotePeer) -> [LocalConnectedDevice] {
+        var devices: [String: (name: String?, typing: Bool, owner: Bool)] = [:]
+        let owner = sizeOwners[id]
+        for connection in connections.values where connection.sessionID == id && connection.child != nil {
+            guard let mode = connection.mode else { continue }
+            // The Mac's own clients share one key no device ID can equal.
+            let key = connection.peer?.deviceID ?? ""
+            var entry = devices[key] ?? (connection.peer?.name, false, false)
+            if connection.peer != nil { entry.name = connection.peer?.name }
+            entry.typing = entry.typing || mode == .control
+            entry.owner = entry.owner || (mode == .control && connection.token == owner)
+            devices[key] = entry
+        }
+        return devices.sorted { lhs, rhs in
+            // This Mac first, then by name, then by device, for a stable list.
+            switch (lhs.value.name, rhs.value.name) {
+            case (nil, _): return rhs.value.name != nil
+            case (_, nil): return false
+            case let (left?, right?): return left == right ? lhs.key < rhs.key : left < right
+            }
+        }
+        .map { key, entry in
+            LocalConnectedDevice(name: entry.name, mode: entry.typing ? .control : .view, gridOwner: entry.owner,
+                                 thisDevice: key == peer.deviceID)
+        }
     }
 
     /// The session with who may reach it and who is attached to it.

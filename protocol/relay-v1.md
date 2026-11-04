@@ -99,6 +99,8 @@ Encrypted records carry the [local-agent-v1](local-agent-v1.md) JSON requests an
 
 **Tunnels.** Each list, attach, or redeem uses its own tunnel, with fresh keys and a fresh local grant check.
 
+**Connected devices** (Round 20). A `list` for a paired device carries `attached`, who is attached to each session, by name only ([local-agent-v1](local-agent-v1.md)); the Mac's relay endpoint forwards it unchanged, also on watch-only grants. Nothing pushes it: while a terminal is open and connected, the iOS client lists its device again every 10 seconds, and every 5 seconds while its Connected Devices sheet is open, never more often however often the keyboard switches. That is 6 (or 12) tunnel opens a minute against the device's 30, and as many joins against its Mac's 120; the list waits for a free tunnel, so kept terminals never push it past `maxClientTunnels`. Clients stop listing in the background, after leaving the terminal, and for grants whose Mac lists neither `attached` nor `writers` (an invitation's guest). With a Mac from before Round 20 the client lists only while watching a terminal it could type in, as before, and shows no count. No new capability is advertised.
+
 **Session invitations.** A grant from a session invitation is an ordinary signed grant, but the Mac records the invitation first and the grant reaches nothing until `redeem` arrives on it with the proof described in [local-agent-v1](local-agent-v1.md#sharing). The proof key travels only in the link, never to the server. The client compares the signed permission with the link's before redeeming.
 
 **Detach.**

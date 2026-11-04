@@ -65,11 +65,16 @@ public struct LocalSessionInfo: Codable, Sendable, Equatable, Identifiable {
   /// an invitation's guest): the others who can type here right now, so it can
   /// say where typing is. Absent from older services.
   public let writers: [LocalWriterInfo]?
+  /// Present only in a `list` response for a device paired with this Mac (not
+  /// an invitation's guest): every device attached to this session now, each
+  /// once, the requesting device included, so it can count and list them.
+  /// Names only. Absent from older services.
+  public let attached: [LocalConnectedDevice]?
 
   public init(
     id: String, name: String, createdAt: Date, columns: Int, rows: Int,
     sharing: LocalSessionSharing? = nil, access: LocalAttachmentMode? = nil,
-    writers: [LocalWriterInfo]? = nil
+    writers: [LocalWriterInfo]? = nil, attached: [LocalConnectedDevice]? = nil
   ) {
     self.id = id
     self.name = name
@@ -79,6 +84,7 @@ public struct LocalSessionInfo: Codable, Sendable, Equatable, Identifiable {
     self.sharing = sharing
     self.access = access
     self.writers = writers
+    self.attached = attached
   }
 
   /// The same session without local-only details.
@@ -87,16 +93,18 @@ public struct LocalSessionInfo: Codable, Sendable, Equatable, Identifiable {
   }
 
   /// The same session as a paired device sees it.
-  public func forPeer(access: LocalAttachmentMode, writers: [LocalWriterInfo]? = nil) -> LocalSessionInfo {
+  public func forPeer(
+    access: LocalAttachmentMode, writers: [LocalWriterInfo]? = nil, attached: [LocalConnectedDevice]? = nil
+  ) -> LocalSessionInfo {
     LocalSessionInfo(id: id, name: name, createdAt: createdAt, columns: columns, rows: rows, access: access,
-                     writers: writers)
+                     writers: writers, attached: attached)
   }
 
-  /// The same session limited to watching, keeping who can type.
-  public var watchOnly: LocalSessionInfo { forPeer(access: .view, writers: writers) }
+  /// The same session limited to watching, keeping who can type and who is attached.
+  public var watchOnly: LocalSessionInfo { forPeer(access: .view, writers: writers, attached: attached) }
 
   enum CodingKeys: String, CodingKey {
-    case id, name, columns, rows, sharing, access, writers
+    case id, name, columns, rows, sharing, access, writers, attached
     case createdAt = "created_at"
   }
 }
@@ -224,6 +232,53 @@ public struct LocalWriterInfo: Codable, Sendable, Equatable {
   public let name: String?
 
   public init(name: String?) { self.name = name }
+}
+
+/// A device attached to a session, as a paired device sees it (`attached`):
+/// a name, never keys or pairings. This Mac (its app, any window, or the
+/// `witerm` command) is one entry without a name; each paired device is one
+/// entry however many attachments it has.
+public struct LocalConnectedDevice: Codable, Sendable, Equatable {
+  /// The paired device's name; nil for this Mac itself.
+  public let name: String?
+  /// `control` when any of its attachments may type, otherwise `view`.
+  public let mode: LocalAttachmentMode
+  /// The session's grid is this device's: it typed last, or attached first
+  /// to type (local-agent-v1, Grid owner). At most one entry; none once the
+  /// grid's owner has gone, since the grid then stays as it was.
+  public let gridOwner: Bool
+  /// The device the list is for.
+  public let thisDevice: Bool
+
+  public init(name: String?, mode: LocalAttachmentMode, gridOwner: Bool = false, thisDevice: Bool = false) {
+    self.name = name
+    self.mode = mode
+    self.gridOwner = gridOwner
+    self.thisDevice = thisDevice
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    name = try container.decodeIfPresent(String.self, forKey: .name)
+    mode = try container.decode(LocalAttachmentMode.self, forKey: .mode)
+    gridOwner = try container.decodeIfPresent(Bool.self, forKey: .gridOwner) ?? false
+    thisDevice = try container.decodeIfPresent(Bool.self, forKey: .thisDevice) ?? false
+  }
+
+  /// False flags are left out, as in the shared fixture.
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encodeIfPresent(name, forKey: .name)
+    try container.encode(mode, forKey: .mode)
+    if gridOwner { try container.encode(true, forKey: .gridOwner) }
+    if thisDevice { try container.encode(true, forKey: .thisDevice) }
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case name, mode
+    case gridOwner = "grid_owner"
+    case thisDevice = "this_device"
+  }
 }
 
 /// The paired device a relayed request acts for. Only the Mac's relay

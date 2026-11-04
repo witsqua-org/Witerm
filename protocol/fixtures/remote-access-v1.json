@@ -12,7 +12,13 @@
         "columns": 120,
         "rows": 40,
         "access": "control",
-        "writers": [{}, { "name": "iPad" }]
+        "writers": [{}, { "name": "iPad" }],
+        "attached": [
+          { "mode": "control" },
+          { "name": "iPad", "mode": "control", "grid_owner": true },
+          { "name": "iPhone", "mode": "view", "this_device": true },
+          { "name": "Alex’s iPhone", "mode": "view" }
+        ]
       },
       {
         "id": "77777777-7777-4777-8777-777777777777",

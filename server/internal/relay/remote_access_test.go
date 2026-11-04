@@ -20,6 +20,8 @@ func TestSharedRemoteAccessFixture(t *testing.T) {
 				ID      string           `json:"id"`
 				Access  string           `json:"access"`
 				Sharing *json.RawMessage `json:"sharing"`
+				// Round 20: everyone attached, by name only.
+				Attached []map[string]json.RawMessage `json:"attached"`
 			} `json:"sessions"`
 		} `json:"peer_list_response"`
 		Access       accessRequest `json:"access_request"`
@@ -36,6 +38,23 @@ func TestSharedRemoteAccessFixture(t *testing.T) {
 		if !validID(session.ID) || (session.Access != "view" && session.Access != "control") || session.Sharing != nil {
 			t.Fatal("invalid peer session access")
 		}
+		// Who is attached carries names, modes and two flags: never device
+		// IDs, keys or pairings.
+		for _, device := range session.Attached {
+			for key := range device {
+				switch key {
+				case "name", "mode", "grid_owner", "this_device":
+				default:
+					t.Fatalf("attached device carries %q", key)
+				}
+			}
+			if _, ok := device["mode"]; !ok {
+				t.Fatal("attached device without a mode")
+			}
+		}
+	}
+	if len(fixture.List.Sessions[0].Attached) == 0 || fixture.List.Sessions[1].Attached != nil {
+		t.Fatal("attached is listed by new services and absent from older ones")
 	}
 	for _, request := range []accessRequest{fixture.Access, fixture.ListedAccess} {
 		access := request.Access

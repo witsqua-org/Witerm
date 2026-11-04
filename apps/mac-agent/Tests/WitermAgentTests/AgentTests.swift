@@ -507,6 +507,7 @@ final class AgentTests: XCTestCase {
         XCTAssertEqual(listed.first?.access, .control)
         XCTAssertNil(listed.first?.sharing)
         XCTAssertEqual(listed.first?.writers, [], "A paired device learns who can type, even when nobody does")
+        XCTAssertEqual(listed.first?.attached, [], "A paired device learns who is attached, even when nobody is")
 
         // The Mac and the phone both have control; the phone sees the Mac's grid until it types.
         let mac = try await client.attach(sessionID: session.id, columns: 80, rows: 24)
@@ -540,8 +541,33 @@ final class AgentTests: XCTestCase {
         XCTAssertEqual(tabletView?.writers, [LocalWriterInfo(name: nil), LocalWriterInfo(name: "Phone")])
         XCTAssertEqual(tabletView?.access, .view)
 
+        // Round 20: who is attached, the requester included and marked: this
+        // Mac once however many windows it has, each device once by name, and
+        // the grid's owner (the Mac attached first to type).
+        let secondWindow = try await client.attach(sessionID: session.id, mode: .view)
+        let tabletWatching = try await client.attach(sessionID: session.id, mode: .view, peer: tablet)
+        let phoneAttached = try await client.sessions(peer: phone).first { $0.id == session.id }?.attached
+        XCTAssertEqual(phoneAttached, [LocalConnectedDevice(name: nil, mode: .control, gridOwner: true),
+                                       LocalConnectedDevice(name: "Phone", mode: .control, thisDevice: true),
+                                       LocalConnectedDevice(name: "Tablet", mode: .view)])
+        let tabletAttached = try await client.sessions(peer: tablet).first { $0.id == session.id }?.attached
+        XCTAssertEqual(tabletAttached?.map(\.thisDevice), [false, false, true])
+        XCTAssertEqual(tabletAttached?.compactMap(\.name), ["Phone", "Tablet"])
+        await tabletWatching.disconnect()
+        try await secondWindow.detach()
+        var afterLeaving: [LocalConnectedDevice]?
+        for _ in 0..<100 {
+            afterLeaving = try await client.sessions(peer: phone).first { $0.id == session.id }?.attached
+            if afterLeaving?.count == 2 { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(afterLeaving?.compactMap(\.name), ["Phone"], "A device that left is still listed")
+
         try await remote.send(Data("printf 'PHONE_''SIZE:%s\\n' \"$(stty size)\"\n".utf8))
         try await waitFor("PHONE_SIZE:20 40", capture: macOutput)
+        // Typing moved the grid to the phone, and the list says so.
+        let phoneOwns = try await client.sessions(peer: tablet).first { $0.id == session.id }?.attached
+        XCTAssertEqual(phoneOwns?.filter(\.gridOwner).map(\.name), ["Phone"])
         // A terminal's automatic answers (to tmux's queries) never take the grid.
         try await Task.sleep(for: .seconds(AgentBroker.ownerHold + 0.3))
         try await mac.send(Data("\u{1b}[?1;2c".utf8), automatic: true)
@@ -635,6 +661,7 @@ final class AgentTests: XCTestCase {
         XCTAssertEqual(after.map(\.id), [invited.id], "An invitation reached more than its session")
         XCTAssertEqual(after.first?.access, .view)
         XCTAssertNil(after.first?.writers, "An invitation's guest learned who else types")
+        XCTAssertNil(after.first?.attached, "An invitation's guest learned who else is attached")
         do { let leaked = try await client.attach(sessionID: other.id, mode: .view, peer: guest); await leaked.disconnect(); XCTFail("An invitation reached another session") }
         catch LocalAgentClientError.rejected(.notFound) { }
         do { let typing = try await client.attach(sessionID: invited.id, peer: guest); await typing.disconnect(); XCTFail("A view invitation gained control") }
