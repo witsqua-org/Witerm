@@ -339,10 +339,24 @@ import XCTest
             // The actions menu from the key row has what the bar's had.
             actionsKey.tap()
             for item in ["SFTP Files", "Port Forwarding", "Increase Text Size", "Find in Terminal", "Disconnect"] {
-                // With the software keyboard up in landscape the menu scrolls;
-                // its last item can start out of view.
-                if !app.buttons[item].waitForExistence(timeout: 5) { app.buttons["terminalFind"].swipeDown() }
-                XCTAssertTrue(app.buttons[item].waitForExistence(timeout: 3), item)
+                // In landscape the menu opens upward from the key row, so its
+                // items run bottom to top and the last ones (Port Forwarding,
+                // Disconnect) start scrolled out of view above Find, where
+                // XCUITest doesn't list them. Drag the menu down from its top
+                // visible item, slowly so it scrolls rather than closes.
+                for _ in 0..<3 where !app.buttons[item].waitForExistence(timeout: 2) {
+                    let top = ["SFTP Files", "Find in Terminal"].map { app.buttons[$0] }.first { $0.exists && $0.isHittable }
+                    guard let top else { break }
+                    let from = top.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+                    from.press(forDuration: 0.1, thenDragTo: from.withOffset(CGVector(dx: 0, dy: 160)), withVelocity: .slow,
+                               thenHoldForDuration: 0.2)
+                }
+                if !app.buttons[item].waitForExistence(timeout: 3) {
+                    print("PROBE menu buttons: " + app.buttons.allElementsBoundByIndex.map {
+                        "\($0.identifier)|\($0.label)|\(Int($0.frame.minY))|\($0.isHittable)" }.joined(separator: ", "))
+                    shot("landscape-actions-menu-missing")
+                }
+                XCTAssertTrue(app.buttons[item].exists, item)
             }
             shot("landscape-actions-menu")
             // Text size works from it like from the bar's menu: the cell grows,
