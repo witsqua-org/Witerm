@@ -1194,6 +1194,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             if RemoteFixture.isActive { line += " links=\(FixtureMac.shared.opened)" }
             line += " catchUps=\(catchUpsShown) catchUpMs=\(lastCatchUpMs)"
             line += " covers=\(coversShown) coverMs=\(lastCoverMs) focused=\(terminal.isFirstResponder ? 1 : 0)"
+            line += " marked=\(terminal.markedTextRange == nil ? 0 : 1) composingShown=\(terminal.composingShown ? 1 : 0)"
             // Round 18: the grid's last row and the cursor's cell, in window
             // points, so tests can check the keyboard button covers neither.
             let core = terminal.getTerminal(), cell = cellSize, cursor = core.getCursorLocation()
@@ -1463,6 +1464,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             // a scroll that comes to rest just short of the bottom.
             delegate = self
             installTouchModel()
+            Self.composingHooks
         }
 
         // MARK: Touch
@@ -2028,6 +2030,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         override func resignFirstResponder() -> Bool {
             if isFirstResponder { postFocus(false, will: true) }
             let resigned = super.resignFirstResponder()
+            if resigned { placeComposing() }
             if resigned { postFocus(false) } else if isFirstResponder { postFocus(true) }
             return resigned
         }
@@ -2115,12 +2118,127 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
 
         override func insertText(_ text: String) {
             guard mode == .control, inputEnabled else { return }
+            #if DEBUG
+            logTextInput("insertText", text)
+            #endif
             super.insertText(text)
+            composingChanged()
         }
+
+        // MARK: Composing (Round 20)
+
+        /// Letters a keyboard is still composing (Pinyin, Japanese and other
+        /// input methods), shown at the cursor with the system's underline,
+        /// as every iOS text view shows them. SwiftTerm sends nothing until
+        /// they're committed and draws nothing meanwhile, so on the owner's
+        /// iPhone, in Chinese, typing `ls` showed nothing at all, and Return
+        /// (which a composing keyboard turns into Confirm) only put the
+        /// letters on the line: a terminal that looked stuck. The terminal's
+        /// own cells never change for it, and nothing is sent until the
+        /// keyboard commits.
+        private let composingLabel: UILabel = {
+            let label = UILabel()
+            label.isHidden = true
+            label.isAccessibilityElement = false
+            label.isUserInteractionEnabled = false
+            return label
+        }()
+
+        /// The composed text now, for tests and the probe.
+        private(set) var composingText: String?
+        /// Whether the composing text shows at the cursor now.
+        var composingShown: Bool { !composingLabel.isHidden && composingLabel.superview === self }
+
+        /// SwiftTerm's `setMarkedText(_:selectedRange:)` and `unmarkText()`
+        /// are public, not open, so this subclass can't override them. The
+        /// keyboard calls them through Objective-C, so this class gets its
+        /// own methods for those two selectors, which call SwiftTerm's and
+        /// then update the composing text. Only this subclass changes.
+        private static let composingHooks: Void = {
+            let base: AnyClass = TerminalView.self, subclass: AnyClass = TerminalInputView.self
+            let setMarked = NSSelectorFromString("setMarkedText:selectedRange:")
+            if let method = class_getInstanceMethod(base, setMarked), let types = method_getTypeEncoding(method) {
+                typealias Original = @convention(c) (AnyObject, Selector, NSString?, NSRange) -> Void
+                nonisolated(unsafe) let original = unsafeBitCast(method_getImplementation(method), to: Original.self)
+                // The keyboard calls these on the main thread.
+                let hook: @MainActor @convention(block) (AnyObject, NSString?, NSRange) -> Void = { object, text, range in
+                    original(object, setMarked, text, range)
+                    (object as? TerminalInputView)?.composingChanged()
+                }
+                class_addMethod(subclass, setMarked, imp_implementationWithBlock(hook), types)
+            }
+            let unmark = NSSelectorFromString("unmarkText")
+            if let method = class_getInstanceMethod(base, unmark), let types = method_getTypeEncoding(method) {
+                typealias Original = @convention(c) (AnyObject, Selector) -> Void
+                nonisolated(unsafe) let original = unsafeBitCast(method_getImplementation(method), to: Original.self)
+                let hook: @MainActor @convention(block) (AnyObject) -> Void = { object in
+                    original(object, unmark)
+                    (object as? TerminalInputView)?.composingChanged()
+                }
+                class_addMethod(subclass, unmark, imp_implementationWithBlock(hook), types)
+            }
+        }()
+
+        func composingChanged() {
+            let text = markedTextRange.flatMap { self.text(in: $0) }.flatMap { $0.isEmpty ? nil : $0 }
+            #if DEBUG
+            if (text == nil) != (composingText == nil) {
+                Self.inputLog.notice("composing \(text == nil ? "ended" : "began", privacy: .public) mode=\(self.textInputMode?.primaryLanguage ?? "none", privacy: .public)")
+            }
+            #endif
+            composingText = text
+            placeComposing()
+            // The probe (and VoiceOver's page) follow.
+            requestReadingRefresh(output: false)
+        }
+
+        /// Puts the composing text over the cursor's cell, on the terminal's
+        /// own background so the cells under it don't show through, kept
+        /// within the view's width.
+        func placeComposing() {
+            guard let text = composingText, isFirstResponder else {
+                if !composingLabel.isHidden { composingLabel.isHidden = true }
+                return
+            }
+            if composingLabel.superview !== self { addSubview(composingLabel) }
+            composingLabel.attributedText = NSAttributedString(string: text, attributes: [
+                .font: font, .foregroundColor: nativeForegroundColor,
+                .underlineStyle: NSUnderlineStyle.single.rawValue,
+                .underlineColor: tintColor as UIColor,
+            ])
+            composingLabel.backgroundColor = nativeBackgroundColor
+            let core = getTerminal(), cell = cell, cursor = core.getCursorLocation()
+            let top = CGFloat(core.getTopVisibleRow()) * cell.height
+            var size = composingLabel.sizeThatFits(CGSize(width: CGFloat.greatestFiniteMagnitude, height: cell.height))
+            size.height = max(size.height, cell.height)
+            let width = min(size.width, bounds.width)
+            let x = min(CGFloat(cursor.x) * cell.width, max(0, bounds.width - width))
+            composingLabel.frame = CGRect(x: x, y: top + CGFloat(cursor.y) * cell.height, width: width, height: size.height)
+            composingLabel.isHidden = false
+            bringSubviewToFront(composingLabel)
+        }
+
+        #if DEBUG
+        /// DEBUG only: the shape of keyboard input (how long, whether it's a
+        /// Return, whether letters were being composed and this commits them
+        /// as typed), never the text. `log stream --predicate 'subsystem ==
+        /// "com.witerm" AND category == "terminal-input"'`.
+        private static let inputLog = Logger(subsystem: "com.witerm", category: "terminal-input")
+
+        private func logTextInput(_ event: String, _ text: String) {
+            let marked = markedTextRange
+            let composed = marked.flatMap { self.text(in: $0) }
+            let line = "\(event) count=\(text.count) newline=\(text.contains("\n")) ascii=\(text.allSatisfy(\.isASCII)) "
+                + "composing=\(marked != nil) composedCount=\(composed?.count ?? 0) commitsAsTyped=\(composed == text) "
+                + "mode=\(textInputMode?.primaryLanguage ?? "none")"
+            Self.inputLog.notice("\(line, privacy: .public)")
+        }
+        #endif
 
         override func deleteBackward() {
             guard mode == .control, inputEnabled else { return }
             super.deleteBackward()
+            composingChanged()
         }
 
         var geometryChanged: ((LocalSessionInfo) -> Void)?
@@ -2142,6 +2260,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         /// rather than once per chunk while long output streams in.
         func requestReadingRefresh(output: Bool) {
             if output { scrollStateChanged?(true) }
+            if output, composingText != nil { placeComposing() }
             #if DEBUG
             if output { probeOutputArrived() }
             #endif
@@ -2287,6 +2406,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             super.layoutSubviews()
             alignMetalRows()
             updateMetalHandles()
+            if composingText != nil { placeComposing() }
         }
 
         /// SwiftTerm 1.19's Metal renderer draws whole rows from the top of

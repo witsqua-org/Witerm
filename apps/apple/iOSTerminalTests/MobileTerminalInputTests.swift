@@ -67,6 +67,54 @@ import XCTest
         XCTAssertEqual(focus.values.last, false)
     }
 
+    /// Round 20: letters a keyboard composes (Pinyin) show at the cursor,
+    /// and nothing is sent until the keyboard commits them. The keyboard
+    /// reaches the terminal through Objective-C, as here.
+    func testComposedLettersShowAtTheCursorAndSendNothingUntilCommitted() async throws {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+        window.rootViewController = UIViewController()
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        let writer = input()
+        writer.frame = writer.getOptimalFrameSize()
+        let sent = InputSpy()
+        writer.terminalDelegate = sent
+        window.rootViewController?.view.addSubview(writer)
+        XCTAssertTrue(writer.becomeFirstResponder())
+        writer.feed(text: "~$ ")
+        let setMarked = NSSelectorFromString("setMarkedText:selectedRange:"), unmark = NSSelectorFromString("unmarkText")
+        typealias SetMarked = @convention(c) (AnyObject, Selector, NSString?, NSRange) -> Void
+        typealias Unmark = @convention(c) (AnyObject, Selector) -> Void
+        let mark = unsafeBitCast(class_getMethodImplementation(type(of: writer), setMarked), to: SetMarked.self)
+        let commit = unsafeBitCast(class_getMethodImplementation(type(of: writer), unmark), to: Unmark.self)
+        mark(writer, setMarked, "l", NSRange(location: 1, length: 0))
+        mark(writer, setMarked, "ls", NSRange(location: 2, length: 0))
+        XCTAssertEqual(writer.composingText, "ls")
+        XCTAssertTrue(writer.composingShown, "Composed letters show")
+        XCTAssertTrue(sent.bytes.isEmpty, "Nothing is sent while composing")
+        // The underlined letters sit at the cursor, after the prompt.
+        let label = try XCTUnwrap(writer.subviews.compactMap { $0 as? UILabel }.first { !$0.isHidden })
+        let cell = writer.getOptimalFrameSize().width / 80
+        XCTAssertEqual(label.frame.minX, cell * 3, accuracy: 0.5)
+        XCTAssertEqual(label.attributedText?.attribute(.underlineStyle, at: 0, effectiveRange: nil) as? Int,
+                       NSUnderlineStyle.single.rawValue)
+        // Confirm (Return while composing) commits the letters as typed.
+        commit(writer, unmark)
+        XCTAssertNil(writer.composingText)
+        XCTAssertFalse(writer.composingShown)
+        XCTAssertEqual(String(decoding: sent.bytes, as: UTF8.self), "ls")
+        // A composition the keyboard clears sends nothing and hides.
+        mark(writer, setMarked, "ni", NSRange(location: 2, length: 0))
+        XCTAssertTrue(writer.composingShown)
+        mark(writer, setMarked, nil, NSRange(location: 0, length: 0))
+        XCTAssertFalse(writer.composingShown)
+        XCTAssertEqual(String(decoding: sent.bytes, as: UTF8.self), "ls")
+        // Leaving the keyboard hides it.
+        mark(writer, setMarked, "a", NSRange(location: 1, length: 0))
+        _ = writer.resignFirstResponder()
+        XCTAssertFalse(writer.composingShown)
+    }
+
     func testControlKeyResetsAndReadOnlyRejectsAccessoryAndPaste() {
         let terminal = input(), spy = InputSpy()
         terminal.terminalDelegate = spy
