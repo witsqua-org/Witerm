@@ -1,0 +1,10 @@
+{
+  "add": {
+    "Catching up…": "正在同步…",
+    "Sized for %@": "按%@的尺寸显示",
+    "Sized for Another Device": "按另一台设备的尺寸显示",
+    "Typing on %@, at its size": "正在 %@ 上输入，按其尺寸显示"
+  },
+  "change": {},
+  "remove": []
+}

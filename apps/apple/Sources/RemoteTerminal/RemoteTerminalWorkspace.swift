@@ -13,6 +13,7 @@ struct RemoteTerminalWorkspace: View {
     let model: RemoteTerminalModel
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(TerminalFontSize.key) private var terminalFontSize = TerminalFontSize.standard
     @Environment(\.colorScheme) private var systemColorScheme
     @AppStorage("witerm.terminalHighContrast") private var terminalHighContrast = false
@@ -160,18 +161,32 @@ struct RemoteTerminalWorkspace: View {
                     .foregroundStyle(model.isInteractive ? WitermTheme.positive : WitermTheme.secondary)
                     .imageScale(.small)
                     .accessibilityHidden(true)
-                Text(verbatim: [terminalStatus, typingWhileWatching ?? model.selectedGrant?.host.name].compactMap { $0 }.joined(separator: " · "))
+                Text(verbatim: statusFacts.joined(separator: " · "))
             }
             .font(WitermType.meta)
             .foregroundStyle(WitermTheme.secondary)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel([terminalStatus, typingWhileWatching ?? model.selectedGrant?.host.name].compactMap { $0 }.joined(separator: ", "))
+            .accessibilityLabel(statusFacts.joined(separator: ", "))
             .accessibilityIdentifier("terminalInputStatus")
         }
         .lineLimit(1)
         .truncationMode(.tail)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
+    }
+
+    /// The title's status line, in order of importance (a long name is cut
+    /// from the end): what limits this device, who types instead (or the
+    /// device), and, while watching another device's grid, whose size it is.
+    private var statusFacts: [String] {
+        let watching = watchingFacts
+        return [terminalStatus, watching.typing ?? model.selectedGrant?.host.name, watching.sized].compactMap { $0 }
+    }
+
+    /// While watching: who types, and whose size the grid is (Round 19).
+    private var watchingFacts: (typing: String?, sized: String?) {
+        guard model.isInteractive, model.mode == .view, let grant = model.selectedGrant else { return (nil, nil) }
+        return TypingElsewhere.watchingFacts(typing: model.openWriters, sizedBy: model.sizedBy, hostName: grant.host.name)
     }
 
     /// The terminal's own background, so the area under the home indicator
@@ -193,7 +208,7 @@ struct RemoteTerminalWorkspace: View {
             } else {
                 // The navigation bar already names the Mac.
                 TerminalHeader(attachment.session.name,
-                               status: [terminalStatus, typingWhileWatching].compactMap { $0 }.joined(separator: " · ")
+                               status: [terminalStatus, watchingFacts.typing, watchingFacts.sized].compactMap { $0 }.joined(separator: " · ")
                                    .nilIfEmpty ?? String(localized: "Connected", bundle: .main),
                                statusImage: terminalStatusImage,
                                live: model.isInteractive, hue: model.selectedGrant?.host.identityHue) {
@@ -263,6 +278,12 @@ struct RemoteTerminalWorkspace: View {
                 // Showing or hiding the keyboard switches without covering
                 // the terminal; the title says it's under way.
                 if !model.isInteractive, model.connectionState != .switching { connectionOverlay }
+                // Round 19: over the old screen, never taking the terminal's
+                // space (that would resize the Mac's grid).
+                Group {
+                    if model.isInteractive, host.catchingUp { catchingUpNote }
+                }
+                .animation(reduceMotion ? .linear(duration: 0.15) : .easeOut(duration: 0.2), value: host.catchingUp)
             }
             // While watching a terminal this device could type in, list it
             // again every 10 seconds so the title keeps saying who types.
@@ -398,6 +419,34 @@ struct RemoteTerminalWorkspace: View {
             // grid fills the screen (it kept the rows above the keyboard).
             let fit = (finder.terminal as? RemoteNativeTerminalView.TerminalInputView)?.watchingFit?()
             model.stopTyping(fitting: fit)
+        }
+    }
+
+    /// Round 19: a new link (typing or watching again, or back from the
+    /// background) is waiting for the Mac's redraw for longer than a moment
+    /// (`LinkCoordinator.catchUpThreshold`); the old screen stays under it
+    /// and it goes as soon as the redraw arrives. Spoken once, if it stays.
+    private var catchingUpNote: some View {
+        let label = String(localized: "Catching up…", bundle: .main)
+        return HStack(spacing: WitermMetrics.Space.s) {
+            ProgressView().controlSize(.small)
+            Text(label).frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .font(WitermType.rowDetail)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, WitermMetrics.Space.l)
+        .padding(.vertical, WitermMetrics.Space.s)
+        .background(.bar)
+        .transition(.opacity)
+        .allowsHitTesting(false)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier("remoteCatchingUp")
+        .task {
+            // Not on a note that only flashes.
+            try? await Task.sleep(for: .milliseconds(600))
+            guard !Task.isCancelled else { return }
+            UIAccessibility.post(notification: .announcement, argument: label)
         }
     }
 

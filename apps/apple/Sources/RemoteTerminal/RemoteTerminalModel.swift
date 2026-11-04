@@ -100,6 +100,31 @@ enum TypingElsewhere {
         summary(writers, hostName: hostName) ?? String(localized: "Typing on Another Device", bundle: .main)
     }
 
+    /// Round 19: whose grid a watching device shows, when it isn't its own
+    /// size. The Mac gives the grid to the writer who typed last, so with
+    /// one other writer that's them ("Sized for iPad", the Mac by its paired
+    /// name); with several it's one of them. Nil when nobody is known.
+    static func sizedFor(_ writers: [LocalWriterInfo]?, hostName: String) -> String? {
+        guard let names = names(writers, hostName: hostName), !names.isEmpty else { return nil }
+        guard names.count == 1 else { return String(localized: "Sized for Another Device", bundle: .main) }
+        return String(localized: "Sized for \(names[0])", bundle: .main)
+    }
+
+    /// Round 19: what a watching device's title says about who types and
+    /// whose size the grid is. While one other device types, the grid is
+    /// theirs (the Mac gives it to whoever typed last), so one fact says
+    /// both and the name isn't repeated in a short line: "Typing on iPad,
+    /// at its size". Once they stop, the grid stays theirs: "Sized for iPad".
+    static func watchingFacts(typing writers: [LocalWriterInfo]?, sizedBy setters: [LocalWriterInfo]?,
+                              hostName: String) -> (typing: String?, sized: String?) {
+        let typing = names(writers, hostName: hostName) ?? []
+        let sized = setters.flatMap { names($0, hostName: hostName) } ?? []
+        if typing.count == 1, sized == typing {
+            return (String(localized: "Typing on \(typing[0]), at its size", bundle: .main), nil)
+        }
+        return (summary(writers, hostName: hostName), sizedFor(setters, hostName: hostName))
+    }
+
     /// A reconnect that found someone else typing and watched instead.
     static func watchingNotice(_ writers: [LocalWriterInfo]?, hostName: String) -> String {
         guard let summary = summary(writers, hostName: hostName) else {
@@ -208,6 +233,14 @@ final class RemoteTerminalModel {
     private(set) var keptNote: String?
     /// The text size the terminal view last used, for renderers made off screen.
     static var rendererFontSize: CGFloat = 14
+    /// Round 19: the others last listed as typing in the open terminal, kept
+    /// after they stop, since the grid stays as the last of them set it
+    /// until someone else types. Cleared when this device types.
+    private(set) var gridSetters: GridSetters?
+    struct GridSetters: Equatable {
+        let sessionID: String
+        let writers: [LocalWriterInfo]
+    }
     /// A relay server without the presence stream (an older one) is asked
     /// again after this (Round 18).
     @ObservationIgnored var presenceUnsupportedUntil: Date?
@@ -540,10 +573,14 @@ final class RemoteTerminalModel {
                     self.activeID = self.attachmentID
                     self.liveGrid = (live.columns, live.rows)
                     // A new renderer for the new attachment; the old one's
-                    // link has already been let go.
+                    // link has already been let go. Typing or watching the
+                    // same terminal again, the old screen stays up until the
+                    // new one has the Mac's redraw (Round 19).
                     let old = self.host
-                    self.host = self.makeHost(id: self.attachmentID, link: next, mode: targetMode)
+                    self.host = self.makeHost(id: self.attachmentID, link: next, mode: targetMode,
+                                              following: changingMode ? old : nil)
                     old?.stop()
+                    self.rememberGridSetters()
                     self.displayAttachment = next
                     self.attachment = next
                     self.connectionState = .connected
@@ -940,7 +977,25 @@ final class RemoteTerminalModel {
             return LocalSessionInfo(id: session.id, name: session.name, createdAt: session.createdAt, columns: session.columns,
                                     rows: session.rows, access: session.access, writers: fresh.writers)
         }
+        rememberGridSetters()
         return true
+    }
+
+    /// Round 19: who set the grid this device watches, when it isn't this
+    /// screen's own size: another device that types now, or the last one
+    /// that did. Nil while typing (the grid is this device's), and when
+    /// nobody is known. `TypingElsewhere.watchingFacts` words it.
+    var sizedBy: [LocalWriterInfo]? {
+        guard isInteractive, mode == .view, host?.watchesOtherGrid == true, let id = selectedSession?.id else { return nil }
+        return openWriters.flatMap { $0.isEmpty ? nil : $0 } ?? (gridSetters?.sessionID == id ? gridSetters?.writers : nil)
+    }
+
+    /// Keeps who types in the open terminal, for `sizedBy` once they stop.
+    private func rememberGridSetters() {
+        guard let id = selectedSession?.id else { return }
+        if mode == .control { gridSetters = nil; return }
+        if gridSetters?.sessionID != id { gridSetters = nil }
+        if let writers = openWriters, !writers.isEmpty { gridSetters = GridSetters(sessionID: id, writers: writers) }
     }
 
     /// Ends this device's pairing with `grant`'s device, through the server
@@ -1225,13 +1280,16 @@ final class RemoteTerminalModel {
 extension RemoteTerminalModel {
     /// A renderer for `link`, owned here; what it reports goes to whoever
     /// holds the terminal when it happens (on screen or kept).
-    fileprivate func makeHost(id: UUID, link: any PairedTerminalLink, mode: LocalAttachmentMode) -> PairedTerminalHost {
+    /// `previous`: the renderer it replaces for the same terminal, whose
+    /// screen stays up until this one has the Mac's redraw (Round 19).
+    fileprivate func makeHost(id: UUID, link: any PairedTerminalLink, mode: LocalAttachmentMode,
+                              following previous: PairedTerminalHost? = nil) -> PairedTerminalHost {
         PairedTerminalHost(id: id, link: link, mode: mode, fontSize: Self.rendererFontSize, routes: PairedTerminalRoutes(
             isParked: { [weak self] in self?.isParked(id) ?? false },
             onLinkLost: { [weak self] in self?.linkLost($0, host: id) ?? false },
             onGrid: { [weak self] in self?.noteGrid(columns: $0, rows: $1, host: id) },
             onFailure: { [weak self] in self?.renderFailed($0, host: id) },
-            onEnded: { [weak self] in self?.renderEnded(host: id) }))
+            onEnded: { [weak self] in self?.renderEnded(host: id) }), following: previous)
     }
 
     private func keptEntry(host id: UUID) -> KeptPairedTerminal? { kept.first { $0.host.id == id } }
@@ -1367,7 +1425,7 @@ extension RemoteTerminalModel {
                     await next.abort()
                     return
                 }
-                let watching = self.makeHost(id: UUID(), link: next, mode: .view)
+                let watching = self.makeHost(id: UUID(), link: next, mode: .view, following: old)
                 entry.adopt(host: watching, link: next)
                 entry.grid = (next.session.columns, next.session.rows)
                 entry.set(.live)
@@ -1429,6 +1487,7 @@ extension RemoteTerminalModel {
         displayAttachment = entry.link
         attachment = entry.link
         connectionState = .connected
+        rememberGridSetters()
         #if DEBUG
         Self.layoutLog.notice("reopened kept session=\(entry.session.id, privacy: .public) kept=\(self.kept.count, privacy: .public)")
         #endif

@@ -90,15 +90,24 @@ enum TerminalKeyboardOverlap {
 /// terminal left with Back stays connected and reopens as it was: the same
 /// renderer, scrollback and attachment, with nothing to redraw. Views only
 /// place its surface; the model stops it when it lets the terminal go.
-@MainActor final class PairedTerminalHost {
+@MainActor @Observable final class PairedTerminalHost {
     let id: UUID
     let mode: LocalAttachmentMode
     let surface: RemoteNativeTerminalView.TerminalSurface
     let coordinator: RemoteNativeTerminalView.LinkCoordinator
-    private(set) var link: any PairedTerminalLink
+    @ObservationIgnored private(set) var link: any PairedTerminalLink
+    /// Round 19: the screen waits for the Mac's redraw after a new link,
+    /// past `LinkCoordinator.catchUpThreshold`; the terminal says Catching up….
+    private(set) var catchingUp = false
+    /// Round 19: watching a grid that isn't this screen's own size (another
+    /// device that types set it); the title says whose.
+    private(set) var watchesOtherGrid = false
 
+    /// - Parameter previous: The renderer this one replaces for the same
+    ///   terminal (typing or watching again). Its screen stays up, as a
+    ///   still picture, until this one has the Mac's redraw (Round 19).
     init(id: UUID, link: any PairedTerminalLink, mode: LocalAttachmentMode, fontSize: CGFloat,
-         routes: PairedTerminalRoutes) {
+         routes: PairedTerminalRoutes, following previous: PairedTerminalHost? = nil) {
         TerminalView.textInputDebugEnabled = false
         self.id = id
         self.mode = mode
@@ -115,6 +124,12 @@ enum TerminalKeyboardOverlap {
         surface.terminal.focusesWhenShown = mode == .control
         surface.terminal.terminalDelegate = coordinator
         coordinator.surface = surface
+        coordinator.onCatchingUp = { [weak self] in self?.catchingUp = $0 }
+        surface.otherGridChanged = { [weak self] in self?.watchesOtherGrid = $0 }
+        if let previous {
+            surface.cover(withPictureOf: previous.surface)
+            coordinator.beginCatchUp()
+        }
         coordinator.start(surface.terminal)
     }
 
@@ -207,7 +222,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
     @MainActor final class TerminalSurface: UIView, UIScrollViewDelegate {
         let terminal: TerminalInputView
         let readingView = TerminalReadingTextView()
-        private let scroll = UIScrollView()
+        fileprivate let scroll = UIScrollView()
         private let mode: LocalAttachmentMode
         private var session: LocalSessionInfo
         private var frozenGrid: (columns: Int, rows: Int)?
@@ -802,6 +817,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             #endif
             refreshReadingDocument()
             updateLatestButton(output: false)
+            noteWatchedGrid()
         }
 
         #if DEBUG
@@ -860,39 +876,76 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         // MARK: Resuming in place
 
         /// A still picture of the screen as it was, over the renderer while
-        /// a resumed link redraws it, so returning to the app never shows a
-        /// blank frame or a reset (Round 17).
+        /// a new link redraws it, so returning to the app (Round 17) or
+        /// typing and watching again (Round 19) never shows a blank frame,
+        /// a reset or only the cursor. It stays until the screen has the
+        /// Mac's redraw (`caughtUp`), then until output pauses.
         private var resumeCover: UIView?
         private var uncoverWork: DispatchWorkItem?
-        private var coverDeadline = Date.distantPast
+        /// Set once the redraw has arrived: the cover goes by then at the latest.
+        private var coverDeadline: Date?
         private var coveredAt = Date.distantPast
         /// Covers shown, and how long the last one stayed, for the probe.
         private(set) var coversShown = 0
         private(set) var lastCoverMs = 0
-        /// Most a cover stays up, and how long output must pause first.
+        /// Round 19, for the probe: how often Catching up… showed, and how
+        /// long the last new link waited for the Mac's redraw.
+        var catchUpsShown = 0
+        private(set) var lastCatchUpMs = -1
+        /// Most a cover stays up once the redraw has arrived, and how long
+        /// output must pause first.
         static let coverMaximum: TimeInterval = 1.5
         static let coverQuiet: TimeInterval = 0.15
 
         func coverForResume() {
-            resumeCover?.removeFromSuperview()
             // Off screen (a terminal kept connected after Back) there's
             // nothing to cover: the redraw is done before it shows again.
             guard window != nil, !bounds.isEmpty, let cover = snapshotView(afterScreenUpdates: false) else { return }
             cover.frame = bounds
+            showCover(cover)
+        }
+
+        /// Round 19: the text of the renderer this one replaces (typing or
+        /// watching again), where it was, until this one has the redraw.
+        /// Only the text: the floating buttons are this view's own.
+        func cover(withPictureOf previous: TerminalSurface) {
+            guard previous.window != nil, !previous.scroll.bounds.isEmpty,
+                  let cover = previous.scroll.snapshotView(afterScreenUpdates: false) else { return }
+            cover.frame = previous.scroll.frame
+            cover.backgroundColor = previous.backgroundColor
+            showCover(cover)
+        }
+
+        private func showCover(_ cover: UIView) {
+            resumeCover?.removeFromSuperview()
+            uncoverWork?.cancel()
             cover.isUserInteractionEnabled = false
             cover.accessibilityElementsHidden = true
-            addSubview(cover)
+            // Over the text, under the floating buttons, which stay usable.
+            insertSubview(cover, aboveSubview: readingView)
             resumeCover = cover
             coversShown += 1
             coveredAt = Date()
-            coverDeadline = Date().addingTimeInterval(Self.coverMaximum)
-            scheduleUncover(at: coverDeadline)
+            coverDeadline = nil
         }
 
-        /// The redraw is arriving: the cover goes once output pauses.
-        func resumeOutputArrived() {
+        /// The screen has the Mac's redraw: the cover goes once output
+        /// pauses, and within `coverMaximum` at most.
+        func caughtUp(after waited: TimeInterval) {
+            lastCatchUpMs = Int(waited * 1000)
+            #if DEBUG
+            Self.layoutLog.notice("caught up after \(self.lastCatchUpMs, privacy: .public) ms")
+            #endif
             guard resumeCover != nil else { return }
-            scheduleUncover(at: min(coverDeadline, Date().addingTimeInterval(Self.coverQuiet)))
+            let deadline = Date().addingTimeInterval(Self.coverMaximum)
+            coverDeadline = deadline
+            scheduleUncover(at: min(deadline, Date().addingTimeInterval(Self.coverQuiet)))
+        }
+
+        /// More of the redraw: the cover waits for output to pause.
+        func resumeOutputArrived() {
+            guard resumeCover != nil, let deadline = coverDeadline else { return }
+            scheduleUncover(at: min(deadline, Date().addingTimeInterval(Self.coverQuiet)))
         }
 
         private func scheduleUncover(at time: Date) {
@@ -905,6 +958,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         private func uncover() {
             guard let cover = resumeCover else { return }
             resumeCover = nil
+            coverDeadline = nil
             lastCoverMs = Int(Date().timeIntervalSince(coveredAt) * 1000)
             #if DEBUG
             Self.layoutLog.notice("resume cover removed after \(self.lastCoverMs, privacy: .public) ms")
@@ -912,6 +966,28 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             #endif
             UIView.animate(withDuration: 0.12, animations: { cover.alpha = 0 }, completion: { _ in cover.removeFromSuperview() })
             UIAccessibility.post(notification: .layoutChanged, argument: readingView)
+        }
+
+        /// Whether a still picture is over the renderer now, for tests.
+        var isCovered: Bool { resumeCover != nil }
+
+        // MARK: Whose size (Round 19)
+
+        /// Told when this view starts or stops watching a grid that isn't
+        /// its own size: another device that types set it, so the text is
+        /// scaled, scrolls or leaves space. Never while typing.
+        var otherGridChanged: ((Bool) -> Void)?
+        private(set) var watchesOtherGrid = false
+
+        private func noteWatchedGrid() {
+            var other = false
+            if mode == .view, !bounds.isEmpty, cellSize.height > 0 {
+                let own = watchingFit
+                other = own.columns != session.columns || own.rows != session.rows
+            }
+            guard other != watchesOtherGrid else { return }
+            watchesOtherGrid = other
+            otherGridChanged?(other)
         }
 
         /// The grid this view shows once it stops typing: the whole view
@@ -1116,6 +1192,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             var line = String(format: " mode=%@ fitRows=%d gap=%.1f overflow=%.1f", mode == .view ? "view" : "control",
                               fitGrid.rows, max(0, shown - grid), max(0, grid - shown))
             if RemoteFixture.isActive { line += " links=\(FixtureMac.shared.opened)" }
+            line += " catchUps=\(catchUpsShown) catchUpMs=\(lastCatchUpMs)"
             line += " covers=\(coversShown) coverMs=\(lastCoverMs) focused=\(terminal.isFirstResponder ? 1 : 0)"
             // Round 18: the grid's last row and the cursor's cell, in window
             // points, so tests can check the keyboard button covers neither.
@@ -2416,6 +2493,77 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         private var paused = false
         weak var surface: TerminalSurface?
 
+        // MARK: Catching up (Round 19)
+
+        /// A new link for a screen already shown here (typing or watching
+        /// again, or resuming in place) starts with the Mac's earlier output,
+        /// which ends in a screenful of line feeds, and then tmux's redraw:
+        /// in between the screen is blank but for the cursor. Past this long
+        /// without the redraw, the terminal says Catching up…. 0.4 s: on a
+        /// good connection the redraw follows the attach reply within a
+        /// round trip or two, so a fast resume never shows it, and a progress
+        /// note that came sooner would mostly flash; it's still well before
+        /// 1 s, where a wait stops feeling like part of the tap.
+        static let catchUpThreshold: TimeInterval = 0.4
+        /// A screen that stays blank after output stopped this long is blank
+        /// on the Mac too (a cleared full-screen program): caught up.
+        static let catchUpQuietLimit: TimeInterval = 3
+        /// Told when Catching up… should show or go.
+        var onCatchingUp: ((Bool) -> Void)?
+        private var catchUpStarted: Date?
+        private var catchUpShown = false
+        private var catchUpNotice: DispatchWorkItem?
+        private var catchUpFallback: DispatchWorkItem?
+
+        /// A new link for a screen shown before: waits for the Mac's redraw.
+        func beginCatchUp() {
+            catchUpNotice?.cancel()
+            catchUpFallback?.cancel()
+            catchUpStarted = Date()
+            // Already showing (a resume while catching up): it stays.
+            guard !catchUpShown else { return }
+            let work = DispatchWorkItem { [weak self] in
+                guard let self, self.catchUpStarted != nil, !self.stopped else { return }
+                self.catchUpShown = true
+                self.surface?.catchUpsShown += 1
+                self.onCatchingUp?(true)
+            }
+            catchUpNotice = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.catchUpThreshold, execute: work)
+        }
+
+        /// Output while catching up: done once the screen has text.
+        private func checkCatchUp(_ view: TerminalView) {
+            guard catchUpStarted != nil else { return }
+            if Self.screenHasText(view.getTerminal()) { return finishCatchUp() }
+            catchUpFallback?.cancel()
+            let work = DispatchWorkItem { [weak self] in self?.finishCatchUp() }
+            catchUpFallback = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.catchUpQuietLimit, execute: work)
+        }
+
+        private func finishCatchUp(notify: Bool = true) {
+            guard let started = catchUpStarted else { return }
+            catchUpStarted = nil
+            catchUpNotice?.cancel(); catchUpNotice = nil
+            catchUpFallback?.cancel(); catchUpFallback = nil
+            if notify { surface?.caughtUp(after: Date().timeIntervalSince(started)) }
+            if catchUpShown {
+                catchUpShown = false
+                onCatchingUp?(false)
+            }
+        }
+
+        /// Whether any cell on the screen (not the scrollback) shows something.
+        static func screenHasText(_ core: Terminal) -> Bool {
+            for row in 0..<core.rows {
+                for column in 0..<core.cols {
+                    if let character = core.getCharacter(col: column, row: row), character != " ", character != "\u{0}" { return true }
+                }
+            }
+            return false
+        }
+
         init(attachment: any PairedTerminalLink, mode: LocalAttachmentMode, keyboardRequest: Int,
              isInteractive: Bool, routes: PairedTerminalRoutes) {
             self.attachment = attachment
@@ -2472,7 +2620,8 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
                             self.feeding = false
                             self.stabilizeTestCursor(view)
                             view.requestReadingRefresh(output: true)
-                            if resuming { self.surface?.resumeOutputArrived() }
+                            self.checkCatchUp(view)
+                            self.surface?.resumeOutputArrived()
                         }
                     }
                     guard let self, !self.stopped, !Task.isCancelled, self.attachment === link else { return }
@@ -2510,6 +2659,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
             paused = false
             serverGrid = (link.session.columns, link.session.rows)
             surface?.coverForResume()
+            beginCatchUp()
             consume(link, resuming: true)
             // This device's own size, when the Mac's differs (typing only).
             if mode == .control, isInteractive {
@@ -2551,6 +2701,7 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         func stop() {
             guard !stopped else { return }
             stopped = true
+            finishCatchUp(notify: false)
             keyboardGeneration &+= 1
             terminal?.disableInput()
             dismissKeyboard()

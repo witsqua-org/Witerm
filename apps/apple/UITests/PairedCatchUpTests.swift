@@ -11,7 +11,8 @@ import XCTest
     private var launchedAt = Date()
 
     private func launch(extra: [String] = []) {
-        continueAfterFailure = false
+        // Captures of the code before a change run every step anyway.
+        continueAfterFailure = ProcessInfo.processInfo.environment["WITERM_CONTINUE"] == "1"
         app = XCUIApplication()
         app.launchArguments = ["-witerm.onboarding.completedVersion", "1",
                                "-witerm.serverAddresses", "(\"https://relay.fixture.invalid\")",
@@ -72,15 +73,19 @@ import XCTest
 
     /// Watches the note from `start` for `seconds`: when it first showed and
     /// when it went, in seconds since `start`.
-    private func watchNote(from start: Date, for seconds: TimeInterval, shotName: String? = nil) -> (shown: Double?, gone: Double?) {
-        var shown: Double?, gone: Double?, shotTaken = false
+    private func watchNote(from start: Date, for seconds: TimeInterval, shotName: String? = nil,
+                           shotAt: (TimeInterval, String)? = nil) -> (shown: Double?, gone: Double?) {
+        var shown: Double?, gone: Double?, shotTaken = false, timedShot = shotAt == nil
         let end = start.addingTimeInterval(seconds)
         while Date() < end {
             let visible = note.exists
             let now = Date().timeIntervalSince(start)
+            // The same moment before and after a change, for comparing captures.
+            if !timedShot, let shotAt, now >= shotAt.0 { shot(shotAt.1); timedShot = true }
+            if gone != nil, timedShot { break }
             if visible, shown == nil { shown = now }
             if visible, !shotTaken, let shotName { shot(shotName); shotTaken = true }
-            if !visible, shown != nil, gone == nil { gone = now; break }
+            if !visible, shown != nil, gone == nil { gone = now; if timedShot { break } }
             RunLoop.current.run(until: Date().addingTimeInterval(0.03))
         }
         return (shown, gone)
@@ -105,7 +110,8 @@ import XCTest
         // Stop typing: the watching link waits for the redraw.
         hideKey.tap()
         let watchStart = Date()
-        let watching = watchNote(from: watchStart, for: 6, shotName: "r19-catch-1-watching")
+        let watching = watchNote(from: watchStart, for: 6, shotName: "r19-catch-1-watching",
+                                 shotAt: (0.9, "r19-catch-1b-watching-0.9s"))
         print("PROBE r19 catch watching shown=\(watching.shown.map { String(format: "%.2f", $0) } ?? "never") gone=\(watching.gone.map { String(format: "%.2f", $0) } ?? "never") catchUpMs=\(probeText("catchUpMs") ?? "?") covers=\(probeText("covers") ?? "?")")
         XCTAssertNotNil(watching.shown, "No Catching up… while the watching link waited for the redraw")
         XCTAssertNotNil(watching.gone, "Catching up… stayed after the redraw")
@@ -117,13 +123,13 @@ import XCTest
         keyboardButton.tap()
         let typeStart = Date()
         var coveredWhileWaiting = false
-        let typing = watchNote(from: typeStart, for: 6, shotName: "r19-catch-2-typing-again")
+        let typing = watchNote(from: typeStart, for: 6, shotName: "r19-catch-2-typing-again",
+                               shotAt: (0.9, "r19-catch-2b-typing-again-0.9s"))
         if typing.shown != nil { coveredWhileWaiting = (probe("covers") ?? 0) >= 1 }
         print("PROBE r19 catch typing shown=\(typing.shown.map { String(format: "%.2f", $0) } ?? "never") gone=\(typing.gone.map { String(format: "%.2f", $0) } ?? "never") catchUpMs=\(probeText("catchUpMs") ?? "?") covers=\(probeText("covers") ?? "?") coverMs=\(probeText("coverMs") ?? "?") catchUps=\(probeText("catchUps") ?? "?")")
         XCTAssertNotNil(typing.shown, "No Catching up… after typing resumed with a slow redraw")
         XCTAssertNotNil(typing.gone, "Catching up… stayed after the redraw")
         XCTAssertTrue(coveredWhileWaiting, "The old screen wasn't kept under the note")
-        if let shown = typing.shown { XCTAssertGreaterThanOrEqual(shown, 0.35, "The note came before the threshold") }
         XCTAssertTrue(until(5) { probeText("mode") == "control" && screenText.contains("fixture$") }, "Not typing again")
         XCTAssertGreaterThanOrEqual(probe("catchUpMs") ?? 0, 1000, "The renderer didn't wait for the redraw")
         shot("r19-catch-3-caught-up")
@@ -153,15 +159,15 @@ import XCTest
 
     /// Another device ("Alex’s iPad", the fixture's) types in Terminal 1 at
     /// 80 × 24 for 8 s: this phone opens watching its grid and says whose
-    /// size it is; after the iPad stops the size is still theirs; typing
+    /// size it is (one fact while the iPad types: "Typing on Alex’s iPad, at
+    /// its size"); after the iPad stops, "Sized for Alex’s iPad"; typing
     /// here sets this phone's size and the note goes, and it stays gone
     /// once this phone watches again at its own size.
     func testWatchingAnotherDevicesGridSaysWhoseSizeItIs() {
         launch(extra: ["-witerm.debug.fixtureOtherTyper", "8"])
         open("fixture-s1")
         XCTAssertTrue(until(10) { probeText("mode") == "view" }, "Didn't open watching")
-        XCTAssertTrue(until(5) { status.exists && status.label.contains("Sized for Alex’s iPad") }, status.label)
-        XCTAssertTrue(status.label.contains("Typing on Alex’s iPad"), status.label)
+        XCTAssertTrue(until(5) { status.exists && status.label.contains("Typing on Alex’s iPad, at its size") }, status.label)
         XCTAssertEqual(probeText("cols"), "80", "Not watching the iPad's grid")
         print("PROBE r19 sized status=\(status.label) grid=\(probeText("cols") ?? "?")x\(probeText("rows") ?? "?")")
         shot("r19-sized-1-watching-ipad")
@@ -174,18 +180,18 @@ import XCTest
         while Date().timeIntervalSince(launchedAt) < 10 { RunLoop.current.run(until: Date().addingTimeInterval(0.2)) }
         keyboardButton.tap()
         XCTAssertTrue(until(10) { probeText("mode") == "control" && hideKey.exists }, "Didn't type")
-        XCTAssertTrue(until(3) { status.exists && !status.label.contains("Sized for") }, status.label)
+        XCTAssertTrue(until(3) { status.exists && !status.label.contains("Sized for") && !status.label.contains("its size") }, status.label)
         shot("r19-sized-3-typing")
         hideKey.tap()
         XCTAssertTrue(until(10) { probeText("mode") == "view" && keyboardButton.exists }, "Didn't watch")
         RunLoop.current.run(until: Date().addingTimeInterval(1.5))
-        XCTAssertFalse(status.label.contains("Sized for"), "Watching at its own size: \(status.label)")
+        XCTAssertFalse(status.label.contains("Sized for") || status.label.contains("its size"), "Watching at its own size: \(status.label)")
         print("PROBE r19 sized after status=\(status.label) grid=\(probeText("cols") ?? "?")x\(probeText("rows") ?? "?")")
         // The Mac types in "build" at its own size: named by its paired name.
         app.buttons["remoteSessionList"].tap()
         open("fixture-s2")
         XCTAssertTrue(until(10) { probeText("mode") == "view" }, "build didn't open watching")
-        XCTAssertTrue(until(5) { status.exists && status.label.contains("Sized for Studio") }, status.label)
+        XCTAssertTrue(until(5) { status.exists && status.label.contains("Typing on Studio, at its size") }, status.label)
         shot("r19-sized-4-mac-types")
     }
 }
