@@ -68,33 +68,6 @@ struct RemoteTerminalIssue {
     }
 }
 
-/// Where typing is, in the words a paired device can use. The Mac lists the
-/// others who can type in a terminal (`writers`): another paired device by
-/// name, or nil for the Mac itself. Older Macs don't list them. Since Round
-/// 20 only Terminals' rows say it; an open terminal counts and lists its
-/// connected devices instead (`ConnectedDevices`).
-enum TypingElsewhere {
-    /// The names of everyone else typing, the Mac by its paired name, each
-    /// once; nil when the Mac didn't say.
-    static func names(_ writers: [LocalWriterInfo]?, hostName: String) -> [String]? {
-        guard let writers else { return nil }
-        var names: [String] = []
-        for writer in writers {
-            let name = writer.name ?? hostName
-            if !names.contains(name) { names.append(name) }
-        }
-        return names
-    }
-
-    /// "Typing on iPad", or nil when nobody else types or the Mac didn't say.
-    static func summary(_ writers: [LocalWriterInfo]?, hostName: String) -> String? {
-        guard let names = names(writers, hostName: hostName), !names.isEmpty else { return nil }
-        let joined = names.formatted(.list(type: .and))
-        return String(localized: "Typing on \(joined)", bundle: .main)
-    }
-
-}
-
 /// Round 20: who is connected to the open paired terminal, as the Connected
 /// Devices sheet lists them and the title counts them. The Mac lists every
 /// attached device (`attached`, names only): itself without a name, each
@@ -142,6 +115,18 @@ struct ConnectedDevice: Equatable, Identifiable {
     static func count(_ devices: [ConnectedDevice]?) -> String? {
         guard let devices, devices.count > 1 else { return nil }
         return String(localized: "\(devices.count) devices connected", bundle: .main)
+    }
+
+    /// Round 21: a Terminals row's count, counted as the title counts:
+    /// the Mac once, each other device once, and this device only while
+    /// it's connected here (on screen, or kept after Back), whatever the
+    /// list said. Nil when that's fewer than two or the Mac doesn't say who
+    /// is attached (an older Mac, or an invitation's grant); never a guess
+    /// from who types.
+    static func rowCount(_ attached: [LocalConnectedDevice]?, connectedHere: Bool) -> String? {
+        guard var devices = devices(attached, typingHere: false, thisName: "", hostName: "", sizesCurrent: false) else { return nil }
+        if !connectedHere { devices.removeAll { $0.kind == .thisDevice } }
+        return count(devices)
     }
 
     /// "This iPhone" or "This iPad".
@@ -1028,12 +1013,16 @@ final class RemoteTerminalModel {
         listed = fresh
         #endif
         guard generation == token, selectedGrant?.id == grant.id, selectedSession?.id == id else { return false }
-        sessions = sessions.map { session in
+        func following(_ session: LocalSessionInfo) -> LocalSessionInfo {
             guard let fresh = listed.first(where: { $0.id == session.id }) else { return session }
             return LocalSessionInfo(id: session.id, name: session.name, createdAt: session.createdAt, columns: session.columns,
                                     rows: session.rows, access: session.access, writers: fresh.writers,
                                     attached: fresh.attached)
         }
+        sessions = sessions.map(following)
+        // Round 21: Terminals' rows count from the same list, so a row
+        // beside the terminal (iPad) or after Back agrees with the title.
+        if let rows = terminals[grant.id] { terminals[grant.id] = rows.map(following) }
         // Whose grid it is holds only for the link the list was made on.
         devicesListedFor = attachmentID == link ? link : nil
         return true

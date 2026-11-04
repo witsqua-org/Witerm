@@ -187,6 +187,90 @@ import XCTest
         closeConnectedDevices()
     }
 
+    // MARK: Terminals' rows (Round 21)
+
+    private func terminalRow(_ id: String) -> XCUIElement { app.buttons["remoteSession-\(id)"] }
+    private func connectedBadge(_ id: String) -> XCUIElement { app.descendants(matching: .any)["remoteSessionConnected-\(id)"] }
+
+    /// A row is one VoiceOver element: its label is the terminal, its value
+    /// the Mac, whether it's connected here, and the detail line.
+    private func rowValue(_ id: String) -> String { terminalRow(id).value as? String ?? "" }
+
+    private func goBack() {
+        let back = app.buttons["remoteSessionList"]
+        XCTAssertTrue(back.waitForExistence(timeout: 5))
+        back.tap()
+        XCTAssertTrue(terminalRow("fixture-s1").waitForExistence(timeout: 5), "Back didn't return to Terminals")
+    }
+
+    /// Terminals' rows count who is connected as the title does (2 or more,
+    /// this iPhone only while it's attached) and never name who types.
+    func testTerminalsRowsCountConnectedDevicesAndNeverNameWhoTypes() {
+        // Alex's iPad types in Terminal 1; Studio's window and Sam's iPhone
+        // watch it: three devices, this iPhone not among them.
+        launch(extra: ["-witerm.debug.fixtureOtherTyper", "120", "-witerm.debug.fixtureWatchers", "1"])
+        XCTAssertTrue(terminalRow("fixture-s1").waitForExistence(timeout: 15), "No fixture terminals")
+        XCTAssertTrue(until(5) { rowValue("fixture-s1").contains("3 devices connected") }, "Terminal 1: \(rowValue("fixture-s1"))")
+        // "build": only the Mac types there; one device is no count.
+        XCTAssertFalse(rowValue("fixture-s2").contains("devices connected"), "build: \(rowValue("fixture-s2"))")
+        for id in ["fixture-s1", "fixture-s2", "fixture-s3"] {
+            XCTAssertFalse(rowValue(id).contains("Typing on"), "\(id) names who types: \(rowValue(id))")
+        }
+        XCTAssertTrue(rowValue("fixture-s3").contains("Can only watch"), "logs: \(rowValue("fixture-s3"))")
+        print("PROBE r21 rows s1=\(rowValue("fixture-s1")) | s2=\(rowValue("fixture-s2")) | s3=\(rowValue("fixture-s3"))")
+        shot("r21-1-rows")
+
+        // Open "build" (the Mac types, so it watches), then Back: kept, and
+        // now this iPhone counts, as in the title.
+        open("fixture-s2")
+        XCTAssertTrue(until(10) { probeText("mode") == "view" }, "Didn't open watching")
+        XCTAssertTrue(until(5) { status.label.contains("2 devices connected") }, "Title: \(status.label)")
+        if notice.exists { notice.buttons["Dismiss"].tap() }
+        goBack()
+        XCTAssertTrue(connectedBadge("fixture-s2").waitForExistence(timeout: 5), "Back didn't keep build connected")
+        XCTAssertTrue(until(5) { rowValue("fixture-s2").contains("2 devices connected") }, "Kept build: \(rowValue("fixture-s2"))")
+        // VoiceOver: the terminal, then its Mac, that it's connected here,
+        // and how many are.
+        XCTAssertEqual(terminalRow("fixture-s2").label, "build")
+        XCTAssertEqual(rowValue("fixture-s2"), "Studio, connected, 2 devices connected")
+        XCTAssertFalse(rowValue("fixture-s2").contains("Typing on"), rowValue("fixture-s2"))
+        print("PROBE r21 kept s2=\(rowValue("fixture-s2"))")
+        shot("r21-2-kept-row")
+    }
+
+    /// Alone in a kept terminal: no count. A Mac from before Round 20: no
+    /// count and no guess from who types, kept or not.
+    func testTerminalsRowsShowNoCountAloneOrFromAnOlderMac() {
+        launch()
+        open("fixture-s1")
+        XCTAssertTrue(until(10) { probeText("mode") == "control" }, "Didn't open typing")
+        goBack()
+        XCTAssertTrue(connectedBadge("fixture-s1").waitForExistence(timeout: 5), "Back didn't keep Terminal 1 connected")
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        XCTAssertFalse(rowValue("fixture-s1").contains("devices connected"), "A count of one: \(rowValue("fixture-s1"))")
+        XCTAssertEqual(rowValue("fixture-s1"), "Studio, connected")
+        shot("r21-3-alone-kept")
+        app.terminate()
+
+        launch(extra: ["-witerm.debug.fixtureOlderMac", "1"])
+        XCTAssertTrue(terminalRow("fixture-s2").waitForExistence(timeout: 15), "No fixture terminals")
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        for id in ["fixture-s1", "fixture-s2"] {
+            XCTAssertFalse(rowValue(id).contains("devices connected") || rowValue(id).contains("Typing on"),
+                           "An older Mac: \(id) \(rowValue(id))")
+        }
+        XCTAssertEqual(rowValue("fixture-s2"), "Studio")
+        shot("r21-4-older-mac-rows")
+        open("fixture-s2")
+        XCTAssertTrue(until(10) { probeText("mode") == "view" }, "Didn't open watching")
+        if notice.exists { notice.buttons["Dismiss"].tap() }
+        goBack()
+        XCTAssertTrue(connectedBadge("fixture-s2").waitForExistence(timeout: 5))
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        XCTAssertEqual(rowValue("fixture-s2"), "Studio, connected", "An older Mac, kept")
+        shot("r21-5-older-mac-kept")
+    }
+
     /// A Mac from before Round 20 lists who types but not who is attached:
     /// no count and no Connected Devices; neither for an invitation's guest.
     func testOlderMacsAndInvitationsShowNoCountAndNoSheet() {

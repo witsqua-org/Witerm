@@ -67,7 +67,9 @@ import XCTest
         let terminal = app.buttons["remoteSession-fixture-s1"]
         XCTAssertTrue(terminal.exists)
         XCTAssertEqual(terminal.label, "Terminal 1")
-        XCTAssertTrue((app.buttons["remoteSession-fixture-s2"].value as? String ?? "").contains("Typing on Studio"))
+        // Round 21: rows count connected devices (two or more), never who
+        // types; only the Mac is in "build", so it says nothing more.
+        XCTAssertEqual(app.buttons["remoteSession-fixture-s2"].value as? String, "Studio")
         XCTAssertTrue((app.buttons["remoteSession-fixture-m1"].value as? String ?? "").contains("Can only watch"))
         // An offline device says so in one line instead of an empty list.
         let laptop = any("deviceSection-fixture-laptop")

@@ -4,7 +4,8 @@ import XCTest
 @testable import WitermiOS
 
 /// Who else types in a paired terminal: the `writers` a Mac lists for a
-/// paired device, and the words iOS chooses from them.
+/// paired device. Since Round 21 nothing names them: the title and
+/// Terminals' rows count connected devices instead (`ConnectedDevicesTests`).
 @MainActor final class TypingElsewhereTests: XCTestCase {
     private func decode(_ json: String) throws -> LocalSessionInfo {
         let decoder = JSONDecoder()
@@ -26,21 +27,6 @@ import XCTest
     func testOlderMacsOmitWriters() throws {
         XCTAssertNil(try decode("{\(base)}").writers)
         XCTAssertEqual(try decode("{\(base),\"writers\":[]}").writers, [])
-    }
-
-    func testSummaryNamesWritersAndTheMacByItsPairedName() {
-        XCTAssertEqual(TypingElsewhere.summary([LocalWriterInfo(name: "iPad")], hostName: "Studio"), text("Typing on \("iPad")"))
-        XCTAssertEqual(TypingElsewhere.summary([LocalWriterInfo(name: nil)], hostName: "Studio"), text("Typing on \("Studio")"))
-        // Each name once, in the Mac's order.
-        XCTAssertEqual(TypingElsewhere.names([LocalWriterInfo(name: nil), LocalWriterInfo(name: "iPad"), LocalWriterInfo(name: nil)],
-                                             hostName: "Studio"), ["Studio", "iPad"])
-        let two = TypingElsewhere.summary([LocalWriterInfo(name: "iPad"), LocalWriterInfo(name: nil)], hostName: "Studio")
-        XCTAssertEqual(two, text("Typing on \(["iPad", "Studio"].formatted(.list(type: .and)))"))
-    }
-
-    func testNobodyElseOrUnknownSaysNothingInTheTitle() {
-        XCTAssertNil(TypingElsewhere.summary([], hostName: "Studio"))
-        XCTAssertNil(TypingElsewhere.summary(nil, hostName: "Studio"))
     }
 
     /// Round 20: a refusal and the watching notice never name who types.

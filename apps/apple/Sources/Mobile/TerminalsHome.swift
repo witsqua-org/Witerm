@@ -349,12 +349,22 @@ struct TerminalsHome: View {
         // Connected here (on screen, or kept after Back): the same badge as
         // a connected SSH host.
         let connected = model.isConnected(session, on: grant)
-        // Whose it is and that access ends with the invitation; or who else
-        // types there, and Can only watch, since typing is the norm.
+        // Whose it is and that access ends with the invitation; or Can only
+        // watch, since typing is the norm, then how many devices are
+        // connected when that's two or more (Round 21: as the title counts
+        // them, never who types).
         let detail = shared
             ? [String(localized: "\(grant.host.name) · Until the invitation ends", bundle: .main)]
-            : [TypingElsewhere.summary(session.writers, hostName: grant.host.name),
-               access == .view ? String(localized: "Can only watch", bundle: .main) : nil].compactMap { $0 }
+            : [access == .view ? String(localized: "Can only watch", bundle: .main) : nil,
+               ConnectedDevices.rowCount(session.attached, connectedHere: connected)].compactMap { $0 }
+        // VoiceOver: the Mac (a shared row's detail names it), whether it's
+        // connected here, then the rest, so "connected" never follows "2
+        // devices connected".
+        let lead: [String] = shared ? detail : [grant.host.name]
+        let rest: [String] = shared ? [] : detail
+        let spoken = lead.joined(separator: ", ")
+            + (connected ? String(localized: ", connected", bundle: .main) : "")
+            + rest.map { ", " + $0 }.joined()
         return Button { openTerminal(section.server, grant, session, nil) } label: {
             HStack(spacing: WitermMetrics.Space.m) {
                 IconTile(systemImage: WitermSymbols.sshHost, tint: grant.host.identityHue)
@@ -382,8 +392,7 @@ struct TerminalsHome: View {
         .disabled(model.busy != nil)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(session.name)
-        .accessibilityValue(([shared ? nil : grant.host.name] + detail).compactMap { $0 }.joined(separator: ", ")
-                            + (connected ? String(localized: ", connected", bundle: .main) : ""))
+        .accessibilityValue(spoken)
         .accessibilityAddTraits(shown ? [.isButton, .isSelected] : .isButton)
         .accessibilityIdentifier("remoteSession-\(session.id)")
         .listRowBackground(sizeClass == .regular && shown ? WitermTheme.tint(grant.host.identityHue) : nil)

@@ -87,6 +87,31 @@ import XCTest
         XCTAssertFalse(ConnectedDevices.count(devices(2))?.contains("Typing") ?? true)
     }
 
+    /// Round 21: Terminals' rows count as the title does, this device only
+    /// while it's connected here, whatever the list said; nothing alone,
+    /// and nothing from an older Mac (never a guess from who types).
+    func testRowsCountAsTheTitleAndThisDeviceOnlyWhileConnected() {
+        let mac = LocalConnectedDevice(name: nil, mode: .control, gridOwner: true)
+        let iPad = LocalConnectedDevice(name: "Alex’s iPad", mode: .view)
+        let listedHere = LocalConnectedDevice(name: "iPhone", mode: .view, thisDevice: true)
+        XCTAssertEqual(ConnectedDevices.rowCount([mac, iPad], connectedHere: false), text("\(2) devices connected"))
+        XCTAssertEqual(ConnectedDevices.rowCount([mac, iPad], connectedHere: true), text("\(3) devices connected"))
+        XCTAssertNil(ConnectedDevices.rowCount([mac], connectedHere: false), "One device: no count")
+        XCTAssertEqual(ConnectedDevices.rowCount([mac], connectedHere: true), text("\(2) devices connected"),
+                       "Kept after Back: this device counts, as in the title")
+        XCTAssertNil(ConnectedDevices.rowCount([mac, listedHere], connectedHere: false),
+                     "A list from before this device left doesn't count it")
+        XCTAssertEqual(ConnectedDevices.rowCount([mac, listedHere], connectedHere: true), text("\(2) devices connected"),
+                       "Never twice")
+        XCTAssertNil(ConnectedDevices.rowCount([listedHere], connectedHere: true), "Alone: no count")
+        XCTAssertNil(ConnectedDevices.rowCount([], connectedHere: false))
+        XCTAssertNil(ConnectedDevices.rowCount(nil, connectedHere: true), "An older Mac or an invitation: no count")
+        // The row and the title agree for the open terminal.
+        let title = ConnectedDevices.count(ConnectedDevices.devices([mac, iPad, listedHere], typingHere: false, thisName: "This iPhone",
+                                                                    hostName: "Studio", sizesCurrent: true))
+        XCTAssertEqual(ConnectedDevices.rowCount([mac, iPad, listedHere], connectedHere: true), title)
+    }
+
     func testRowFactsSayTypingOrWatchingAndWhoseSize() {
         let typing = ConnectedDevice(id: "mac", kind: .mac, name: "Studio", typing: true, setsSize: true)
         XCTAssertEqual(ConnectedDevicesSheet.facts(typing), [text("Typing"), text("Sets the terminal size")])

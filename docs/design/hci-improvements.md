@@ -988,3 +988,34 @@ Shared with the Mac (Touch ID or the login password).
 ### 3. The simulator's keyboard
 
 Switched by the integrator with the owner's approval (`HardwareKeyboardLastSeen` set to NO inside the simulated device); see [handoff.md](../handoff.md), "The simulator's keyboard". The real software keyboard appeared in every Round 20 SSH run, and the two tests that needed it pass without the stand-in.
+
+## Round 21: iOS follow-ups
+
+Two follow-ups the owner approved on 2026-11-05, worked on the iPhone 18 Pro simulator through the DEBUG fixture Mac (`FixtureMac`) and the disposable OpenSSH fixture. Captures: `.build/screenshots/round21-ios/` (`before/` on `main`'s app code with the new tests, `after/`).
+
+### Terminals' rows count connected devices
+
+Round 20 replaced naming typists in a paired terminal's title with a device count, but Terminals' rows still said "Typing on *device*". They now count the same way the title does.
+
+| Row (fixture) | Before | After |
+|---|---|---|
+| Terminal 1: Alex’s iPad types, Studio's window and Sam’s iPhone watch | `Typing on Alex’s iPad` | `3 devices connected` |
+| build: the Mac types (only the Mac) | `Typing on Studio` | nothing extra |
+| build, kept after Back (the Mac and this iPhone) | `Typing on Studio`, Connected | `2 devices connected`, Connected |
+| Terminal 1 kept after Back, nobody else | Connected | Connected (no count) |
+| logs (watch only) | `Can only watch` | `Can only watch` (and the count when there is one: `Can only watch · 2 devices connected`) |
+| Any terminal on a Mac from before Round 20 | `Typing on Studio` (from `writers`) | nothing extra, kept or not |
+| Shared with You | `Alex’s MacBook · Until the invitation ends` | unchanged |
+
+- **The same count as the title** (`ConnectedDevices.rowCount`, built on the title's `ConnectedDevices.devices`): the Mac once, each other paired device once, and this device only while it's connected here, on screen or kept after Back (`isConnected`, what the Connected badge shows), whatever the list said. So a list made just before this device left doesn't count it, and it's never counted twice. Fewer than two: no count, as in the title.
+- **Older Macs and invitations:** no `attached`, no count. Nothing is guessed from `writers` any more; `TypingElsewhere`, which only the rows still used, is gone.
+- **Order:** what limits this device first (Can only watch), then the count, as in the title. The Connected badge and the Online/Offline/Checking… header are unchanged.
+- **Kept current:** the 10-second listing that keeps the title's count up to date now also updates the row's list (`refreshDevices`), so a row beside the terminal (iPad) or after Back agrees with the title. On the home screen with nothing open, rows update when the list is loaded: on launch, pull to refresh, Back.
+- **VoiceOver:** each row is one element. The label is the terminal's name, and the value is the Mac, then "connected" when it's connected here, then the detail: "Studio, connected, 2 devices connected". "Connected" comes before the count so it never directly follows "devices connected". A shared row still reads its detail, then "connected".
+- **Strings:** none added or changed (`%lld devices connected` and `, connected` already exist). "Typing on %@" stays: the Mac still uses it (Continue sheet, window subtitle). `docs/design/round21-strings-ios.json` is empty.
+
+Tests that fail first: `PairedConnectedDevicesTests.testTerminalsRowsCountConnectedDevicesAndNeverNameWhoTypes` and `testTerminalsRowsShowNoCountAloneOrFromAnOlderMac` (before: "Studio, Typing on Alex’s iPad", "Studio, Typing on Studio, connected"; after: "Studio, 3 devices connected", "Studio, connected, 2 devices connected", "Studio, connected", "Studio"). Unit test: `ConnectedDevicesTests.testRowsCountAsTheTitleAndThisDeviceOnlyWhileConnected`. `InformationArchitectureTests` now expects "build" to read "Studio".
+
+### SSH: going Home and back keeps the connection
+
+`SSHWorkspaceTests.testDirectSSHTrustTerminalKeyboardAndSFTP` still expected going Home to disconnect SSH immediately (Reconnect, then the password again). That was stale: since Round 17 SSH stays connected for 3 minutes in the background, and since Round 20, returning within that window continues the same connection with no Face ID prompt. The step now types a letter on the shell's line, goes Home, checks the app really left the foreground, and comes back. It checks that the terminal is still there, with no Reconnect, no password form and no trust prompt, that the letter is still on the line (a new shell wouldn't have it), and that the letter can be erased. The Reconnect check the old step carried (a new shell on the same verified pin, with no trust prompt) now follows an explicit Disconnect from the ⋯ menu. The test doesn't wait 3 minutes. Coming back after 10, 60 and 170 s with the same `$$` is covered by `SSHTypingChromeTests.testReturningWithinThreeMinutesKeepsTheSameShell`. Being disconnected past 3 minutes has no SSH UI test: it's `SSHWorkspaceModel.enterForeground` and `closeAfterBackgroundWindow`, and paired terminals have the opt-in `PairedTerminalFixtureTests.testReturningAfterThreeMinutesReconnects` (`WITERM_BG_LONG=1`). No other step was stale: the whole test passes against the fixture, its own cleanup included.

@@ -78,9 +78,41 @@ import XCTest
         XCTAssertFalse(app.staticTexts["sshSFTPIssue"].exists)
         tapVisibleControl(app.buttons["完成"], in: app)
         XCTAssertTrue(terminal.exists, "Opening SFTP must preserve the SSH terminal")
+        // Round 21: going Home and back within the 3-minute background
+        // window (Round 17) continues the same connection and shell: no
+        // Reconnect, no new sign-in or Face ID (Round 20), and a letter
+        // left on the shell's line before leaving is still there and can be
+        // erased, which a new shell wouldn't have. The window itself (10,
+        // 60 and 170 s away, the same `$$`) is
+        // SSHTypingChromeTests.testReturningWithinThreeMinutesKeepsTheSameShell;
+        // this step doesn't wait for it.
+        if !app.keyboards.firstMatch.exists { app.toggleTerminalKeyboard() }
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "The keyboard didn't come back after SFTP")
+        typeLetter("z", until: marker, in: terminal, app: app)
         XCUIDevice.shared.press(.home)
+        let away = Date().addingTimeInterval(5)
+        while app.state == .runningForeground, Date() < away { RunLoop.current.run(until: Date().addingTimeInterval(0.1)) }
+        XCTAssertNotEqual(app.state, .runningForeground, "Home didn't send the app to the background")
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
         app.activate()
-        XCTAssertTrue(app.buttons["sshReconnect"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10))
+        XCTAssertTrue(terminal.waitForExistence(timeout: 10), "Going Home and back closed the SSH terminal")
+        XCTAssertFalse(app.buttons["sshReconnect"].waitForExistence(timeout: 3), "Returning within 3 minutes asked to reconnect")
+        XCTAssertFalse(password.exists, "Returning within 3 minutes asked to sign in again")
+        XCTAssertFalse(app.buttons["sshTrustHost"].exists)
+        XCTAssertTrue((terminal.value as? String ?? terminal.label).contains(marker), "Not the same shell: the typed letter is gone")
+        if !app.keyboards.firstMatch.exists { app.toggleTerminalKeyboard() }
+        let deleteAgain = app.keyboards.keys["delete"].firstMatch
+        XCTAssertTrue(deleteAgain.waitForExistence(timeout: 5))
+        deleteAgain.tap()
+        wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "NOT (value CONTAINS %@ OR label CONTAINS %@)", marker, marker), object: terminal)],
+             timeout: 10)
+
+        // Reconnect after a Disconnect: a new shell on the same verified pin.
+        tapVisibleControl(app.buttons["sshSessionActions"], in: app)
+        app.buttons["断开"].tap()
+        XCTAssertTrue(app.buttons["sshReconnect"].waitForExistence(timeout: 5))
         XCTAssertFalse(terminal.exists)
         tapVisibleControl(app.buttons["sshReconnect"], in: app)
         XCTAssertTrue(password.waitForExistence(timeout: 5))
