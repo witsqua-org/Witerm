@@ -106,11 +106,14 @@ import XCTest
         for _ in 0..<4 where !connect.isHittable { app.swipeUp() }
         connect.tap()
         let identity = app.staticTexts["sshHostFingerprint"]
-        XCTAssertNotNil(until(20) { identity.exists }, "The fixture's key must be reviewed first")
-        XCTAssertTrue(identity.label.contains(fingerprint), "Unexpected fixture host fingerprint")
-        let trust = app.buttons["sshTrustHost"]
-        XCTAssertNotNil(until(10) { trust.isHittable })
-        trust.tap()
+        // A pin left by an interrupted run connects without the review.
+        XCTAssertNotNil(until(20) { identity.exists || lastLine().hasSuffix("~$") }, "The fixture's key must be reviewed first")
+        if identity.exists {
+            XCTAssertTrue(identity.label.contains(fingerprint), "Unexpected fixture host fingerprint")
+            let trust = app.buttons["sshTrustHost"]
+            XCTAssertNotNil(until(10) { trust.isHittable })
+            trust.tap()
+        }
         XCTAssertNotNil(until(20) { lastLine().hasSuffix("~$") }, "The connection never showed a prompt")
     }
 
@@ -241,7 +244,7 @@ import XCTest
         // Folders with a few and with many entries, in the fixture's home.
         launch(snippets: [("Setup", "mkdir -p few many; touch few/a few/b; cd many; for i in $(seq 1 240); do touch file-$i; done; cd"),
                           ("Color", "ls --color=always /etc"), ("Long", "seq 1 400"),
-                          ("Prompt", #"alias ls='ls --color=auto'; PS1="$(printf '\033]0;fixture@r20: ~\007\033]7;file://r20/home/fixture\007')\u@\h:\w\$ ""#)])
+                          ("Prompt", #"alias ls='ls --color=auto'; PS1="\[$(printf '\033]0;fixture@r20: ~\007\033]7;file://r20/home/fixture\007')\]\u@\h:\w\$ ""#)])
         let name = "R20 Ls " + String(UUID().uuidString.prefix(4))
         connect(port: port, fingerprint: fingerprint, name: name)
         _ = until(2) { false }

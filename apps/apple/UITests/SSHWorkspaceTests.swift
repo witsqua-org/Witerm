@@ -537,6 +537,14 @@ import XCTest
             let typed = XCTNSPredicateExpectation(
                 predicate: NSPredicate(format: "value CONTAINS %@ OR label CONTAINS %@", marker, marker), object: terminal)
             if XCTWaiter.wait(for: [typed], timeout: 2) == .completed { return }
+            // Round 20: composing, Return reads Confirm (确认) and commits
+            // the letter as typed, as a person would do. Tapped where it is:
+            // XCUITest can't scroll the keyboard's own key into view.
+            let confirm = app.keyboards.buttons.matching(NSPredicate(format: "label IN %@", ["确认", "Confirm", "confirm"])).firstMatch
+            if confirm.exists {
+                confirm.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                if XCTWaiter.wait(for: [typed], timeout: 2) == .completed { return }
+            }
             app.keyboards.keys["delete"].firstMatch.tap()
             guard next.exists else { break }
             next.tap()
