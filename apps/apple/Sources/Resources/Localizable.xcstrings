@@ -4194,23 +4194,6 @@
         }
       }
     },
-    "Enter Password" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Enter Password"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "输入密码"
-          }
-        }
-      }
-    },
     "Enter a command of up to 4 KB." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7080,6 +7063,61 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "尚未检查。"
+          }
+        }
+      }
+    },
+    "Not connected: “%@” needs Face ID to use its saved credentials." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未连接：“%@”需要通过面容 ID 才能使用存储的认证信息。"
+          }
+        }
+      }
+    },
+    "Not connected: “%@” needs Optic ID to use its saved credentials." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未连接：“%@”需要通过 Optic ID 才能使用存储的认证信息。"
+          }
+        }
+      }
+    },
+    "Not connected: “%@” needs Touch ID to use its saved credentials." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未连接：“%@”需要通过触控 ID 才能使用存储的认证信息。"
+          }
+        }
+      }
+    },
+    "Not connected: “%@” needs your login password to use its saved credentials." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未连接：“%@”需要输入登录密码才能使用存储的认证信息。"
+          }
+        }
+      }
+    },
+    "Not connected: “%@” needs your passcode to use its saved credentials." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未连接：“%@”需要输入设备密码才能使用存储的认证信息。"
           }
         }
       }
