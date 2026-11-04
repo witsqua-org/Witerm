@@ -256,23 +256,6 @@
         }
       }
     },
-    "%@, so you’re watching." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@, so you’re watching."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@，所以你现在仅观看。"
-          }
-        }
-      }
-    },
     "%@. %@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -371,6 +354,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld 台无法访问"
+          }
+        }
+      }
+    },
+    "%lld devices connected" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld device connected"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld devices connected"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已连接 %lld 台设备"
           }
         }
       }
@@ -1420,23 +1432,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "输出更新提示"
-          }
-        }
-      }
-    },
-    "Another device is typing, so you’re watching." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Another device is typing, so you’re watching."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "另一台设备正在输入，所以你现在仅观看。"
           }
         }
       }
@@ -2910,6 +2905,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已连接"
+          }
+        }
+      }
+    },
+    "Connected Devices" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已连接的设备"
           }
         }
       }
@@ -6880,6 +6886,17 @@
         }
       }
     },
+    "No other devices are connected." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有其他设备连接。"
+          }
+        }
+      }
+    },
     "No paired device can open it" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10110,6 +10127,17 @@
         }
       }
     },
+    "Sets the terminal size" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "决定终端尺寸"
+          }
+        }
+      }
+    },
     "Settings" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10531,28 +10559,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "大小"
-          }
-        }
-      }
-    },
-    "Sized for %@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "按%@的尺寸显示"
-          }
-        }
-      }
-    },
-    "Sized for Another Device" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "按另一台设备的尺寸显示"
           }
         }
       }
@@ -11403,6 +11409,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "终端词"
+          }
+        }
+      }
+    },
+    "Terminal size: %lld columns, %lld rows" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "终端尺寸：%lld 列，%lld 行"
+          }
+        }
+      }
+    },
+    "Terminal size: %lld × %lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "终端尺寸：%lld × %lld"
           }
         }
       }
@@ -13033,17 +13061,6 @@
         }
       }
     },
-    "Typing on %@, at its size" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在 %@ 上输入，按其尺寸显示"
-          }
-        }
-      }
-    },
     "Typing on Another Device" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13057,6 +13074,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "另一台设备正在输入"
+          }
+        }
+      }
+    },
+    "Typing wasn’t available, so you’re watching." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当时无法输入，所以你现在仅观看。"
           }
         }
       }
