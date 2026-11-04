@@ -106,7 +106,16 @@ final class MacContinuityFlowTests: XCTestCase {
         app.buttons["terminalActionsMenu"].tap()
         XCTAssertFalse(app.buttons["Start Typing"].exists || app.buttons["Stop Typing"].exists, "No typing switch in the menu")
         shot("09b-watching")
-        app.buttons["terminalActionsMenu"].tap()
+        // Close the menu by tapping outside it (the open menu covers its own
+        // button), on the terminal's left side, away from the system areas at
+        // the top. As in every iOS menu, the dismissing tap must not reach the
+        // terminal: it must not start typing.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.7)).tap()
+        XCTAssertFalse(hideKey.waitForExistence(timeout: 2), "Tapping outside the menu to close it started typing")
+        // Wait out the menu's closing animation: until then the button
+        // isn't hittable and the tap would land nowhere.
+        let hittable = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: keyboardButton)
+        XCTAssertEqual(XCTWaiter.wait(for: [hittable], timeout: 10), .completed, "The keyboard button never became tappable")
         keyboardButton.tap()
         // The keyboard comes up once the Mac lets this device type.
         XCTAssertTrue(hideKey.waitForExistence(timeout: 30))
@@ -162,9 +171,9 @@ final class MacContinuityFlowTests: XCTestCase {
             while Date() < deadline {
                 XCTAssertFalse(any("remoteDisconnectedStatus").exists, "The phone disconnected during the burst")
                 XCTAssertFalse(any("reconnectRemoteTerminal").exists, "The phone offered Reconnect during the burst")
-                let label = status.label
-                XCTAssertTrue(label.hasPrefix("Typing,") || label.contains(", Typing,"),
-                              "The phone stopped typing during the burst: \(label)")
+                // No mode words since Round 16: still typing means the
+                // keyboard (its Hide Keyboard key) is still up.
+                XCTAssertTrue(hideKey.exists, "The phone stopped typing during the burst: \(status.label)")
                 if (surface.value as? String ?? "").contains(marker) { seen = true; break }
                 RunLoop.current.run(until: Date().addingTimeInterval(1))
             }
