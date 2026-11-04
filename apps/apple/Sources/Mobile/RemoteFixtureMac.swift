@@ -40,6 +40,19 @@ import WitermCore
     private(set) var wentOffline: [String: Date] = [:]
     private var presenceWatchers: [UUID: AsyncStream<[String: Bool]>.Continuation] = [:]
 
+    /// Round 19: `-witerm.debug.fixtureRedrawDelay <seconds>` sends each
+    /// attach's earlier output at once, ending in a screenful of line feeds
+    /// as the Mac's service does, and tmux's redraw only that much later, as
+    /// over a slow relay: the screen is blank but for the cursor meanwhile.
+    static let redrawDelay = UserDefaults.standard.double(forKey: "witerm.debug.fixtureRedrawDelay")
+    /// Round 19: `-witerm.debug.fixtureOtherTyper <seconds>`: another
+    /// device, "Alex’s iPad", types in Terminal 1 for that long after the
+    /// fixture starts, at its own size (80 × 24), so this device watches its
+    /// grid; then it stops, and this device may type again.
+    static let otherTyperName = "Alex’s iPad"
+    static let otherTyperSession = "fixture-s1"
+    private var otherTyperUntil: Date?
+
     override private init() {
         super.init()
         let center = NotificationCenter.default
@@ -48,6 +61,11 @@ import WitermCore
         // Round 18: `-witerm.debug.fixtureOfflineAfter <seconds>` takes Studio
         // offline that long after the fixture starts, as when a Mac's relay
         // connection drops: its links fail and it refuses new ones.
+        let typing = UserDefaults.standard.double(forKey: "witerm.debug.fixtureOtherTyper")
+        if typing > 0 {
+            otherTyperUntil = Date().addingTimeInterval(typing)
+            grids[Self.otherTyperSession] = (80, 24)
+        }
         let after = UserDefaults.standard.double(forKey: "witerm.debug.fixtureOfflineAfter")
         if after > 0 {
             Task { @MainActor in
@@ -82,8 +100,12 @@ import WitermCore
     func sessions(for grantID: String) -> [LocalSessionInfo] {
         (RemoteFixture.sessions[grantID] ?? []).filter { !ended.contains($0.id) }.map { listed in
             let grid = grids[listed.id] ?? (listed.columns, listed.rows)
+            var writers = listed.writers
+            if listed.id == Self.otherTyperSession, let until = otherTyperUntil, Date() < until {
+                writers = (writers ?? []) + [LocalWriterInfo(name: Self.otherTyperName)]
+            }
             return LocalSessionInfo(id: listed.id, name: listed.name, createdAt: listed.createdAt, columns: grid.columns,
-                                    rows: grid.rows, access: listed.access, writers: listed.writers)
+                                    rows: grid.rows, access: listed.access, writers: writers)
         }
     }
 
@@ -109,10 +131,19 @@ import WitermCore
         opened += 1
         if changed { link.continuation.yield(.geometry(info)) }
         if history {
-            let earlier = (1...80).map { "earlier output \($0)\r\n" }.joined()
+            var earlier = (1...80).map { "earlier output \($0)\r\n" }.joined()
+            // The service scrolls its history above the screen tmux redraws.
+            if Self.redrawDelay > 0 { earlier += String(repeating: "\n", count: info.rows) }
             link.continuation.yield(.output(Data(earlier.utf8)))
         }
-        link.continuation.yield(.output(redraw(info)))
+        if Self.redrawDelay > 0 {
+            Task { @MainActor [link] in
+                try? await Task.sleep(for: .seconds(Self.redrawDelay))
+                if link.open { link.continuation.yield(.output(self.redraw(info))) }
+            }
+        } else {
+            link.continuation.yield(.output(redraw(info)))
+        }
         return link
     }
 
@@ -127,7 +158,14 @@ import WitermCore
         let info = LocalSessionInfo(id: id, name: link.session.name, createdAt: link.session.createdAt, columns: columns, rows: rows)
         for other in links[id] ?? [] {
             other.continuation.yield(.geometry(info))
-            other.continuation.yield(.output(redraw(info)))
+            if Self.redrawDelay > 0 {
+                Task { @MainActor [other] in
+                    try? await Task.sleep(for: .seconds(Self.redrawDelay))
+                    if other.open { other.continuation.yield(.output(self.redraw(info))) }
+                }
+            } else {
+                other.continuation.yield(.output(redraw(info)))
+            }
         }
     }
 
