@@ -80,6 +80,7 @@ Before the Mac sleeps, the service closes relay connections but keeps tmux and t
 - Preparing for sleep takes at most 2 seconds and never blocks it.
 - Mac views reattach after wake; iOS reconnects to the same session on its own when it returns to the foreground or the network comes back.
 - Input is never resent. Logout, restart, and shutdown aren't covered.
+- A locked screen isn't sleep: paired devices can still open terminals on a locked Mac that is awake ([Device pairing](pairing.md#trust-boundaries)). Whether a locked Mac sleeps is up to its Energy settings.
 
 Weak-network tests add delay, jitter, and read stalls to test connections only; they aren't system-level packet-loss tests. To prove input wasn't replayed, a test confirms the input ran once, reconnects, and checks it still ran exactly once.
 

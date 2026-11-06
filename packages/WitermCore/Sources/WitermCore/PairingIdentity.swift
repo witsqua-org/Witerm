@@ -13,6 +13,24 @@ protocol PairingSecureStore: Sendable {
 struct KeychainPairingStore: PairingSecureStore {
   private let service = "com.witerm.pairing.v1"
 
+  /// The Mac's background service admits paired devices while the screen is
+  /// locked, so its identity and trust ledger stay readable after the first
+  /// unlock since startup. They never leave this device. iOS shows terminals
+  /// only while unlocked, so it keeps the stricter class.
+  static var accessibility: CFString {
+    #if os(macOS)
+      kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+    #else
+      kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+    #endif
+  }
+
+  /// Items created before the Mac class changed keep their old class until
+  /// they are read once while unlocked.
+  static func needsAccessibilityUpdate(_ attributes: [String: Any]) -> Bool {
+    (attributes[kSecAttrAccessible as String] as? String) != accessibility as String
+  }
+
   private func query(_ account: String) -> [String: Any] {
     [
       kSecClass as String: kSecClassGenericPassword,
@@ -26,6 +44,7 @@ struct KeychainPairingStore: PairingSecureStore {
   func read(account: String) throws -> Data? {
     var request = query(account)
     request[kSecReturnData as String] = true
+    request[kSecReturnAttributes as String] = true
     request[kSecMatchLimit as String] = kSecMatchLimitOne
     let context = LAContext()
     context.interactionNotAllowed = true
@@ -33,8 +52,17 @@ struct KeychainPairingStore: PairingSecureStore {
     var result: CFTypeRef?
     let status = SecItemCopyMatching(request as CFDictionary, &result)
     if status == errSecItemNotFound { return nil }
-    guard status == errSecSuccess, let data = result as? Data else {
+    guard status == errSecSuccess, let item = result as? [String: Any],
+      let data = item[kSecValueData as String] as? Data
+    else {
       throw PairingClientError.identityUnavailable
+    }
+    if Self.needsAccessibilityUpdate(item) {
+      // Changes only the class, never the data, so it can't race the
+      // ledger's single writer. A failure is retried on the next read.
+      _ = SecItemUpdate(
+        query(account) as CFDictionary,
+        [kSecAttrAccessible as String: Self.accessibility] as CFDictionary)
     }
     return data
   }
@@ -42,7 +70,7 @@ struct KeychainPairingStore: PairingSecureStore {
   func create(_ data: Data, account: String) throws -> Bool {
     var request = query(account)
     request[kSecValueData as String] = data
-    request[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+    request[kSecAttrAccessible as String] = Self.accessibility
     let status = SecItemAdd(request as CFDictionary, nil)
     if status == errSecDuplicateItem { return false }
     guard status == errSecSuccess else { throw PairingClientError.identityUnavailable }
