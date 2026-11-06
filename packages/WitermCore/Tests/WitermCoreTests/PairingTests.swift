@@ -193,6 +193,28 @@ final class PairingTests: XCTestCase {
     XCTAssertEqual(store.createCount, 1)
   }
 
+  func testMacPairingItemsStayReadableWhileLockedAndOlderItemsMoveOver() {
+    let key = kSecAttrAccessible as String
+    #if os(macOS)
+      XCTAssertEqual(
+        KeychainPairingStore.accessibility as String,
+        kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String,
+        "The Mac service must admit paired devices while the screen is locked")
+      XCTAssertTrue(
+        KeychainPairingStore.needsAccessibilityUpdate(
+          [key: kSecAttrAccessibleWhenUnlockedThisDeviceOnly as String]),
+        "Items created before the change must move to the new class")
+    #else
+      XCTAssertEqual(
+        KeychainPairingStore.accessibility as String,
+        kSecAttrAccessibleWhenUnlockedThisDeviceOnly as String)
+    #endif
+    XCTAssertFalse(
+      KeychainPairingStore.needsAccessibilityUpdate(
+        [key: KeychainPairingStore.accessibility as String]))
+    XCTAssertTrue(KeychainPairingStore.needsAccessibilityUpdate([:]))
+  }
+
   func testGrantNeedsPinnedHostAndCannotChangePermission() throws {
     let values = try fixture()
     let approval = try XCTUnwrap(values["approval"] as? [String: String])

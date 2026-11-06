@@ -20,6 +20,7 @@ To let someone open one session without pairing, the Mac sends a session invitat
 ## Trust boundaries
 
 - **Private keys** never leave the device Keychain. Each server address gets its own key, so pairing through one server never authorizes another.
+- **A locked Mac stays reachable.** On the Mac, the identity and trust ledger are readable after the first unlock since startup (`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`), so paired devices can open its terminals while the screen is locked. Before the first login after a restart nothing can read them, they never sync or leave the Mac, and only the signed Witerm app and its service can read them. Items stored before this change move to the new class the first time they are read while the Mac is unlocked. A sleeping Mac is still unreachable: the service closes relay connections before sleep. On iOS they stay readable only while the device is unlocked.
 - **Challenges** are single-use, short-lived, and bound to a public key. The server stores only hashes of session tokens.
 - **The server can't swap in another Mac key**, because iOS pinned it from the invitation.
 - **Only the two participants** can list or revoke their grant.
