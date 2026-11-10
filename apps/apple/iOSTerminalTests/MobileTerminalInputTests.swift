@@ -12,6 +12,17 @@ import XCTest
             fontSize: 14, isInteractive: true)
     }
 
+    /// Round 24: the scrollback holds a long conversation with a Codex-like
+    /// tool, such as the 5,000 earlier lines the Mac sends on attach.
+    func testScrollbackKeepsALongConversation() {
+        let reader = input(mode: .view)
+        let lines = (1...4_800).map { "conversation line \($0)\r\n" }.joined()
+        reader.feed(text: lines + "LATEST")
+        let text = String(data: reader.getTerminal().getBufferAsData(), encoding: .utf8) ?? ""
+        XCTAssertTrue(text.contains("conversation line 1\n"), "The start of the conversation left the scrollback")
+        XCTAssertTrue(text.contains("LATEST"))
+    }
+
     /// A long press selects the word under the finger and dragging extends
     /// it, in a read-only terminal too; Paste is offered only where typing is.
     func testLongPressSelectsAndOffersEditActions() {

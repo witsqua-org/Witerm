@@ -14,10 +14,14 @@ import WitermCore
     var geometryChanged: ((LocalSessionInfo) -> Void)?
     var stopInput: (() -> Void)?
 
+    /// Enough for a long conversation with a Codex-like tool; the service
+    /// sends up to 5,000 earlier lines on attach and new output adds to them.
+    static let scrollbackLines = 10_000
+
     init(mode: LocalAttachmentMode, columns: Int = 80, rows: Int = 24, fontSize: CGFloat = 14) {
         inputEnabled = mode == .control
         super.init(frame: .zero, font: .monospacedSystemFont(ofSize: fontSize, weight: .regular),
-                   options: TerminalOptions(cols: columns, rows: rows))
+                   options: TerminalOptions(cols: columns, rows: rows, scrollback: Self.scrollbackLines))
         setAccessibilityElement(true)
         setAccessibilityRole(.textArea)
         setAccessibilityRoleDescription(String(localized: "Terminal Text", bundle: .main))

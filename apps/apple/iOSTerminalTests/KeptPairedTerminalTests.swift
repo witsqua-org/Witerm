@@ -171,7 +171,9 @@ import XCTest
         host.stop()
         container.removeFromSuperview()
         XCTAssertGreaterThan(host.approximateBytes, 0)
-        XCTAssertLessThan(host.approximateBytes, 2 << 20, "A kept renderer is bounded")
+        // 5,000 lines of scrollback (Round 24, for long conversations): at
+        // most 3 kept renderers, so under 48 MiB at this size.
+        XCTAssertLessThan(host.approximateBytes, 16 << 20, "A kept renderer is bounded")
     }
 
     /// At the limit, opening one more disconnects the kept terminal left

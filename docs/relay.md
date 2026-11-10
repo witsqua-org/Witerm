@@ -34,7 +34,7 @@ The policy can only narrow the signed grant: a view-only grant never gains contr
 
 **Back keeps it connected** (Round 18). Going back from a paired terminal to Terminals leaves it attached, watching, so its row says Connected and reopening it is instant (the same attachment and screen, nothing redrawn). Typing is let go first, with the detach ACK. At most 3 paired terminals stay connected at once, so one of the 4 tunnels the relay server allows a device stays free for listing; opening a fourth disconnects the one left longest ago and says so. **Disconnect** (a trailing swipe on the row, its long-press menu, or the terminal's ⋯ menu) detaches it; the terminal keeps running on the Mac, because a phone can't end one.
 
-**Earlier output.** On attach, the Mac sends up to 1,000 lines (128 KiB) of the session's earlier output into the renderer's scrollback, above tmux's redraw of the live screen, so dragging scrolls back through it. Nothing is sent while a full-screen program (such as vim) is running. It travels inside the same encrypted channel and is never stored.
+**Earlier output.** On attach, the Mac sends up to 5,000 lines (512 KiB) of the session's earlier output into the renderer's scrollback, above tmux's redraw of the live screen, so dragging scrolls back through it. Nothing is sent while a full-screen program (such as vim) is running. Later output reaches the same scrollback line by line, including a Codex-like tool's replies ([Terminal experience](terminal-experience.md#display)). It travels inside the same encrypted channel and is never stored.
 
 ## Session invitations
 

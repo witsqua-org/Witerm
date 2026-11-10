@@ -100,8 +100,9 @@ struct CommandRunner {
     let executable: String
     let environment: [String: String]
 
-    /// Runs with `directory` as the working directory when given.
-    func run(_ arguments: [String], timeout: TimeInterval = 3, directory: String? = nil) throws -> CommandResult {
+    /// Runs with `directory` as the working directory when given. More than
+    /// `limit` bytes of output fails the command.
+    func run(_ arguments: [String], timeout: TimeInterval = 3, directory: String? = nil, limit: Int = 65536) throws -> CommandResult {
         var descriptors: [Int32] = [0, 0]
         guard pipe(&descriptors) == 0 else { throw AgentFailure() }
         let readFD = descriptors[0], writeFD = descriptors[1]
@@ -128,7 +129,7 @@ struct CommandRunner {
         while !exited || !eof {
             let count = Darwin.read(readFD, &buffer, buffer.count)
             if count > 0 {
-                guard output.count + count <= 65536 else { throw AgentFailure() }
+                guard output.count + count <= limit else { throw AgentFailure() }
                 output.append(contentsOf: buffer.prefix(count))
             } else if count == 0 { eof = true }
             else if errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR { throw AgentFailure() }

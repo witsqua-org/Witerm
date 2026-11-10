@@ -78,7 +78,7 @@ struct PairedTerminalKey: Hashable {
 /// the one on screen included: opening a fourth disconnects the one left
 /// longest ago (after the Mac's ACK, before the new one attaches) and the new
 /// terminal says which. Memory is bounded the same way: each renderer keeps
-/// its screen and 500 lines of scrollback.
+/// its screen and 5,000 lines of scrollback.
 @MainActor enum PairedKeepAlive {
     static let limit = 3
 

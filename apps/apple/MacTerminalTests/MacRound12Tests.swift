@@ -34,6 +34,18 @@ import XCTest
         }
     }
 
+    /// Round 24: the scrollback holds a long conversation with a Codex-like
+    /// tool, such as the 5,000 earlier lines the service sends on attach.
+    func testScrollbackKeepsALongConversation() {
+        let view = MacTerminalTextView(mode: .view, columns: 80, rows: 24)
+        let lines = (1...4_800).map { "conversation line \($0)\r\n" }.joined()
+        view.feed(text: lines + "LATEST")
+        let text = String(data: view.getTerminal().getBufferAsData(), encoding: .utf8) ?? ""
+        XCTAssertTrue(text.contains("conversation line 1\n"), "The start of the conversation left the scrollback")
+        XCTAssertTrue(text.contains("LATEST"))
+        XCTAssertGreaterThanOrEqual(MacTerminalTextView.scrollbackLines, 5_000)
+    }
+
     /// The Open On sheet's last step reads as a word, never a catalog key.
     func testOpenStepTitleIsAWord() {
         let title = ContinueOnDeviceSheet.openStepTitle
