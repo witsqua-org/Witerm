@@ -16,3 +16,6 @@ apps/apple/Config/Signing.local.xcconfig
 # Private server deployment credentials
 /server_ssh.txt
 /deploy/tls/
+
+# Local working notes: host paths, devices and deployment state. Never commit.
+/docs/handoff.md
