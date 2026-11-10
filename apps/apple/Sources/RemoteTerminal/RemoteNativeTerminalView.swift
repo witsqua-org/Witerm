@@ -155,10 +155,10 @@ enum TerminalKeyboardOverlap {
     }
 
     /// The renderer's memory, roughly: SwiftTerm keeps each line of the
-    /// screen and its scrollback (500 lines) as cells, about 24 bytes each.
+    /// screen and its scrollback (`scrollbackLines`) as cells, about 24 bytes each.
     var approximateBytes: Int {
         let core = surface.terminal.getTerminal()
-        return (core.rows + 500) * core.cols * 24
+        return (core.rows + RemoteNativeTerminalView.TerminalInputView.scrollbackLines) * core.cols * 24
     }
 }
 
@@ -1547,12 +1547,17 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         /// The view scrolled or got output; `true` for output.
         var scrollStateChanged: ((Bool) -> Void)?
 
+        /// Enough for a long conversation with a Codex-like tool: the Mac
+        /// sends up to 5,000 earlier lines on attach. At most 3 paired
+        /// renderers live at once (`PairedKeepAlive`).
+        static let scrollbackLines = 5_000
+
         init(mode: LocalAttachmentMode, session: LocalSessionInfo, fontSize: CGFloat, isInteractive: Bool) {
             TerminalView.textInputDebugEnabled = false
             self.mode = mode
             inputEnabled = isInteractive
             super.init(frame: .zero, font: .monospacedSystemFont(ofSize: fontSize, weight: .regular),
-                       options: TerminalOptions(cols: session.columns, rows: session.rows))
+                       options: TerminalOptions(cols: session.columns, rows: session.rows, scrollback: Self.scrollbackLines))
             inputDestination = session.name
             // Text from the key row's system Paste control (no paste prompt).
             pasteConfiguration = UIPasteConfiguration(acceptableTypeIdentifiers: [UTType.utf8PlainText.identifier, UTType.plainText.identifier])

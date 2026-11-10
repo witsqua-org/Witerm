@@ -124,6 +124,7 @@ final class AgentBroker: @unchecked Sendable {
     private func disconnect(_ connection: AgentConnection, final: Bool) {
         queue.async { [self] in
             releaseWriter(connection)
+            connection.fill?.stop(); connection.fill = nil
             connection.child?.stop()
             connection.child = nil
             connection.mode = nil
@@ -334,7 +335,11 @@ final class AgentBroker: @unchecked Sendable {
             let info = changed ? try resizeSession(previous, columns: columns, rows: rows) : previous
             // A viewer observes the controller's current window, not its stale
             // list/request grid. Its PTY must render that same authoritative size.
-            let child = try engine.attach(id, columns: info.columns, rows: info.rows, mode: mode)
+            // A renderer (one with its own scrollback) gets a tmux client that
+            // tmux repaints rather than scrolls; its ScrollbackFill then gives
+            // it each line that leaves the screen.
+            let renderer = request.history == true ? engine.rendererEnvironment() : nil
+            let child = try engine.attach(id, columns: info.columns, rows: info.rows, mode: mode, renderer: renderer)
             connection.child = child; connection.sessionID = id; connection.mode = mode; connection.peer = remote
             if mode == .control {
                 writers[id, default: []].insert(connection.token)
@@ -348,18 +353,28 @@ final class AgentBroker: @unchecked Sendable {
             // tmux's redraw of the live screen. Its stream never switches to the
             // alternate screen, so new output scrolls into that scrollback.
             let screen = request.history == true ? AlternateScreenFilter() : nil
-            if screen != nil, let earlier = try? engine.history(id, rows: info.rows) {
+            var pane: PaneHistory?
+            if screen != nil, let (earlier, read) = try? engine.history(id, rows: info.rows) {
+                pane = read
                 for offset in stride(from: 0, to: earlier.count, by: 8192) {
                     guard connection.enqueue(LocalAgentFrame(kind: .output, data: earlier.subdata(in: offset..<min(offset + 8192, earlier.count)))) else { break }
                 }
             }
+            let fill = try renderer.map { _ in
+                ScrollbackFill(reader: try engine.historyReader(id, terminal: child.terminalName), connection: connection, mark: pane)
+            }
+            connection.fill = fill
             child.start(output: { [weak connection] bytes in
                 let visible = screen?.filter(bytes) ?? bytes
+                if let fill { return fill.forward(visible) }
                 return visible.isEmpty ? true : connection?.enqueue(LocalAgentFrame(kind: .output, data: visible)) ?? false
             }, room: { [weak connection] in
                 // A slow client slows this pane's reader; tmux coalesces meanwhile.
                 connection?.waitForRoom() ?? false
-            }, ended: { [weak connection] in connection?.finish(afterFlush: true, emitClosed: true) })
+            }, ended: { [weak connection] in
+                fill?.stop()
+                connection?.finish(afterFlush: true, emitClosed: true)
+            })
         case .input:
             guard let child = connection.child, let id = connection.sessionID, let data = request.data, data.count <= 16384 else { throw AgentFailure(.invalidRequest) }
             guard connection.mode == .control else { throw AgentFailure(.readOnly) }
@@ -393,6 +408,7 @@ final class AgentBroker: @unchecked Sendable {
                 // it types, and show it the grid it must render meanwhile.
                 let current = try engine.session(id)
                 if current.columns != columns || current.rows != rows {
+                    connection.fill?.geometryChanged()
                     guard connection.enqueue(LocalAgentFrame(kind: .geometry, session: current)) else { throw AgentFailure(.backpressure) }
                     try? engine.refresh(id, terminals: [child.terminalName], columns: current.columns, rows: current.rows)
                 }
@@ -412,6 +428,7 @@ final class AgentBroker: @unchecked Sendable {
             guard let child = connection.child else { throw AgentFailure(.invalidRequest) }
             // The ACK means another endpoint may acquire control immediately.
             releaseWriter(connection)
+            connection.fill?.stop(); connection.fill = nil
             connection.child = nil
             connection.mode = nil
             connection.sessionID = nil
@@ -594,6 +611,7 @@ final class AgentBroker: @unchecked Sendable {
                 // The existing encoded delivery budget reserves space for this
                 // geometry before any new-size output is allowed. Overflow
                 // closes that endpoint rather than dropping/reordering VT.
+                connection.fill?.geometryChanged()
                 guard connection.enqueue(LocalAgentFrame(kind: .geometry, session: info)) else {
                     child.stop(); continue
                 }

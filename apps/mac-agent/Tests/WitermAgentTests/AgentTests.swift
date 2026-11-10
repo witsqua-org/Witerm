@@ -794,6 +794,45 @@ final class AgentTests: XCTestCase {
         try await client.close(sessionID: session.id)
     }
 
+    /// Round 24: a long conversation with a Codex-like tool in its inline mode
+    /// stays scrollable. tmux keeps 10,000 lines (from the first session on a
+    /// fresh server), and a renderer gets up to 5,000 earlier lines on attach.
+    func testLongOutputStaysInHistoryForRenderers() async throws {
+        guard FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/tmux") else { throw XCTSkip("tmux is required") }
+        let url = try directory()
+        let configuration = try AgentConfiguration(stateDirectory: url, shellPath: "/bin/sh")
+        let broker = try AgentBroker(configuration: configuration)
+        try broker.start()
+        let tmux = CommandRunner(executable: "/opt/homebrew/bin/tmux", environment: configuration.environment)
+        let socket = url.appendingPathComponent("tmux.sock").path
+        defer {
+            broker.stop()
+            _ = try? tmux.run(["-S", socket, "kill-server"])
+        }
+        let client = LocalAgentClient(socketURL: url.appendingPathComponent("agent.sock"))
+        let session = try await client.create(name: "Long", columns: 80, rows: 10)
+        let limit = try tmux.run(["-S", socket, "display-message", "-p", "-t", "witerm-" + session.id, "#{history_limit}"])
+        XCTAssertEqual(String(decoding: limit.output, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines), "10000",
+                       "The first session's pane must keep 10,000 lines")
+        let writer = try await client.attach(sessionID: session.id, columns: 80, rows: 10)
+        let written = Capture()
+        let writerReader = Task { for try await data in writer.output { await written.append(data) } }
+        defer { writerReader.cancel() }
+        try await writer.send(Data("i=1; while [ $i -le 4000 ]; do echo TURN_LINE_$i; i=$((i+1)); done; echo LONG_''DONE\n".utf8))
+        try await waitFor("LONG_DONE", capture: written)
+        try await writer.detach()
+
+        let reader = try await client.attach(sessionID: session.id, columns: 80, rows: 10, mode: .view, history: true)
+        let shown = Capture()
+        let shownReader = Task { for try await data in reader.output { await shown.append(data) } }
+        defer { shownReader.cancel() }
+        try await waitFor("LONG_DONE", capture: shown)
+        let text = await shown.text()
+        XCTAssertTrue(text.contains("TURN_LINE_1\u{1b}"), "The start of a 4,000-line conversation didn't reach the renderer")
+        await reader.disconnect()
+        try await client.close(sessionID: session.id)
+    }
+
     /// A burst far bigger than any queue reaches a slow renderer whole: the
     /// client waits for its consumer, the service stops reading the pane
     /// meanwhile, and nobody ends the attachment for being slow.

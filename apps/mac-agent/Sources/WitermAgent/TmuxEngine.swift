@@ -35,8 +35,8 @@ final class TmuxEngine {
     func internalName(_ id: String) -> String { "witerm-" + id }
 
     @discardableResult
-    private func command(_ arguments: [String], timeout: TimeInterval = 3, directory: String? = nil) throws -> Data {
-        let result = try runner().run(baseArguments + arguments, timeout: timeout, directory: directory)
+    private func command(_ arguments: [String], timeout: TimeInterval = 3, directory: String? = nil, limit: Int = 65536) throws -> Data {
+        let result = try runner().run(baseArguments + arguments, timeout: timeout, directory: directory, limit: limit)
         guard result.status == 0 else { throw AgentFailure() }
         return result.output
     }
@@ -79,7 +79,11 @@ final class TmuxEngine {
         // The start folder is tmux's own working directory, never -c: tmux
         // expands formats in -c, including #{…} and #(command), and no
         // escaping covers every folder name.
-        try command(["new-session", "-d", "-s", internalID, "-x", String(columns), "-y", String(rows),
+        // tmux sizes a pane's history when it makes the pane, so the limit
+        // comes first, in the same tmux command (which also starts the
+        // server). Long conversations with Codex-like tools stay scrollable.
+        try command(["start-server", ";", "set-option", "-g", "history-limit", String(Self.historyLimit), ";",
+                     "new-session", "-d", "-s", internalID, "-x", String(columns), "-y", String(rows),
                      "-e", "WITERM_SESSION_ID=\(id)", "--", configuration.shellPath, configuration.loginShell ? "-l" : "-i"],
                     directory: cwd)
         do {
@@ -235,41 +239,108 @@ final class TmuxEngine {
         guard info.st_mode & S_IFMT == S_IFDIR, access(path, X_OK | R_OK) == 0 else { throw AgentFailure(.invalidRequest) }
     }
 
+    /// Lines tmux keeps above each pane's screen.
+    static let historyLimit = 10_000
+    /// Earlier output a renderer gets on attach: lines, and bytes with colors.
+    static let historyLines = 5_000
+    static let historyBytes = 512 * 1024
+
     /// Earlier output above the visible screen, as VT bytes for a fresh
-    /// renderer's scrollback: up to 1,000 lines and 128 KiB with their colors,
-    /// then enough line feeds to scroll them all above the screen tmux
-    /// redraws next. Nothing while a program uses the alternate screen.
-    func history(_ id: String, rows: Int) throws -> Data {
+    /// renderer's scrollback: up to `historyLines` lines and `historyBytes`
+    /// with their colors, then exactly enough line feeds to scroll them all
+    /// above the screen tmux redraws next. Nothing while a program uses the alternate
+    /// screen. Also where the pane's history stood when it was read, in the
+    /// same tmux command, so a ScrollbackFill continues from exactly there.
+    func history(_ id: String, rows: Int) throws -> (earlier: Data, pane: PaneHistory) {
         _ = try session(id)
         let target = internalName(id)
-        let alternate = try command(["display-message", "-p", "-t", target, "#{alternate_on}"])
-        guard String(decoding: alternate, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) == "0" else { return Data() }
-        let captured = try command(["capture-pane", "-p", "-e", "-t", target, "-S", "-1000", "-E", "-1"], timeout: 2)
+        let captured = try command(["display-message", "-p", "-t", target, PaneHistory.format, ";",
+                                    "capture-pane", "-p", "-e", "-t", target, "-S", String(-Self.historyLines), "-E", "-1"],
+                                   timeout: 2, limit: Self.captureLimit)
         var lines = captured.split(separator: 0x0a, omittingEmptySubsequences: false)
         if lines.last?.isEmpty == true { lines.removeLast() }
+        guard !lines.isEmpty, let pane = PaneHistory(lines.removeFirst()) else { throw AgentFailure() }
+        // With no history, tmux's capture is the screen's first line.
+        guard !pane.alternate, pane.size > 0 else { return (Data(), pane) }
         // Leading blank lines are tmux's unused history, not output.
         while let first = lines.first, first.allSatisfy({ $0 == 0x20 }) { lines.removeFirst() }
-        guard !lines.isEmpty else { return Data() }
+        guard !lines.isEmpty else { return (Data(), pane) }
         var kept: [Data.SubSequence] = []
         var size = 0
         for line in lines.reversed() {
-            guard size + line.count + 2 <= 131_072 else { break }
+            guard size + line.count + 2 <= Self.historyBytes else { break }
             size += line.count + 2
             kept.append(line)
         }
+        // The last line ends without CRLF, so the line feeds after it scroll
+        // exactly the earlier lines off the screen, with no blank line below.
         var output = Data("\u{1b}[0m".utf8)
-        for line in kept.reversed() { output.append(contentsOf: line); output.append(contentsOf: [0x1b, 0x5b, 0x30, 0x6d, 0x0d, 0x0a]) }
+        for (index, line) in kept.reversed().enumerated() {
+            if index > 0 { output.append(contentsOf: [0x0d, 0x0a]) }
+            output.append(contentsOf: line); output.append(contentsOf: [0x1b, 0x5b, 0x30, 0x6d])
+        }
         output.append(Data(repeating: 0x0a, count: rows))
-        return output
+        return (output, pane)
     }
 
-    func attach(_ id: String, columns: Int, rows: Int, mode: LocalAttachmentMode) throws -> PTYChild {
+    /// The most output one tmux capture may return.
+    static let captureLimit = 8 << 20
+    /// The terminal type of a renderer's tmux client.
+    static let rendererTerm = "xterm-witerm"
+    private var rendererTerminfo: String??
+
+    /// The environment of a renderer's tmux client: TERM is xterm-256color
+    /// without scroll regions (csr), compiled once into the state directory
+    /// by the `tic` beside tmux's own ncurses, so every other capability is
+    /// the one tmux reads for xterm-256color. Without scroll regions tmux
+    /// repaints a renderer's screen instead of scrolling it, so lines reach
+    /// the renderer's scrollback only through its ScrollbackFill, once each.
+    /// Nil when the type can't be made; renderers then attach as before.
+    func rendererEnvironment() -> [String: String]? {
+        if rendererTerminfo == nil {
+            rendererTerminfo = .some(compileRendererTerminfo())
+        }
+        guard let directory = rendererTerminfo ?? nil else { return nil }
+        var environment = configuration.environment
+        environment["TERM"] = Self.rendererTerm
+        environment["TERMINFO"] = directory
+        return environment
+    }
+
+    private func compileRendererTerminfo() -> String? {
+        guard let tmux = configuration.tmuxPath else { return nil }
+        let prefix = URL(fileURLWithPath: tmux).deletingLastPathComponent().deletingLastPathComponent().path
+        let fm = FileManager.default
+        guard let tic = [prefix + "/opt/ncurses/bin/tic", "/usr/bin/tic"].first(where: fm.isExecutableFile(atPath:)) else { return nil }
+        let directory = state.directory.appendingPathComponent("terminfo", isDirectory: true)
+        let source = state.directory.appendingPathComponent("terminfo-source")
+        defer { try? fm.removeItem(at: source) }
+        let entry = "\(Self.rendererTerm)|xterm-256color for Witerm renderers without scroll regions,\n\tcsr@, use=xterm-256color,\n"
+        guard (try? Data(entry.utf8).write(to: source, options: .atomic)) != nil,
+              let result = try? CommandRunner(executable: tic, environment: configuration.environment)
+                .run(["-x", "-o", directory.path, source.path], timeout: 5),
+              result.status == 0 else { return nil }
+        return directory.path
+    }
+
+    /// Reads this session's new history for one renderer's tmux client, from
+    /// any thread.
+    func historyReader(_ id: String, terminal: String) throws -> HistoryReader {
+        _ = try session(id)
+        return HistoryReader(runner: try runner(), base: baseArguments, target: internalName(id), terminal: terminal)
+    }
+
+    func attach(_ id: String, columns: Int, rows: Int, mode: LocalAttachmentMode, renderer: [String: String]? = nil) throws -> PTYChild {
         _ = try session(id)
         guard let path = configuration.tmuxPath else { throw AgentFailure(.dependencyMissing) }
         let flags = mode == .view ? "read-only,ignore-size" : "ignore-size"
         // Sessions made before the mouse was turned off at creation get it here.
         _ = try? command(["set-option", "-g", "mouse", "off"])
-        return try PTYChild(executable: path, arguments: baseArguments + ["attach-session", "-t", internalName(id), "-f", flags], environment: configuration.environment, columns: columns, rows: rows)
+        // A renderer's screen updates as a whole (synchronized output), so a
+        // repaint never shows half drawn.
+        let features = renderer == nil ? [] : ["-T", "sync"]
+        return try PTYChild(executable: path, arguments: baseArguments + features + ["attach-session", "-t", internalName(id), "-f", flags],
+                            environment: renderer ?? configuration.environment, columns: columns, rows: rows)
     }
 
     func refresh(_ id: String, terminals: Set<String>, columns: Int, rows: Int) throws {

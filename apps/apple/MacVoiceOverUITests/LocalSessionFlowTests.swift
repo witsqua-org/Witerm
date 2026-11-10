@@ -97,6 +97,50 @@ final class LocalSessionFlowTests: XCTestCase {
     }
 
     /// Cleanup after an interrupted run: ends sessions this suite created, by
+    /// Round 24: opens an existing test session by name (one running a
+    /// Codex-like tool's conversation) and scrolls back through it with the
+    /// wheel, taking a picture of the terminal at the bottom and after each
+    /// step, into WITERM_SHOTS_DIR. It types nothing and ends nothing.
+    /// Opt-in: WITERM_HCI_SCROLL_SESSION, a name with a test prefix.
+    func testScrollBackThroughASession() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let path = environment["WITERM_HCI_FIXED_APP"], let name = environment["WITERM_HCI_SCROLL_SESSION"], name.hasPrefix("HCI ") else {
+            throw XCTSkip("Set WITERM_HCI_FIXED_APP and WITERM_HCI_SCROLL_SESSION (an \"HCI \" session)")
+        }
+        continueAfterFailure = false
+        let app = XCUIApplication(url: URL(fileURLWithPath: path))
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-witerm.onboarding.completedVersion", "1"]
+        app.launch()
+        addTeardownBlock { await MainActor.run { app.terminate() } }
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 15))
+        let row = Self.row(name, in: app)
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "No session named \(name)")
+        row.click()
+        let terminal = app.descendants(matching: .any)["localTerminalSurface"].firstMatch
+        XCTAssertTrue(terminal.waitForExistence(timeout: 15))
+        // WITERM_HCI_SCROLL_WAIT: seconds to stay open first, so output that
+        // arrives live (a new turn) scrolls into this window's scrollback.
+        RunLoop.current.run(until: Date().addingTimeInterval(Double(environment["WITERM_HCI_SCROLL_WAIT"] ?? "") ?? 3))
+        func shot(_ label: String) {
+            let image = terminal.screenshot()
+            let attachment = XCTAttachment(screenshot: image)
+            attachment.name = label; attachment.lifetime = .keepAlways; add(attachment)
+            if let folder = environment["WITERM_SHOTS_DIR"] {
+                try? FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+                try? image.pngRepresentation.write(to: URL(fileURLWithPath: folder).appendingPathComponent(label + ".png"))
+            }
+        }
+        shot("mac-0-bottom")
+        for step in 1...8 {
+            terminal.scroll(byDeltaX: 0, deltaY: 600)
+            RunLoop.current.run(until: Date().addingTimeInterval(0.8))
+            shot("mac-\(step)-up")
+        }
+        terminal.scroll(byDeltaX: 0, deltaY: -100_000)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.8))
+        shot("mac-9-back-to-bottom")
+    }
+
     /// exact name, through the same End Session a person uses. Only names
     /// with a test prefix are accepted. Opt-in: WITERM_HCI_END_SESSIONS,
     /// names separated by "|".

@@ -11,6 +11,8 @@ final class AgentConnection: @unchecked Sendable {
     /// The paired device an attachment acts for; nil for this Mac.
     var peer: LocalRemotePeer?
     var child: PTYChild?
+    /// Keeps a renderer's scrollback filled from tmux's history.
+    var fill: ScrollbackFill?
     private let condition = NSCondition()
     private var outgoing: [Data] = []
     private var queuedBytes = 0
@@ -52,6 +54,26 @@ final class AgentConnection: @unchecked Sendable {
         }
         outgoing.append(bytes)
         queuedBytes += bytes.count
+        condition.signal()
+        condition.unlock()
+        return true
+    }
+
+    /// Queues all of `frames` or, when they and `reserve` more bytes don't fit
+    /// now, none of them. Unlike `enqueue`, not fitting never ends the
+    /// connection: the caller tries again later.
+    func enqueue(all frames: [LocalAgentFrame], reserve: Int = 64 * 1024) -> Bool {
+        var encoded: [Data] = []
+        for frame in frames {
+            guard var bytes = try? wireEncoder().encode(frame) else { return false }
+            bytes.append(10)
+            encoded.append(bytes)
+        }
+        let total = encoded.reduce(0) { $0 + $1.count }
+        condition.lock()
+        guard !closing, queuedBytes + total + reserve <= Self.deliveryLimit else { condition.unlock(); return false }
+        outgoing.append(contentsOf: encoded)
+        queuedBytes += total
         condition.signal()
         condition.unlock()
         return true

@@ -44,6 +44,34 @@ docker compose -f compose.public.yaml restart server
 docker compose -f compose.public.yaml ps
 ```
 
+## Behind a shared Nginx
+
+A host that already terminates HTTPS in Nginx can also serve Witerm on its port, for example 443. Witerm keeps its own TLS and ignores forwarded headers, so Nginx must forward to Witerm over HTTPS and verify its certificate. Witerm needs only `/v1/` and `/readyz`; relay connections are long-lived WebSockets. Inside the site's `server` block (with the usual `map $http_upgrade $connection_upgrade` in `http`):
+
+```nginx
+location ^~ /v1/ {
+    proxy_pass https://127.0.0.1:37429;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    proxy_ssl_server_name on;
+    proxy_ssl_name YOUR_DOMAIN;
+    proxy_ssl_verify on;
+    proxy_ssl_verify_depth 4;
+    proxy_ssl_trusted_certificate witerm-upstream-ca.pem;  # the certificate chain's root
+    proxy_buffering off;
+    proxy_read_timeout 1h;
+    proxy_send_timeout 1h;
+    access_log off;
+}
+location = /readyz {
+    # the same proxy_pass and proxy_ssl_* lines
+}
+```
+
+Keep the default request buffering: Witerm refuses chunked requests. To keep Witerm off the network, set `SERVER_BIND_ADDRESS=127.0.0.1` in `.env`. To reuse the proxy's certificate files instead of a copy, point `TLS_DIRECTORY` at their folder and set `TLS_CERT_NAME` and `TLS_KEY_NAME` to the chain and key file names (they default to `fullchain.pem` and `privkey.pem`); after renewing, reload Nginx and restart the server container. Clients then use `https://YOUR_DOMAIN` (or the proxy's port). Device identities are scoped to the server address, so devices that move to a new address must pair again.
+
 A successful local healthcheck establishes application/database availability. Verify certificate trust and public routing separately from outside the server's network.
 
 ## Windows Docker Desktop over SSH

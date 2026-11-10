@@ -1,4 +1,5 @@
-# Standalone HTTPS deployment. Keep certificates and .env outside version control.
+# Standalone HTTPS deployment, or the upstream of a shared reverse proxy (SERVER_BIND_ADDRESS=127.0.0.1).
+# Keep certificates and .env outside version control.
 name: witerm
 
 services:
@@ -12,8 +13,8 @@ services:
       HTTP_ADDR: ":8443"
       DATABASE_URL: "postgres://${POSTGRES_USER:-witerm}:${POSTGRES_PASSWORD:?Set a random database password}@postgres:5432/${POSTGRES_DB:-witerm}?sslmode=disable"
       MIGRATE_ON_START: "true"
-      TLS_CERT_FILE: /run/tls/fullchain.pem
-      TLS_KEY_FILE: /run/tls/privkey.pem
+      TLS_CERT_FILE: /run/tls/${TLS_CERT_NAME:-fullchain.pem}
+      TLS_KEY_FILE: /run/tls/${TLS_KEY_NAME:-privkey.pem}
       RELAY_ALLOW_LOOPBACK_DEVELOPMENT: "false"
     volumes:
       - type: bind
