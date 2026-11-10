@@ -126,3 +126,7 @@ Never edit an applied migration; add a new numbered one. Contributor rules are i
 - [Design guidelines](docs/design/README.md)
 - [Verification status](docs/verification.md): what has been tested and what hasn't
 - Protocols: [server HTTP](protocol/README.md), [pairing](protocol/pairing-v1.md), [relay](protocol/relay-v1.md), [local service](protocol/local-agent-v1.md)
+
+## License
+
+Witerm is licensed under the [Apache License 2.0](LICENSE). Vendored code keeps its own license: `vendor/Citadel` is MIT ([vendor/Citadel/LICENSE](vendor/Citadel/LICENSE)).

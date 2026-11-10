@@ -56,7 +56,7 @@ From the fresh HCI review of 2026-10-27 (the "Now" items of its roadmap).
 
 ## Round 5
 
-Device continuation, from the review of 2026-10-28 ([issue #3](https://github.com/FoLAWy-py/Witerm/issues/3)).
+Device continuation, from the review of 2026-10-28 ([issue #3](https://github.com/witsqua-org/Witerm/issues/3)).
 
 | # | Principle | Change | Main code |
 |---|---|---|---|
