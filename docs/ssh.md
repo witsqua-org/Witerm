@@ -20,7 +20,7 @@ Saved hosts are under **SSH Hosts** in the Mac sidebar. On iOS they're in the **
 - Ignored: `Match`, `Include`, `IdentityFile`, agents, and every other option. No credential comes across; you enter it on first connect, and each host key is verified then.
 - Hosts already saved with the same endpoints are skipped. Entries without a user (iOS has no default user) or with an unusable jump chain are listed with the reason.
 
-**Deleting a host** is immediate and can be undone for 10 seconds. Its saved credentials stay in the Keychain, protected and unread, for that time; Undo brings the host back to them, and otherwise they're deleted when the time runs out (or at the next launch if the app quit first).
+**Deleting a host** is immediate and can be undone for 10 seconds. Its saved credentials stay in the Keychain, protected and unread, for that time; Undo brings the host back to them, and otherwise they're deleted when the time runs out (or at the next launch if the app quit first). That cleanup never asks for Face ID or Touch ID: a deleted host's credentials are removed by name (its host IDs wait in `removed-hosts.json` beside the profiles, never a secret), and the Keychain listing that catches other leftovers skips protected items instead of asking.
 
 **Not supported:** RSA keys (the engine would sign with SHA-1), hardware keys, agent forwarding, certificates, and keyboard-interactive or MFA logins.
 

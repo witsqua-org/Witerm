@@ -28,7 +28,8 @@ final class ProtectingSSHSecrets: SSHSecretStorage, @unchecked Sendable {
         lock.withLock { unlockedReads += 1; return values[account]?.data }
     }
     func writeProtected(_ data: Data, account: String) { lock.withLock { values[account] = (data, true) } }
-    func accounts() -> [String] { lock.withLock { Array(values.keys) } }
+    /// As the Keychain lists without asking: protected items are skipped.
+    func accounts() -> [String] { lock.withLock { values.filter { !$0.value.protected }.map(\.key) } }
     func isProtected(_ account: String) -> Bool? { lock.withLock { values[account]?.protected } }
 }
 
@@ -157,5 +158,46 @@ final class ProtectingSSHSecrets: SSHSecretStorage, @unchecked Sendable {
         try await store.purgeUnusedCredentials()
         XCTAssertNil(secrets.isProtected("credential-\(profile.host.id.uuidString)"))
         XCTAssertEqual(secrets.isProtected("credential-\(other.host.id.uuidString)"), true, "Hosts still saved keep theirs")
+    }
+
+    /// The app quit before the Undo window ended: the next launch's purge
+    /// still removes the deleted host's protected credential, which the
+    /// Keychain's listing can't show without asking, and asks for nothing.
+    func testAProtectedCredentialKeptForUndoIsPurgedAfterARelaunch() async throws {
+        let secrets = ProtectingSSHSecrets()
+        let folder = directory()
+        let profile = SSHProfile(name: "gone", host: SSHHost(hostname: "gone.test", username: "user"),
+                                 jumpHosts: [SSHHost(hostname: "jump.test", username: "user")])
+        do {
+            let store = try SSHProfileStore(directory: folder, secrets: secrets)
+            try await store.save(profile)
+            for host in profile.jumpHosts + [profile.host] {
+                try await store.setCredential(.password("secret"), hostID: host.id)
+            }
+            try await store.delete(id: profile.id, keepingCredentials: true)
+        }
+        let relaunched = try SSHProfileStore(directory: folder, secrets: secrets)
+        try await relaunched.purgeUnusedCredentials()
+        for host in profile.jumpHosts + [profile.host] {
+            XCTAssertNil(secrets.isProtected("credential-\(host.id.uuidString)"))
+        }
+        XCTAssertEqual(secrets.unlockedReads, 0)
+        // Nothing is left to do: a second purge finds no list.
+        try await relaunched.purgeUnusedCredentials()
+    }
+
+    /// Undo after a purge that ran while the host was deleted is impossible
+    /// (the window ended), but a host saved again before the purge keeps
+    /// its credential.
+    func testAHostRestoredBeforeThePurgeKeepsItsCredential() async throws {
+        let secrets = ProtectingSSHSecrets()
+        let store = try SSHProfileStore(directory: directory(), secrets: secrets)
+        let profile = SSHProfile(name: "back", host: SSHHost(hostname: "back.test", username: "user"))
+        try await store.save(profile)
+        try await store.setCredential(.password("secret"), hostID: profile.host.id)
+        try await store.delete(id: profile.id, keepingCredentials: true)
+        try await store.save(profile)
+        try await store.purgeUnusedCredentials()
+        XCTAssertEqual(secrets.isProtected("credential-\(profile.host.id.uuidString)"), true)
     }
 }

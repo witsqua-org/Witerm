@@ -24,7 +24,9 @@ protocol SSHSecretStorage: Sendable {
     func read(_ account: String, unlock: SSHUnlock) throws -> Data?
     /// Replaces an item with one that needs device-owner authentication to read.
     func writeProtected(_ data: Data, account: String) throws
-    /// Every account in this store, read from attributes only (no prompt).
+    /// The accounts in this store that can be listed without asking. On
+    /// the Mac a listing that may ask stopped for Touch ID at launch, so
+    /// protected items are skipped; remove those by name.
     func accounts() throws -> [String]
 }
 
@@ -127,7 +129,11 @@ struct SSHKeychainStorage: SSHSecretStorage {
                                 kSecAttrSynchronizable as String: false,
                                 kSecUseDataProtectionKeychain as String: true,
                                 kSecReturnAttributes as String: true,
-                                kSecMatchLimit as String: kSecMatchLimitAll]
+                                kSecMatchLimit as String: kSecMatchLimitAll,
+                                // Without it the Mac asked for Touch ID (the
+                                // system's "Witerm needs to authenticate")
+                                // to list protected items.
+                                kSecUseAuthenticationUI as String: kSecUseAuthenticationUISkip]
         var items: CFTypeRef?
         let result = SecItemCopyMatching(q as CFDictionary, &items)
         if result == errSecItemNotFound { return [] }
@@ -264,16 +270,22 @@ public actor SSHProfileStore {
     // merely each instance's independent actor executor.
     private static let diskLock = NSRecursiveLock()
     private let url: URL
+    /// Hosts deleted with their credentials kept for Undo, so the purge can
+    /// remove those by name: the Keychain lists protected items only by
+    /// asking. Host IDs only, never secrets.
+    private let removedURL: URL
     private let secrets: any SSHSecretStorage
     public init(directory: URL? = nil) throws {
         let base = try directory ?? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
                                                           appropriateFor: nil, create: true).appendingPathComponent("Witerm/SSH", isDirectory: true)
         url = base.appendingPathComponent("profiles.json")
+        removedURL = base.appendingPathComponent("removed-hosts.json")
         secrets = SSHKeychainStorage()
         try Self.prepare(base)
     }
     init(directory: URL, secrets: any SSHSecretStorage) throws {
         url = directory.appendingPathComponent("profiles.json")
+        removedURL = directory.appendingPathComponent("removed-hosts.json")
         self.secrets = secrets
         try Self.prepare(directory)
     }
@@ -401,18 +413,44 @@ public actor SSHProfileStore {
         Self.diskLock.lock(); defer { Self.diskLock.unlock() }
         guard keepingCredentials else { return try delete(id: id) }
         var values = try profiles()
-        guard values.contains(where: { $0.id == id }) else { return }
+        guard let removed = values.first(where: { $0.id == id }) else { return }
         values.removeAll { $0.id == id }
+        let remaining = Set(values.flatMap { $0.jumpHosts + [$0.host] }.map(\.id))
+        let kept = (removed.jumpHosts + [removed.host]).map(\.id).filter { !remaining.contains($0) }
+        try writeRemoved(removedHosts().union(kept))
         try write(values)
     }
 
     /// Removes the credentials of hosts no saved profile uses any more.
+    /// Never asks: deleted hosts' credentials go by name, and the listing
+    /// that catches other leftovers skips protected items.
     public func purgeUnusedCredentials() throws {
         Self.diskLock.lock(); defer { Self.diskLock.unlock() }
         let used = Set(try profiles().flatMap { $0.jumpHosts + [$0.host] }.map { account($0.id) })
+        let removed = removedHosts()
+        for id in removed where !used.contains(account(id)) { try secrets.delete(account(id)) }
+        if !removed.isEmpty { try writeRemoved([]) }
         for name in try secrets.accounts() where name.hasPrefix("credential-") && !used.contains(name) {
             try secrets.delete(name)
         }
+    }
+
+    /// A missing or unreadable list is empty: it only ever adds deletions.
+    private func removedHosts() -> Set<UUID> {
+        guard let values = try? removedURL.resourceValues(forKeys: [.isSymbolicLinkKey, .isRegularFileKey, .fileSizeKey]),
+              values.isRegularFile == true, values.isSymbolicLink != true, (values.fileSize ?? Int.max) <= 65_536,
+              let data = try? Data(contentsOf: removedURL),
+              let ids = try? JSONDecoder().decode([UUID].self, from: data) else { return [] }
+        return Set(ids)
+    }
+
+    private func writeRemoved(_ ids: Set<UUID>) throws {
+        guard !ids.isEmpty else {
+            if FileManager.default.fileExists(atPath: removedURL.path) { try FileManager.default.removeItem(at: removedURL) }
+            return
+        }
+        try JSONEncoder().encode(ids.sorted { $0.uuidString < $1.uuidString }).write(to: removedURL, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: removedURL.path)
     }
 }
 

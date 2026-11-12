@@ -27,9 +27,15 @@ final class CommandLineToolModel {
     private(set) var state = State.notInstalled
     private(set) var issue: String?
 
-    let linkURL: URL = CommandLineToolModel.homeDirectory.appendingPathComponent(".local/bin/witerm")
-    var bundledURL: URL { Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/witerm") }
+    let linkURL: URL
+    let bundledURL: URL
     var isBundled: Bool { FileManager.default.isExecutableFile(atPath: bundledURL.path) }
+
+    init(linkURL: URL = CommandLineToolModel.homeDirectory.appendingPathComponent(".local/bin/witerm"),
+         bundledURL: URL = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/witerm")) {
+        self.linkURL = linkURL
+        self.bundledURL = bundledURL
+    }
     var version: String {
         let info = Bundle.main.infoDictionary
         let short = info?["CFBundleShortVersionString"] as? String ?? "?"
@@ -54,8 +60,28 @@ final class CommandLineToolModel {
             state = .installed
         } else if Self.isWitermCommand(target) {
             state = .otherCopy(target.path)
+            // The copy it named is gone (the app was moved or deleted), so
+            // the command can't run, and nothing else can use this link:
+            // point it at this copy, as the person chose to install it.
+            // A copy that's still there stays theirs to switch.
+            var info = stat()
+            if isBundled, lstat(target.path, &info) != 0, errno == ENOENT { relink() }
         } else {
             state = .blocked
+        }
+    }
+
+    /// Replaces Witerm's own link with one to this copy. On a failure the
+    /// state says what's there now, and Settings offers Use This Copy or
+    /// Install.
+    private func relink() {
+        do {
+            try FileManager.default.removeItem(at: linkURL)
+            try FileManager.default.createSymbolicLink(at: linkURL, withDestinationURL: bundledURL)
+            state = .installed
+        } catch {
+            var info = stat()
+            if lstat(linkURL.path, &info) != 0 { state = .notInstalled }
         }
     }
 
@@ -95,7 +121,7 @@ final class CommandLineToolModel {
     }
 
     /// The account's home, not the app's environment.
-    private static var homeDirectory: URL {
+    nonisolated private static var homeDirectory: URL {
         if let entry = getpwuid(geteuid()), let directory = entry.pointee.pw_dir {
             return URL(fileURLWithPath: FileManager.default.string(withFileSystemRepresentation: directory, length: strlen(directory)), isDirectory: true)
         }

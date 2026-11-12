@@ -43,3 +43,75 @@ import XCTest
         XCTAssertFalse(SSHHostDetail.atPrompt("-- INSERT --"))
     }
 }
+
+/// The `witerm` link in a temporary folder, never the real ~/.local/bin.
+@MainActor final class CommandLineToolLinkTests: XCTestCase {
+    private var root: URL!
+    private var link: URL { root.appendingPathComponent("bin/witerm") }
+
+    override func setUpWithError() throws {
+        root = FileManager.default.temporaryDirectory.appendingPathComponent("witerm-link-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("bin"), withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws { try? FileManager.default.removeItem(at: root) }
+
+    /// A Witerm copy's command at `<name>.app/Contents/Helpers/witerm`.
+    private func copy(_ name: String, present: Bool = true) throws -> URL {
+        let command = root.appendingPathComponent("\(name).app/Contents/Helpers/witerm")
+        if present {
+            try FileManager.default.createDirectory(at: command.deletingLastPathComponent(), withIntermediateDirectories: true)
+            FileManager.default.createFile(atPath: command.path, contents: Data("#!/bin/sh\n".utf8), attributes: [.posixPermissions: 0o755])
+        }
+        return command
+    }
+
+    private func target() throws -> String { try FileManager.default.destinationOfSymbolicLink(atPath: link.path) }
+
+    /// The owner moved the project: the link named a copy that's gone, so
+    /// `witerm` failed with "no such file or directory". It now follows
+    /// this copy without being asked.
+    func testALinkToAMovedCopyFollowsThisCopy() throws {
+        let gone = try copy("Old", present: false)
+        let this = try copy("Witerm")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: gone)
+        let model = CommandLineToolModel(linkURL: link, bundledURL: this)
+        model.refresh()
+        XCTAssertEqual(model.state, .installed)
+        XCTAssertEqual(try target(), this.path)
+        XCTAssertEqual(model.command, "witerm")
+    }
+
+    /// Another copy that's still there stays the person's to switch.
+    func testALinkToAnotherCopyThatStillExistsIsKept() throws {
+        let other = try copy("Other")
+        let this = try copy("Witerm")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: other)
+        let model = CommandLineToolModel(linkURL: link, bundledURL: this)
+        model.refresh()
+        XCTAssertEqual(model.state, .otherCopy(other.standardizedFileURL.path))
+        XCTAssertEqual(try target(), other.path)
+    }
+
+    /// Without its own command, this copy doesn't take over a broken link.
+    func testACopyWithoutTheCommandLeavesTheLink() throws {
+        let gone = try copy("Old", present: false)
+        let this = try copy("Witerm", present: false)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: gone)
+        let model = CommandLineToolModel(linkURL: link, bundledURL: this)
+        model.refresh()
+        XCTAssertEqual(model.state, .otherCopy(gone.standardizedFileURL.path))
+        XCTAssertEqual(try target(), gone.path)
+    }
+
+    /// A broken link that isn't Witerm's is never replaced.
+    func testABrokenLinkThatIsntWitermsIsNeverReplaced() throws {
+        let elsewhere = root.appendingPathComponent("tools/witerm")
+        let this = try copy("Witerm")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: elsewhere)
+        let model = CommandLineToolModel(linkURL: link, bundledURL: this)
+        model.refresh()
+        XCTAssertEqual(model.state, .blocked)
+        XCTAssertEqual(try target(), elsewhere.path)
+    }
+}
