@@ -82,6 +82,8 @@ struct OrbitSettings: View {
         .onDisappear { orbit.unwatch() }
         .alert(String(localized: "Delete All Conversations?", bundle: .main), isPresented: $clearing) {
             Button(String(localized: "Cancel", bundle: .main), role: .cancel) {}
+                // Return cancels: deleting can't be undone.
+                .keyboardShortcut(.defaultAction)
             Button(String(localized: "Delete All", bundle: .main), role: .destructive) { Task { await orbit.clearAll() } }
         } message: {
             Text(String(localized: "Every conversation and task is removed from this Mac, and running ones stop. Terminals keep running.", bundle: .main))

@@ -134,10 +134,6 @@ struct MacDevicesView: View {
                 Text(String(localized: "Paired devices can open only the terminals you allow.", bundle: .main))
             }
             .toggleStyle(.switch)
-            // A switch in the system accent, as Settings draws its switches;
-            // the window's ink tint drew it black (white in dark). Only the
-            // switch: the page's bordered buttons keep their neutral labels.
-            .tint(Color.accentColor)
             .disabled(!remoteAccess.loaded || (service.state != .ready && !remoteAccess.isEnabled(for: server.address)))
             .accessibilityIdentifier("allowRemoteConnections")
             let state = MacRemoteAccessState(enabled: remoteAccess.isEnabled(for: server.address),

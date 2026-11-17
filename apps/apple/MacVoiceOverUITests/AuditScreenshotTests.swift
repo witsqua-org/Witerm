@@ -448,6 +448,10 @@ final class AuditScreenshotTests: XCTestCase {
             default: break
             }
         }
+        // Back to General before closing, so no later keystroke can reach
+        // Orbit's Delete All Conversations… (two test tasks were lost to an
+        // audit run on 2026-11-18, most likely that way).
+        if let general = labeled(settingsWindow.toolbars.buttons, ["General", "通用"]) { general.click(); pause(0.5) }
         app.typeKey("w", modifierFlags: .command)
         pause(1)
     }

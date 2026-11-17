@@ -6,13 +6,14 @@ struct PrimaryButton: View {
     let title: String
     let systemImage: String?
     let fullWidth: Bool
-    let tint: Color
+    let tint: Color?
     let action: () -> Void
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
-    /// `tint` is a machine's identity hue when the action targets one; the
-    /// neutral accent otherwise. Both keep contrast with `ActionLabel`.
-    init(_ title: String, systemImage: String? = nil, fullWidth: Bool = false, tint: Color = WitermTheme.accent,
+    /// `tint` is a machine's identity hue when the action targets one (its
+    /// label in `ActionLabel`); nil for the control accent: the system accent
+    /// on the Mac, the theme's accent on iOS.
+    init(_ title: String, systemImage: String? = nil, fullWidth: Bool = false, tint: Color? = nil,
          action: @escaping () -> Void) {
         self.title = title
         self.systemImage = systemImage
@@ -39,12 +40,12 @@ struct PrimaryButton: View {
                 }
             }
             .fontWeight(.semibold)
-            .foregroundStyle(WitermTheme.actionLabel)
+            .foregroundStyle(tint == nil ? WitermTheme.controlLabel : WitermTheme.actionLabel)
             .frame(maxWidth: fullWidth ? .infinity : nil)
             .fixedSize(horizontal: false, vertical: true)
         }
         .witermControl()
-        .tint(tint)
+        .tint(tint ?? WitermTheme.controlAccent)
     }
 }
 
@@ -399,7 +400,7 @@ struct TerminalHeader<Actions: View>: View {
         }
         // Ink rather than an inherited tint, so text actions keep contrast on
         // the header surface.
-        .tint(hue ?? WitermTheme.accent)
+        .tint(hue ?? WitermTheme.controlAccent)
     }
 
     private var summary: some View {
@@ -573,10 +574,16 @@ extension View {
 }
 
 extension View {
-    /// The app's neutral ink tint, shared by iOS and the Mac. The Mac sidebar
-    /// opts back into the system accent for its selection.
+    /// The tint for native controls: the theme's accent on iOS, the system
+    /// accent on the Mac (`WitermTheme.controlAccent`).
     func witermTint() -> some View {
-        tint(WitermTheme.accent)
+        #if os(macOS)
+        // No tint at all: a tint, even the system accent, would also color
+        // plain bordered buttons' labels, which a native window draws in ink.
+        tint(nil)
+        #else
+        tint(WitermTheme.controlAccent)
+        #endif
     }
 
     /// The shared control size in capsule form: large touch controls on iOS,

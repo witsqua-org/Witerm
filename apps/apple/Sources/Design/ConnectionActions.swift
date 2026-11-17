@@ -37,11 +37,11 @@ struct ConnectionActions: View {
                 }
             }
             .fontWeight(.semibold)
-            .foregroundStyle(WitermTheme.actionLabel)
+            .foregroundStyle(WitermTheme.controlLabel)
             .frame(maxWidth: .infinity)
         }
         .witermControl()
-        .tint(WitermTheme.accent)
+        .tint(WitermTheme.controlAccent)
         .disabled(isChecking)
         .accessibilityIdentifier("primaryAction")
         .keyboardShortcut(.return, modifiers: .command)
@@ -73,8 +73,8 @@ struct ConnectionActivity: View {
                     .controlSize(.small)
             }
         }
-        .tint(WitermTheme.accent)
-        .foregroundStyle(WitermTheme.accent)
+        .tint(WitermTheme.controlAccent)
+        .foregroundStyle(WitermTheme.controlAccent)
         .frame(width: 20, height: 20)
         .accessibilityHidden(true)
     }

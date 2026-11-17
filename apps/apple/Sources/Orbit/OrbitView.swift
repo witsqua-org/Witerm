@@ -26,6 +26,8 @@ struct OrbitView: View {
         .alert(String(localized: "Delete “\(deleting?.title ?? "")”?", bundle: .main),
                isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
             Button(String(localized: "Cancel", bundle: .main), role: .cancel) { deleting = nil }
+                // Return cancels: deleting can't be undone.
+                .keyboardShortcut(.defaultAction)
             Button(String(localized: "Delete", bundle: .main), role: .destructive) {
                 if let thread = deleting { Task { await orbit.delete(thread.id) } }
                 deleting = nil
@@ -35,6 +37,8 @@ struct OrbitView: View {
         }
         .alert(String(localized: "Delete All Conversations?", bundle: .main), isPresented: $clearing) {
             Button(String(localized: "Cancel", bundle: .main), role: .cancel) {}
+                // Return cancels: deleting can't be undone.
+                .keyboardShortcut(.defaultAction)
             Button(String(localized: "Delete All", bundle: .main), role: .destructive) { Task { await orbit.clearAll() } }
         } message: {
             Text(String(localized: "Every conversation and task is removed from this Mac, and running ones stop. Terminals keep running.", bundle: .main))
@@ -54,12 +58,10 @@ struct OrbitView: View {
             }
         }
         // A list of things to read, not a second sidebar: plain rows on the
-        // surface beside the conversation's canvas, with the system accent
-        // for selection, as the window's sidebar has.
+        // surface beside the conversation's canvas.
         .listStyle(.inset)
         .scrollContentBackground(.hidden)
         .background(WitermTheme.surface)
-        .tint(Color.accentColor)
         .overlay {
             if orbit.threads.isEmpty {
                 Text(String(localized: "No conversations yet", bundle: .main))

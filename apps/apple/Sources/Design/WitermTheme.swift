@@ -7,6 +7,26 @@ import SwiftUI
     private static var colors: ThemeColors { ThemeStore.shared.colors }
     static var accent: Color { colors.accent }
     static var actionLabel: Color { colors.actionLabel }
+    /// What tints native controls (switches, radios, checkboxes, segments,
+    /// prominent buttons). The Mac's controls follow the system accent in
+    /// every theme (the owner's choice, 2026-11-18); on iOS a theme shows
+    /// through its accent, so controls take it.
+    static var controlAccent: Color {
+        #if os(macOS)
+        Color.accentColor
+        #else
+        colors.accent
+        #endif
+    }
+    /// Text on `controlAccent`: white, as on the Mac's own prominent buttons,
+    /// whatever the accent; the theme's `actionLabel` on iOS.
+    static var controlLabel: Color {
+        #if os(macOS)
+        Color.white
+        #else
+        colors.actionLabel
+        #endif
+    }
     static var secondary: Color { colors.secondary }
     static var ink: Color { colors.ink }
     #if os(macOS)

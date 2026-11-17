@@ -27,7 +27,7 @@ Six themes (Round 29), chosen in Settings â–¸ Appearance on the Mac (also View â
 
 | Token | Graphite light | Graphite dark | High contrast (any theme) | Use |
 |---|---|---|---|---|
-| Accent | `#17181C` | `#ECEEF2` | black / white | Primary actions, selected cards, links in content, iOS tint |
+| Accent | `#17181C` | `#ECEEF2` | black / white | iOS: primary actions and the tint of every control. Both: selected cards, icons and marks. Mac controls use the system accent instead (see Host spectrum). |
 | ActionLabel | `#FFFFFF` | `#0F1013` | white / black | Text on the accent and on machine hues |
 | Ink | `#111215` | `#ECEEF2` | black / white | Primary content |
 | SecondaryInk | `#5A5F6A` | `#8F95A0` | `#33363D` / `#C9CDD4` | Explanations and status |
@@ -44,7 +44,7 @@ Graphite is neutral; the other themes tint the canvas lightly and keep their col
 
 - **Assignment.** A machine gets the least-used hue when it first appears and keeps it. Deleting a host frees its hue.
 - **Contrast.** Each hue has light and dark variants that keep 4.5:1 on Surface, on their own 12% tint, and under ActionLabel.
-- **Mac exception.** The Mac sidebar keeps the system accent in every theme: macOS draws a sidebar selection in it whatever the app's tint, so its + buttons and icons match the selection rather than the theme. The Mac target sets no global accent, so AppKit controls (switches, radios, default buttons) stay native in every theme.
+- **Mac controls follow the system accent** (the owner's decision, 2026-11-18). On the Mac, every native control takes the system accent in every theme, with white labels on prominent buttons, as in any Mac app: switches, radios, checkboxes, segmented controls, prominent and default buttons (`PrimaryButton` included), and the sidebar selection with its + buttons. `WitermTheme.controlAccent` is that tint (the theme's accent on iOS), and `controlLabel` is the text on it. A theme shows on the Mac through its canvas, cards, text, terminal, icons and marks, never through a control's fill. An action aimed at a machine (Connect) still takes that machine's hue.
 - **Color is never the only signal.** Connection state always uses words and symbols too.
 
 ## Navigation
