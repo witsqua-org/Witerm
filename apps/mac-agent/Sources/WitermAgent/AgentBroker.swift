@@ -308,8 +308,8 @@ final class AgentBroker: @unchecked Sendable {
             reply(session: withSharing(try engine.rename(try sessionID(), to: name)))
         case .folder:
             guard connection.child == nil else { throw AgentFailure(.invalidRequest) }
-            let cwd = try engine.folder(try sessionID())
-            connection.enqueue(LocalAgentFrame(id: request.id, kind: .response, ok: true, cwd: cwd))
+            let place = try engine.place(try sessionID())
+            connection.enqueue(LocalAgentFrame(id: request.id, kind: .response, ok: true, cwd: place.cwd, command: place.command))
         case .close:
             let id = try sessionID()
             try engine.close(id)

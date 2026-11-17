@@ -449,10 +449,10 @@ final class AuditScreenshotTests: XCTestCase {
             }
         } else {
             app.buttons["sshSaveOnly"].click()
-            if hostRow.waitForExistence(timeout: 10) { hostRow.click() }
+            if hostRow.waitForExistence(timeout: 10) { app.browse(to: hostRow) }
         }
         guard hostRow.waitForExistence(timeout: 10) else { return }
-        hostRow.click()
+        app.browse(to: hostRow)
         pause(1)
         shot("50-ssh-host-page")
         hoverShot(any("sshConnectProfile"), "51-hover-ssh-connect-primary")

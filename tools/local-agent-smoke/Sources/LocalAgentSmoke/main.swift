@@ -200,6 +200,24 @@ func waitForAgent(_ client: LocalAgentClient) async throws {
             try await Task.sleep(for: .milliseconds(50))
         }
         guard reported == real else { throw SmokeFailure("Folder reported \(reported), not \(real)") }
+        // Round 28: the foreground program, and nothing at the login shell's prompt.
+        guard try await client.place(sessionID: session.id).command == nil else { throw SmokeFailure("A command at the prompt") }
+        try await restarted.send(Data("sleep 30\n".utf8))
+        var running: String?
+        for _ in 0..<100 {
+            running = try await client.place(sessionID: session.id).command
+            if running != nil { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        guard running == "sleep" else { throw SmokeFailure("Foreground command was \(running ?? "nothing"), not sleep") }
+        try await restarted.send(Data([3]))
+        var back: String? = "sleep"
+        for _ in 0..<100 {
+            back = try await client.place(sessionID: session.id).command
+            if back == nil { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        guard back == nil else { throw SmokeFailure("Still reported \(back ?? "") after Ctrl-C") }
         let beside = try await client.create(name: "Smoke beside", cwd: reported)
         guard try await client.folder(sessionID: beside.id) == real else { throw SmokeFailure("New session started elsewhere") }
         try await client.close(sessionID: beside.id)
@@ -216,6 +234,6 @@ func waitForAgent(_ client: LocalAgentClient) async throws {
         }
         try await client.close(sessionID: session.id)
         guard try await client.sessions().isEmpty else { throw SmokeFailure("Close left a session") }
-        print("PASS: real PTY input, resize, shared typing with a refused paired writer, read-only, alternate-screen repaint, reconnect, agent restart, rename, the shell's folder and a session started beside it, bursts to a slow renderer (\(timings.joined(separator: ", "))) and explicit close")
+        print("PASS: real PTY input, resize, shared typing with a refused paired writer, read-only, alternate-screen repaint, reconnect, agent restart, rename, the shell's folder and foreground program and a session started beside it, bursts to a slow renderer (\(timings.joined(separator: ", "))) and explicit close")
     }
 }

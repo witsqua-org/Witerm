@@ -38,7 +38,15 @@ struct SSHHostDetail: View {
                         }
                     }
             } else {
-                ScrollView { overview.readableContent(padding: WitermMetrics.Space.xxl) }
+                // Round 28: the host as one centered summary (its tile, name,
+                // address and actions) rather than a row pinned to the top.
+                ScrollView {
+                    overview
+                        .frame(maxWidth: 520)
+                        .padding(WitermMetrics.Space.xxl)
+                        .frame(maxWidth: .infinity)
+                        .containerRelativeFrame(.vertical, alignment: .center) { length, _ in length }
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -77,10 +85,27 @@ struct SSHHostDetail: View {
         return "$#%>❯".contains(last)
     }
 
-    /// The host's own actions in one row; the window title already names it,
-    /// and its subtitle gives the address.
+    /// The host in its hue, then its actions; problems and the route around them.
     private var overview: some View {
-        VStack(alignment: .leading, spacing: WitermMetrics.Space.l) {
+        VStack(alignment: .center, spacing: WitermMetrics.Space.l) {
+            VStack(spacing: WitermMetrics.Space.s) {
+                Image(systemName: WitermSymbols.sshHost)
+                    .font(.system(size: 28))
+                    .foregroundStyle(profile.identityHue)
+                    .frame(width: 64, height: 64)
+                    .background(WitermTheme.tint(profile.identityHue), in: .rect(cornerRadius: 18, style: .continuous))
+                    .accessibilityHidden(true)
+                Text(profile.name)
+                    .font(WitermType.pageTitle)
+                    .multilineTextAlignment(.center)
+                    .accessibilityAddTraits(.isHeader)
+                if let address = profile.distinctAddress {
+                    Text(verbatim: address)
+                        .font(WitermType.codeInline)
+                        .foregroundStyle(WitermTheme.secondary)
+                        .textSelection(.enabled)
+                }
+            }
             if model.issueProfileID == profile.id || model.issueProfileID == nil {
                 SSHIssueBanner(model: model, ui: ui, profile: profile)
             }
@@ -98,7 +123,6 @@ struct SSHHostDetail: View {
                     }
                 }
                 HStack(spacing: WitermMetrics.Space.m) {
-                    IconTile(systemImage: WitermSymbols.sshHost, tint: profile.identityHue)
                     PrimaryButton(model.disconnected[profile.id] == nil ? String(localized: "Connect", bundle: .main) : String(localized: "Reconnect", bundle: .main), tint: profile.identityHue) {
                         ui.open(profile, model: model)
                     }
@@ -115,7 +139,7 @@ struct SSHHostDetail: View {
             }
 
             // A direct route is already the address in the subtitle.
-            if !profile.jumpHosts.isEmpty { route }
+            if !profile.jumpHosts.isEmpty { route.frame(maxWidth: .infinity, alignment: .leading) }
         }
     }
 

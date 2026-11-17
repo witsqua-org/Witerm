@@ -194,7 +194,8 @@ struct WorkspaceActions {
     var newSession: (() -> Void)?
     /// A new terminal in the selected terminal's current folder (Mac).
     var newSessionBeside: (() -> Void)? = nil
-    /// Open Quickly (Mac): every terminal, host, snippet and command by name.
+    /// Open Quickly: every terminal, host and command by name (and snippets
+    /// on the Mac).
     var openQuickly: (() -> Void)? = nil
     var newSSHConnection: () -> Void
     var importSSHHosts: (() -> Void)?
@@ -277,9 +278,12 @@ struct WitermCommands: Commands {
                 .disabled(actions?.importSSHHosts == nil)
             #if os(macOS)
             Divider()
+            #endif
+            // Mac, and iPhone and iPad with a hardware keyboard (Round 28).
             Button(String(localized: "Open Quickly…", bundle: .main)) { actions?.openQuickly?() }
                 .keyboardShortcut("o", modifiers: [.command, .shift])
                 .disabled(actions?.openQuickly == nil)
+            #if os(macOS)
             Divider()
             if let openOn = actions?.openOn {
                 Menu(String(localized: "Open On", bundle: .main)) {

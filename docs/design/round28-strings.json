@@ -1,0 +1,10 @@
+{
+  "add": {
+    "%@ finished in “%@”": "%1$@ 已在“%2$@”中结束",
+    "%@ finished %@": "%1$@ 已于%2$@结束",
+    "Terminals, hosts and commands": "终端、主机和命令",
+    "%@ just finished": "%@ 刚刚结束"
+  },
+  "change": {},
+  "remove": []
+}

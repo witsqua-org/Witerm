@@ -210,12 +210,56 @@ final class TmuxEngine {
     /// The folder the pane's foreground process is in now. The format is
     /// ours and constant; tmux's answer is checked like a start folder, so a
     /// folder that has gone since reads as not found.
-    func folder(_ id: String) throws -> String {
+    func folder(_ id: String) throws -> String { try place(id).cwd }
+
+    /// Where a session's shell is and what runs in its foreground (Round 28):
+    /// the folder as `folder` reports it, and the foreground program's name
+    /// when it isn't the session's own shell (nil at the prompt). One tmux
+    /// call; the shell's process ID and the command come first, each on its
+    /// own line, so a folder name with a line break can't be mistaken for them.
+    func place(_ id: String) throws -> (cwd: String, command: String?) {
         _ = try session(id)
-        let output = try command(["display-message", "-p", "-t", internalName(id), "#{pane_current_path}"])
-        let path = String(decoding: output, as: UTF8.self).trimmingCharacters(in: .newlines)
+        let target = internalName(id)
+        let output = String(decoding: try command(["display-message", "-p", "-t", target, "#{pane_pid}", ";",
+                                                   "display-message", "-p", "-t", target, "#{pane_current_command}", ";",
+                                                   "display-message", "-p", "-t", target, "#{pane_current_path}"]),
+                            as: UTF8.self)
+        let lines = output.split(separator: "\n", maxSplits: 2, omittingEmptySubsequences: false)
+        guard lines.count == 3 else { throw AgentFailure() }
+        let path = String(lines[2]).trimmingCharacters(in: .newlines)
         try Self.validateDirectory(path)
-        return path
+        // The shell is in the foreground exactly when the terminal's
+        // foreground process group is its own; the name is only a fallback
+        // (`/bin/sh` runs as bash, so names alone can mislead).
+        if let pid = pid_t(lines[0]), let atPrompt = Self.shellInForeground(pid: pid) {
+            return (path, atPrompt ? nil : Self.foregroundCommand(String(lines[1]), shell: ""))
+        }
+        return (path, Self.foregroundCommand(String(lines[1]), shell: configuration.shellPath))
+    }
+
+    /// Whether `pid` (a pane's shell) leads its terminal's foreground
+    /// process group, from the kernel; nil when that can't be read.
+    static func shellInForeground(pid: pid_t) -> Bool? {
+        guard pid > 0 else { return nil }
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, size >= MemoryLayout<kinfo_proc>.stride else { return nil }
+        let group = info.kp_eproc.e_tpgid
+        guard group > 0 else { return nil }
+        return group == pid
+    }
+
+    /// The foreground program's name, or nil when it's the shell itself (a
+    /// login shell may be named `-zsh`). Names are short and printable, or
+    /// left out.
+    static func foregroundCommand(_ raw: String, shell: String) -> String? {
+        var name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if name.hasPrefix("-") { name.removeFirst() }
+        let shellName = shell.isEmpty ? "" : URL(fileURLWithPath: shell).lastPathComponent
+        guard !name.isEmpty, name != shellName, (1...64).contains(name.unicodeScalars.count),
+              !name.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else { return nil }
+        return name
     }
 
     /// Sharing a session ends keeping it private.

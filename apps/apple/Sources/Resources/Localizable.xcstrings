@@ -120,6 +120,40 @@
         }
       }
     },
+    "%@ finished %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ finished %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 已于%2$@结束"
+          }
+        }
+      }
+    },
+    "%@ finished in “%@”" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ finished in “%@”"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 已在“%2$@”中结束"
+          }
+        }
+      }
+    },
     "%@ is already paired with this Mac. It can open this terminal from Terminals if you allow it in Devices." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -167,6 +201,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ 已加入"
+          }
+        }
+      }
+    },
+    "%@ just finished" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ just finished"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 刚刚结束"
           }
         }
       }
@@ -12064,6 +12115,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "你选择的终端"
+          }
+        }
+      }
+    },
+    "Terminals, hosts and commands" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terminals, hosts and commands"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "终端、主机和命令"
           }
         }
       }

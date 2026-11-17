@@ -153,7 +153,7 @@ final class HoverScreenshotTests: XCTestCase {
             if hostRow.waitForExistence(timeout: 10) {
                 hostRow.hover()
                 pause("hover-sidebar-ssh-row")
-                hostRow.click()
+                app.browse(to: hostRow)
                 let suffix = String(hostRow.identifier.dropFirst("sshProfileRow-".count))
                 let more = app.descendants(matching: .any)["sshProfileActions-\(suffix)"].firstMatch
                 if more.waitForExistence(timeout: 5) { more.hover(); pause("hover-ssh-host-more") }

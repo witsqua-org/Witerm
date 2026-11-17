@@ -199,6 +199,11 @@ struct TerminalsHome: View {
         .listStyle(.insetGrouped)
         // Always there (Round 27): it finds terminals and hosts, and takes an
         // address to add. Favorites Only still waits for enough hosts.
+        // On iPhone the system shows an always-visible search drawer under an
+        // inline title (checked in Round 28; asking for a large title here or
+        // above changes nothing). The automatic drawer would bring the large
+        // title back but hide the field until a pull, and the field is the
+        // way to type an address, so it stays.
         .modifier(HostSearch(enabled: true, text: $search, prompt: String(localized: "Search or enter user@host", bundle: .main)))
         .onChange(of: showsFilters) { _, shown in if !shown { favoritesOnly = false } }
         .overlay {

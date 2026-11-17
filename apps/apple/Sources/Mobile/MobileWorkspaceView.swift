@@ -19,6 +19,10 @@ struct MobileWorkspaceView: View {
     @State private var activeServerID: ConnectionModel.ID?
     @State private var loaded = false
     @State private var continuing: ContinueFlowRequest?
+    /// Open Quickly (⇧⌘O, Round 28), and what was chosen in it: run once the
+    /// sheet has closed.
+    @State private var quickOpen = false
+    @State private var quickOpenChoice: QuickOpenItem?
     /// The Welcome Tour: shown once on first launch, again from Settings → Help.
     @State private var touring = false
     @Environment(ServerList.self) private var servers
@@ -148,6 +152,70 @@ struct MobileWorkspaceView: View {
         return sshUI.shownID.flatMap { ssh.session(for: $0) != nil ? .ssh($0) : nil }
     }
 
+    // MARK: Open Quickly
+
+    /// Every paired terminal and SSH host, then the commands that work now.
+    private var quickOpenItems: [QuickOpenItem] {
+        var items: [QuickOpenItem] = []
+        for (terminal, name) in openTerminals {
+            guard case .paired(let server, let grant, let session) = terminal else { continue }
+            items.append(QuickOpenItem(id: "paired:\(server):\(grant):\(session)", kind: .terminal, title: name,
+                                       symbol: "terminal") { show(terminal) })
+        }
+        for profile in ssh.orderedProfiles() {
+            let session = ssh.session(for: profile.id)
+            items.append(QuickOpenItem(
+                id: "ssh:\(profile.id.uuidString)", kind: .host, title: profile.name,
+                detail: session?.activity.summary(home: nil) ?? profile.endpointSummary,
+                symbol: session != nil ? "terminal.fill" : WitermSymbols.sshHost,
+                keywords: ["ssh", profile.host.hostname, profile.host.username], tint: profile.identityHue) {
+                    if session != nil {
+                        show(.ssh(profile.id))
+                    } else if !ssh.connecting {
+                        tab = .terminals
+                        sshUI.open(profile, model: ssh)
+                    }
+                })
+        }
+        func command(_ id: String, _ title: String, symbol: String, shortcut: String? = nil, keywords: [String] = [],
+                     _ perform: @escaping () -> Void) -> QuickOpenItem {
+            QuickOpenItem(id: "action:" + id, kind: .command, title: title, symbol: symbol, keywords: keywords,
+                          shortcut: shortcut, perform: perform)
+        }
+        if !ssh.connecting {
+            items.append(command("addSSHHost", String(localized: "Add SSH Host…", bundle: .main), symbol: "network",
+                                 shortcut: "⇧⌘N", keywords: ["ssh", "server", "connect"]) {
+                tab = .terminals
+                sshUI.presentNewWhenVisible()
+            })
+            items.append(command("importSSHHosts", String(localized: "Import SSH Hosts…", bundle: .main),
+                                 symbol: "square.and.arrow.down", keywords: ["ssh", "config"]) {
+                tab = .terminals
+                sshUI.importing = true
+            })
+        }
+        items.append(command("addDevice", String(localized: "Add Device", bundle: .main), symbol: WitermSymbols.pair,
+                             keywords: ["mac", "pair", "scan", "invitation"]) { continueFromDevice() })
+        items.append(command("devices", String(localized: "Devices", bundle: .main), symbol: WitermSymbols.openOn,
+                             keywords: ["paired", "unpair", "relay server"]) { tab = .devices })
+        items.append(command("settings", String(localized: "Settings", bundle: .main), symbol: "gearshape",
+                             keywords: ["preferences", "font", "colors", "snippets", "keyboard"]) { tab = .settings })
+        items.append(command("tour", String(localized: "Welcome Tour", bundle: .main), symbol: "questionmark.circle",
+                             keywords: ["help"]) { touring = true })
+        return items
+    }
+
+    /// An SSH address typed into Open Quickly that no saved host has.
+    private func quickOpenSuggestions(_ query: String) -> [QuickOpenItem] {
+        guard !ssh.connecting, let text = SSHAddressInput.unsavedSuggestion(query, saved: ssh.profiles) else { return [] }
+        return [QuickOpenItem(id: "suggest:addSSHHost", kind: .command,
+                              title: String(localized: "Add SSH Host “\(text)”…", bundle: .main),
+                              detail: String(localized: "Sign in to another computer with SSH", bundle: .main), symbol: "network") {
+            tab = .terminals
+            sshUI.presentNewWhenVisible(address: text)
+        }]
+    }
+
     /// A paired terminal opens through the same detach-then-attach as any
     /// switch; an SSH host is shown as it is.
     private func show(_ terminal: OpenTerminal) {
@@ -196,7 +264,28 @@ struct MobileWorkspaceView: View {
             continuing = ContinueFlowRequest(invitation: note.object as? String)
         }
         // Hardware-keyboard commands; the iPad lists them while ⌘ is held.
+        #if DEBUG
+        // UI tests only: XCUITest's ⌘ keys don't reach the app on the
+        // simulators, so this opens Open Quickly as ⇧⌘O would.
+        .task {
+            if UserDefaults.standard.bool(forKey: "witerm.debug.openQuickly") { quickOpen = true }
+        }
+        #endif
+        .sheet(isPresented: $quickOpen, onDismiss: {
+            if let choice = quickOpenChoice {
+                quickOpenChoice = nil
+                choice.perform()
+            }
+        }) {
+            MobileQuickOpenSheet(items: quickOpenItems, suggestions: quickOpenSuggestions) { choice in
+                quickOpenChoice = choice
+                quickOpen = false
+            } cancel: {
+                quickOpen = false
+            }
+        }
         .focusedSceneValue(\.workspaceActions, WorkspaceActions(
+            openQuickly: { quickOpen = true },
             newSSHConnection: { sshUI.presentNewWhenVisible() },
             importSSHHosts: { sshUI.importing = true },
             refresh: {

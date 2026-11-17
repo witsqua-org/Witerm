@@ -488,13 +488,16 @@ public struct LocalAgentFrame: Codable, Sendable, Equatable {
   public let flow: Int?
   /// `folder` replies only: the absolute folder the session's shell is in.
   public let cwd: String?
+  /// `folder` replies only: the foreground program's name, absent while the
+  /// session's own shell is in the foreground (at the prompt).
+  public let command: String?
 
   public init(
     version: Int = 1, id: String? = nil, kind: LocalFrameKind, ok: Bool? = nil,
     error: LocalAgentErrorCode? = nil, status: LocalAgentStatus? = nil,
     sessions: [LocalSessionInfo]? = nil, session: LocalSessionInfo? = nil,
     mode: LocalAttachmentMode? = nil, data: Data? = nil, accesses: [LocalDeviceAccess]? = nil,
-    guests: [LocalGuestInvite]? = nil, flow: Int? = nil, cwd: String? = nil
+    guests: [LocalGuestInvite]? = nil, flow: Int? = nil, cwd: String? = nil, command: String? = nil
   ) {
     self.version = version
     self.id = id
@@ -510,6 +513,19 @@ public struct LocalAgentFrame: Codable, Sendable, Equatable {
     self.guests = guests
     self.flow = flow
     self.cwd = cwd
+    self.command = command
+  }
+}
+
+/// A session's folder and foreground program (`folder` replies).
+public struct LocalSessionPlace: Sendable, Equatable {
+  public let cwd: String
+  /// Nil at the shell's prompt.
+  public let command: String?
+
+  public init(cwd: String, command: String?) {
+    self.cwd = cwd
+    self.command = command
   }
 }
 
