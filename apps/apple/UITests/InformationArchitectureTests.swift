@@ -118,6 +118,28 @@ import XCTest
         XCTAssertFalse(any("quickAddSSHHost").waitForExistence(timeout: 2))
     }
 
+    /// Round 28: Open Quickly finds a command by name and runs it after the
+    /// sheet closes. XCUITest's ⌘ keys don't reach the app on these
+    /// simulators (⇧⌘N doesn't either), so the DEBUG launch argument
+    /// `-witerm.debug.openQuickly 1` opens it as ⇧⌘O would.
+    func testOpenQuicklyFindsAndRunsACommand() {
+        continueAfterFailure = false
+        app = XCUIApplication()
+        app.launchArguments = ["-witerm.onboarding.completedVersion", "1", "-witerm.debug.openQuickly", "1",
+                               "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        addTeardownBlock { [app] in await MainActor.run { app?.terminate() } }
+        let field = app.textFields["quickOpenField"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "Open Quickly opens")
+        field.typeText("devic")
+        let devices = any("quickOpen-action:devices")
+        XCTAssertTrue(devices.waitForExistence(timeout: 5))
+        shot("28-open-quickly")
+        devices.tap()
+        XCTAssertTrue(field.waitForNonExistence(timeout: 5), "The sheet closes")
+        XCTAssertTrue(app.buttons["continueFromDevice"].waitForExistence(timeout: 5), "Devices is shown")
+    }
+
     func testTerminalRowsHaveNoSwipeActions() {
         launch()
         let terminal = app.buttons["remoteSession-fixture-s1"]

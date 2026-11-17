@@ -174,7 +174,13 @@ final class AuditScreenshotTests: XCTestCase {
               let second = newTerminal(rows: rows, terminal: terminal, name: "Audit B", captureRename: false) else {
             XCTFail("Couldn't create the audit terminals"); return
         }
-        let rowA = any(first), rowB = any(second)
+        // The sidebar row itself: its context menu carries the same
+        // identifier and can come first in the tree (it has no frame).
+        func sidebarRow(_ id: String) -> XCUIElement {
+            app.descendants(matching: .any).matching(NSPredicate(format: "identifier == %@ AND elementType != %d",
+                                                                 id, XCUIElement.ElementType.menu.rawValue)).firstMatch
+        }
+        let rowA = sidebarRow(first), rowB = sidebarRow(second)
 
         // An open terminal, typing.
         shot("01-main-typing")
@@ -303,11 +309,23 @@ final class AuditScreenshotTests: XCTestCase {
             hoverShot(cancel, "22-hover-continue-cancel")
             close()
         }
+        // macOS can add its own "Ask Siri" item to the top of a context menu
+        // a moment after it opens, moving every item down a row: let the
+        // menu settle before hovering, and close every level before going on.
+        // XCTest's menu query doesn't always see a context menu, so Escape is
+        // pressed regardless: one per level, and one spare.
+        func closeMenus() {
+            for _ in 0..<3 { app.typeKey(.escape, modifierFlags: []); pause(0.2) }
+        }
         for (identifier, name) in [("openOnNewDevice", "23-continue-code"), ("openOnSomeoneElse", "24-continue-invite")] {
+            closeMenus()
             row.rightClick()
+            pause(0.8)
             if let openOn = [app.menuItems["openOnMenu"], app.menuItems["Open On"], app.menuItems["打开于"]].first(where: \.exists) {
                 openOn.hover()
-                let item = app.menuItems[identifier]
+                let labels = identifier == "openOnNewDevice" ? ["New Device…", "新设备…"] : ["Someone Else…", "其他人…"]
+                let byLabel = app.menuItems.matching(NSPredicate(format: "identifier == %@ OR title IN %@", identifier, labels)).firstMatch
+                let item = byLabel
                 if item.waitForExistence(timeout: 3) {
                     item.click()
                     if title.waitForExistence(timeout: 10) {
@@ -315,9 +333,10 @@ final class AuditScreenshotTests: XCTestCase {
                         shot(name)
                         close()
                     }
-                } else { app.typeKey(.escape, modifierFlags: []); app.typeKey(.escape, modifierFlags: []) }
-            } else { app.typeKey(.escape, modifierFlags: []) }
+                } else { closeMenus() }
+            } else { closeMenus() }
         }
+        closeMenus()
     }
 
     // MARK: Settings
@@ -449,10 +468,10 @@ final class AuditScreenshotTests: XCTestCase {
             }
         } else {
             app.buttons["sshSaveOnly"].click()
-            if hostRow.waitForExistence(timeout: 10) { hostRow.click() }
+            if hostRow.waitForExistence(timeout: 10) { app.browse(to: hostRow) }
         }
         guard hostRow.waitForExistence(timeout: 10) else { return }
-        hostRow.click()
+        app.browse(to: hostRow)
         pause(1)
         shot("50-ssh-host-page")
         hoverShot(any("sshConnectProfile"), "51-hover-ssh-connect-primary")

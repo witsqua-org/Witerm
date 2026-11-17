@@ -169,15 +169,7 @@ struct MacWorkspaceView: View {
             if tourVersion < WelcomeTour.version { showingTour = true }
             await refresh()
         }
-        // Where each terminal is, rechecked while this Mac's terminals are
-        // in reach; a `cd` shows within a few seconds.
-        .task(id: service.state == .ready && terminal.tmuxAvailable) {
-            guard service.state == .ready, terminal.tmuxAvailable else { return }
-            while !Task.isCancelled {
-                if NSApp.isActive, let client = service.client { await terminal.refreshFolders(using: client) }
-                try? await Task.sleep(for: .seconds(4))
-            }
-        }
+        .modifier(TerminalPlaceTracking(service: service, terminal: terminal))
         .onReceive(NotificationCenter.default.publisher(for: .witermShowWelcomeTour)) { _ in
             NSApp.activate()
             showingTour = true
@@ -314,6 +306,17 @@ struct MacWorkspaceView: View {
         terminal.create(name: terminal.nextSessionName, using: client)
     }
 
+    /// "npm just finished", then "npm finished 2 minutes ago", for a
+    /// terminal's Finished mark. Under a minute the formatter would say "in
+    /// 0 seconds", so that's said in words.
+    static func finishedText(_ done: LocalTerminalModel.FinishedCommand, now: Date = .now) -> String {
+        guard now.timeIntervalSince(done.at) >= 60 else {
+            return String(localized: "\(done.command) just finished", bundle: .main)
+        }
+        let ago = RelativeDateTimeFormatter().localizedString(for: done.at, relativeTo: now)
+        return String(localized: "\(done.command) finished \(ago)", bundle: .main)
+    }
+
     /// A new terminal in the folder the selected terminal's shell is in now,
     /// named after that folder.
     private func newSessionBeside() {
@@ -381,6 +384,12 @@ struct MacWorkspaceView: View {
         if case .ssh(let id) = new, let session = ssh.session(for: id) {
             session.terminal.surface.terminal.focusWhenShown = focus
         }
+        // Round 28: a click on a host connects it, as a click on a terminal
+        // opens it; arrowing through the list only browses.
+        if case .ssh(let id) = new, focus, ssh.session(for: id) == nil, !ssh.connecting,
+           let profile = ssh.profiles.first(where: { $0.id == id }) {
+            sshUI.open(profile, model: ssh)
+        }
         guard case .local(let id) = new, let client = service.client else { return }
         terminal.select(id, using: client, focus: focus)
         if terminal.selectedID != id {
@@ -395,7 +404,7 @@ struct MacWorkspaceView: View {
     /// work yet"), each with its menu shortcut so the shortcut can be learned.
     private var quickOpenItems: [QuickOpenItem] {
         var items: [QuickOpenItem] = []
-        if service.state == .ready, terminal.tmuxAvailable, let client = service.client {
+        if service.state == .ready, terminal.tmuxAvailable, service.client != nil {
             for session in terminal.sessions {
                 let open = terminal.openMode(session) != nil
                 items.append(QuickOpenItem(
@@ -403,13 +412,7 @@ struct MacWorkspaceView: View {
                     detail: terminal.summary(for: session.id),
                     symbol: open ? "terminal.fill" : "terminal",
                     keywords: [String(localized: "This Mac", bundle: .main)]) {
-                        // Already selected but left: open it again to type.
-                        // Otherwise selecting it opens it, as a click does.
-                        if selection == .local(session.id), terminal.attachment == nil {
-                            terminal.attach(session, using: client, mode: .control)
-                        } else {
-                            show(.local(session.id))
-                        }
+                        show(.local(session.id))
                     })
             }
         }
@@ -422,7 +425,6 @@ struct MacWorkspaceView: View {
                 keywords: ["ssh", profile.host.hostname, profile.host.username, profile.endpointSummary],
                 tint: profile.identityHue) {
                     show(.ssh(profile.id))
-                    if ssh.session(for: profile.id) == nil, !ssh.connecting { sshUI.open(profile, model: ssh) }
                 })
         }
         items += quickOpenCommands
@@ -521,9 +523,11 @@ struct MacWorkspaceView: View {
     }
 
     /// Selects a destination and gives it the keyboard, as a click would.
+    /// Already selected: opens it (a terminal left here is opened again, a
+    /// host connects) or gives it the keyboard; otherwise selecting it does.
     private func show(_ destination: MacDestination) {
         if selection == destination {
-            refocus()
+            _ = openSelection()
         } else {
             focusNextSelection = true
             selection = destination
@@ -576,7 +580,7 @@ struct MacWorkspaceView: View {
                             if let session {
                                 Button(String(localized: "Disconnect", bundle: .main)) { ssh.disconnectChosen(session) }
                             } else {
-                                Button(String(localized: "Connect", bundle: .main)) { selection = .ssh(profile.id); sshUI.open(profile, model: ssh) }
+                                Button(String(localized: "Connect", bundle: .main)) { show(.ssh(profile.id)) }
                                     .disabled(ssh.connecting)
                             }
                             // A checkmark shows the state, as on iOS.
@@ -676,6 +680,14 @@ struct MacWorkspaceView: View {
                                 .help(ListFormatter.localizedString(byJoining: elsewhereDetail))
                                 .accessibilityHidden(true)
                             }
+                            // A long command ended while it wasn't shown here.
+                            if let done = terminal.finished[session.id] {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(WitermType.meta)
+                                    .foregroundStyle(WitermTheme.positive)
+                                    .help(Self.finishedText(done))
+                                    .accessibilityHidden(true)
+                            }
                             // Watching here: nothing typed in this window is sent.
                             if here == .view {
                                 Image(systemName: "eye")
@@ -707,6 +719,7 @@ struct MacWorkspaceView: View {
                                      keptPrivate ? String(localized: "Kept private", bundle: .main)
                                         : shared ? String(localized: "Shared", bundle: .main) : nil,
                                      elsewhereDetail.isEmpty ? nil : ListFormatter.localizedString(byJoining: elsewhereDetail),
+                                     terminal.finished[session.id].map { Self.finishedText($0) },
                                      doing]
                     .compactMap { $0 }.joined(separator: ", "))
                 .accessibilityIdentifier("localSession-\(session.id)")
@@ -908,12 +921,7 @@ struct MacWorkspaceView: View {
                             show(.local(id))
                         }
                     },
-                    openHost: { id in
-                        show(.ssh(id))
-                        if ssh.session(for: id) == nil, !ssh.connecting, let profile = ssh.profiles.first(where: { $0.id == id }) {
-                            sshUI.open(profile, model: ssh)
-                        }
-                    },
+                    openHost: { show(.ssh($0)) },
                     showDevices: { selection = .devices },
                     pairDevice: { continuing = ContinueRequest(sessionID: nil) })
             .safeAreaInset(edge: .top, spacing: 0) {
@@ -936,7 +944,8 @@ struct MacWorkspaceView: View {
                                 detail: summary ?? started, detailIsCode: summary != nil,
                                 lastLine: lastLine == summary ? nil : lastLine,
                                 here: terminal.openMode(session), shared: session.sharing?.shared == true,
-                                keptPrivate: session.sharing?.keepPrivate == true, elsewhere: terminal.elsewhere(session))
+                                keptPrivate: session.sharing?.keepPrivate == true, elsewhere: terminal.elsewhere(session),
+                                finished: terminal.finished[session.id])
         }
     }
 
@@ -984,6 +993,29 @@ private struct SidebarSectionHeader: View {
                 .help(add + " " + help)
                 .accessibilityIdentifier(identifier)
         }
+    }
+}
+/// Where each terminal is and what it runs, rechecked while this Mac's
+/// terminals are in reach, in the background too, so a long command that
+/// finishes while Witerm isn't in front still gets its mark. Finished
+/// terminals count on the Dock icon until they're opened; no notification
+/// permission is needed for that (Round 28).
+private struct TerminalPlaceTracking: ViewModifier {
+    let service: LocalAgentService
+    let terminal: LocalTerminalModel
+
+    func body(content: Content) -> some View {
+        content
+            .task(id: service.state == .ready && terminal.tmuxAvailable) {
+                guard service.state == .ready, terminal.tmuxAvailable else { return }
+                while !Task.isCancelled {
+                    if let client = service.client { await terminal.refreshFolders(using: client) }
+                    try? await Task.sleep(for: .seconds(NSApp.isActive ? 4 : 8))
+                }
+            }
+            .onChange(of: terminal.finished.count, initial: true) { _, count in
+                NSApp.dockTile.badgeLabel = count > 0 ? String(count) : nil
+            }
     }
 }
 #endif

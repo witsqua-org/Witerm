@@ -132,16 +132,64 @@ final class LocalTerminalModel {
     /// reports it (`folder`), so every terminal says where it is, including
     /// ones never shown in this window. In memory only.
     private(set) var folders: [String: String] = [:]
+    /// What runs in each terminal's foreground now, when it isn't at the
+    /// shell's prompt (Round 28), from the same request. In memory only.
+    private(set) var commands: [String: String] = [:]
+    /// Terminals whose long command finished while they weren't shown here,
+    /// until they're opened (Round 28).
+    private(set) var finished: [String: FinishedCommand] = [:]
+    /// When each running command was first seen, to tell a long job from a
+    /// quick `ls`.
+    @ObservationIgnored private var runningSince: [String: (command: String, since: Date)] = [:]
 
-    /// Asks the service where each terminal is. Cheap (one tmux query each,
-    /// at most 16); a terminal that doesn't answer keeps no folder.
-    func refreshFolders(using client: LocalAgentClient) async {
-        var next: [String: String] = [:]
+    struct FinishedCommand: Equatable {
+        let command: String
+        let at: Date
+    }
+
+    /// A command must have run this long for its end to be worth a mark.
+    static let finishWorthNoting: TimeInterval = 10
+
+    /// Asks the service where each terminal is and what it runs. Cheap (one
+    /// tmux query each, at most 16); a terminal that doesn't answer keeps no
+    /// folder.
+    func refreshFolders(using client: LocalAgentClient, now: Date = .now) async {
+        var nextFolders: [String: String] = [:], nextCommands: [String: String] = [:]
         for session in sessions {
             if Task.isCancelled { return }
-            if let folder = try? await client.folder(sessionID: session.id) { next[session.id] = folder }
+            if let place = try? await client.place(sessionID: session.id) {
+                nextFolders[session.id] = place.cwd
+                if let command = place.command { nextCommands[session.id] = command }
+            }
         }
-        if next != folders { folders = next }
+        if nextFolders != folders { folders = nextFolders }
+        noteCommands(nextCommands, live: Set(sessions.map(\.id)), now: now)
+    }
+
+    /// Follows each terminal's foreground command and marks a long one that
+    /// ended while its terminal wasn't the one shown here.
+    func noteCommands(_ next: [String: String], live: Set<String>, now: Date = .now) {
+        for (id, command) in next where runningSince[id]?.command != command {
+            runningSince[id] = (command, now)
+            finished[id] = nil
+        }
+        for (id, run) in runningSince where next[id] == nil {
+            runningSince[id] = nil
+            let shownHere = id == selectedID && attachment != nil
+            if live.contains(id), !shownHere, now.timeIntervalSince(run.since) >= Self.finishWorthNoting {
+                finished[id] = FinishedCommand(command: run.command, at: now)
+                let name = sessions.first { $0.id == id }?.name ?? ""
+                AccessibilityNotification.Announcement(
+                    String(localized: "\(run.command) finished in “\(name)”", bundle: .main)).post()
+            }
+        }
+        finished = finished.filter { live.contains($0.key) }
+        if next != commands { commands = next }
+    }
+
+    /// Opening a terminal is seeing what finished there.
+    func acknowledgeFinished(_ id: String) {
+        if finished[id] != nil { finished[id] = nil }
     }
 
     /// Where a terminal is and what it's doing, in one line: what the shell
@@ -151,7 +199,9 @@ final class LocalTerminalModel {
         let activity = activity(for: sessionID)
         let reported = [activity.title, activity.folder(home: home)].compactMap { $0 }
         if !reported.isEmpty { return reported.joined(separator: " · ") }
-        if let folder = folders[sessionID] { return Self.tilde(folder, home: home) }
+        // What runs there, then where: "npm · ~/src/app".
+        let seen = [commands[sessionID], folders[sessionID].map { Self.tilde($0, home: home) }].compactMap { $0 }
+        if !seen.isEmpty { return seen.joined(separator: " · ") }
         return activity.lastLine
     }
 
@@ -348,6 +398,7 @@ final class LocalTerminalModel {
 
     func attach(_ session: LocalSessionInfo, using client: LocalAgentClient, mode: LocalAttachmentMode, focus: Bool = true) {
         focusOnAttach = focus
+        acknowledgeFinished(session.id)
         let previous = attachment
         attachment = nil
         attachmentID = UUID()

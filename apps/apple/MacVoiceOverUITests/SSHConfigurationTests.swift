@@ -78,8 +78,9 @@ import XCTest
         for _ in 0..<10 {
             let row = leftovers.firstMatch
             guard row.exists else { break }
-            // Through the host page's More menu, as a person would.
-            row.click()
+            // Through the host page's More menu, as a person would; arrowing
+            // to the row shows the page without connecting (Round 28).
+            app.browse(to: row)
             let suffix = String(row.identifier.dropFirst("sshProfileRow-".count))
             let more = app.descendants(matching: .any)["sshProfileActions-\(suffix)"].firstMatch
             XCTAssertTrue(more.waitForExistence(timeout: 5))

@@ -360,7 +360,7 @@ final class PerformanceTests: XCTestCase {
         for _ in 0..<4 {
             let row = hosts.firstMatch
             guard row.exists else { break }
-            row.click()
+            app.browse(to: row)
             let id = String(row.identifier.dropFirst("sshProfileRow-".count))
             if any("sshDisconnect").exists {
                 any("sshDisconnect").click()

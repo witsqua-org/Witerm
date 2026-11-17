@@ -984,6 +984,25 @@ final class AgentTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(25))
         }
         XCTAssertEqual(moved, try real(next), "The folder didn't follow the shell's cd")
+        // Round 28: what runs in the foreground, and nothing at the prompt.
+        let atPrompt = try await client.place(sessionID: session.id)
+        XCTAssertNil(atPrompt.command, "The shell itself isn't reported as a command")
+        try await attachment.send(Data("sleep 30\n".utf8))
+        var running: String?
+        for _ in 0..<200 {
+            running = try await client.place(sessionID: session.id).command
+            if running != nil { break }
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        XCTAssertEqual(running, "sleep")
+        try await attachment.send(Data([3]))
+        var back: String? = "sleep"
+        for _ in 0..<200 {
+            back = try await client.place(sessionID: session.id).command
+            if back == nil { break }
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        XCTAssertNil(back, "Back at the prompt, no command is reported")
         let beside = try await client.create(name: "Beside", cwd: moved)
         let besideFolder = try await client.folder(sessionID: beside.id)
         XCTAssertEqual(besideFolder, try real(next))
@@ -995,6 +1014,16 @@ final class AgentTests: XCTestCase {
         catch LocalAgentClientError.rejected(let code) { XCTAssertEqual(code, .notFound) }
         try await attachment.detach()
         try await client.close(sessionID: session.id)
+    }
+
+    func testForegroundCommandLeavesOutTheShell() {
+        XCTAssertNil(TmuxEngine.foregroundCommand("zsh", shell: "/bin/zsh"))
+        XCTAssertNil(TmuxEngine.foregroundCommand("-zsh\n", shell: "/bin/zsh"))
+        XCTAssertEqual(TmuxEngine.foregroundCommand("vim", shell: "/bin/zsh"), "vim")
+        XCTAssertEqual(TmuxEngine.foregroundCommand("node", shell: "/opt/homebrew/bin/fish"), "node")
+        XCTAssertNil(TmuxEngine.foregroundCommand("", shell: "/bin/zsh"))
+        XCTAssertNil(TmuxEngine.foregroundCommand("bad\u{1b}name", shell: "/bin/zsh"))
+        XCTAssertNil(TmuxEngine.foregroundCommand(String(repeating: "x", count: 65), shell: "/bin/zsh"))
     }
 
     func testDetachAcknowledgementAllowsImmediateControllerHandoff() async throws {

@@ -26,7 +26,7 @@ import XCTest
             format: "identifier BEGINSWITH %@ AND label == %@ AND value == %@",
             "sshProfileRow-", profileName, "fixture@127.0.0.1:\(port)")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10))
-        row.click()
+        app.browse(to: row)
         let rowID = row.identifier
         let suffix = String(rowID.dropFirst("sshProfileRow-".count))
         let menu = app.descendants(matching: .any)["sshProfileActions-\(suffix)"].firstMatch

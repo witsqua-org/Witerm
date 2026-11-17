@@ -18,6 +18,9 @@ struct HomeTerminal: Identifiable {
     let keptPrivate: Bool
     /// Who else has it open: Typing on iPhone, Watching on iPad.
     let elsewhere: [String]
+    /// A long command that ended while it wasn't shown here, until it's
+    /// opened (Round 28).
+    var finished: LocalTerminalModel.FinishedCommand? = nil
 }
 
 /// A saved SSH host as Home shows it.
@@ -197,6 +200,14 @@ struct MacHomeView: View {
             openTerminal(terminal.id, .control)
         } status: {
             HStack(spacing: WitermMetrics.Space.s) {
+                if let finished = terminal.finished {
+                    // Refreshed each minute, so "just finished" ages honestly.
+                    TimelineView(.everyMinute) { context in
+                        Label(MacWorkspaceView.finishedText(finished, now: context.date), systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(WitermTheme.positive)
+                            .lineLimit(1)
+                    }
+                }
                 if terminal.here == .control {
                     Label(String(localized: "Typing", bundle: .main), systemImage: WitermSymbols.typing)
                 } else if terminal.here == .view {
