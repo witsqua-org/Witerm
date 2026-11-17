@@ -4,12 +4,13 @@ import SwiftUI
 /// The selected Settings tab. Other views set it before opening Settings to
 /// land on a specific tab.
 enum SettingsTab: String, CaseIterable {
-    case general, appearance, terminal, snippets
+    case general, appearance, terminal, snippets, orbit
     static let key = "witerm.settingsTab"
 }
 
 struct MacSettingsView: View {
     let service: LocalAgentService
+    let orbit: OrbitService
     @AppStorage(SettingsTab.key) private var tab = SettingsTab.general.rawValue
     /// Settings is its own scene, so it watches the network itself.
     @State private var network = NetworkStatus()
@@ -36,6 +37,10 @@ struct MacSettingsView: View {
                 .settingsPane()
                 .tabItem { Label(String(localized: "Snippets", bundle: .main), systemImage: "text.insert") }
                 .tag(SettingsTab.snippets.rawValue)
+            OrbitSettings(orbit: orbit)
+                .settingsPane()
+                .tabItem { Label(String(localized: "Orbit", bundle: .main), systemImage: "sparkles") }
+                .tag(SettingsTab.orbit.rawValue)
         }
         .environment(network)
         // Devices moved to the main window (Round 27) and Command Line into

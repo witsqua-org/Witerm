@@ -35,6 +35,22 @@ struct CLIRunner {
         case .unshare(let reference): return try await unshare(reference)
         case .rename(let reference, let name): return try await rename(reference, to: name)
         case .attach(let reference, let view): return try await attach(reference, view: view)
+        case .mcp(let readOnly):
+            // The service is looked for on each call, so an agent can start
+            // before Witerm does.
+            let orbit = AgentLocator.orbitDirectory(environment: environment).map {
+                OrbitHandoffTools(client: OrbitClient(socketURL: $0.appendingPathComponent(OrbitPaths.socketName)), readOnly: readOnly)
+            }
+            let tools = TerminalTools(client: try client(), readOnly: readOnly, state: TerminalToolState(agent: "Agent"))
+            try await MCPServer(tools: tools, orbit: orbit).serve()
+            return .success
+        case .orbitServe:
+            guard let directory = AgentLocator.orbitDirectory(environment: environment) else {
+                throw CLIFailure(exit: .serviceUnavailable, code: "not_installed", message: "Orbit runs from inside the Witerm app.")
+            }
+            let socket = try AgentLocator.socketURL(override: invocation.socket, environment: environment)
+            try await OrbitDaemon.serve(directory: directory, agentSocket: socket,
+                                        endpoint: OrbitDaemon.endpoint(environment: environment))
         }
     }
 
@@ -258,7 +274,7 @@ struct CLIRunner {
 
     static func describe(_ attachments: [LocalAttachmentInfo]) -> String {
         if attachments.isEmpty { return "—" }
-        return attachments.map { "\($0.device?.name ?? "this Mac") (\($0.mode == .control ? "control" : "view"))" }
+        return attachments.map { "\($0.agent ?? $0.device?.name ?? "this Mac") (\($0.mode == .control ? "control" : "view"))" }
             .joined(separator: ", ")
     }
 
@@ -330,13 +346,16 @@ struct AttachmentJSON: Encodable, Equatable {
     let mode: String
     /// null means this Mac.
     let device: DeviceJSON?
+    /// The AI agent this Mac's attachment acts for, when it does.
+    var agent: String? = nil
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(mode, forKey: .mode)
         try container.encode(device, forKey: .device)
+        try container.encodeIfPresent(agent, forKey: .agent)
     }
-    enum CodingKeys: String, CodingKey { case mode, device }
+    enum CodingKeys: String, CodingKey { case mode, device, agent }
 }
 
 struct SessionJSON: Encodable, Equatable {
@@ -359,7 +378,7 @@ struct SessionJSON: Encodable, Equatable {
         `private` = session.sharing?.keepPrivate ?? false
         remote_typing = session.sharing?.remoteTyping ?? true
         attachments = (session.sharing?.attachments ?? []).map {
-            AttachmentJSON(mode: $0.mode.rawValue, device: $0.device.map { DeviceJSON(id: $0.deviceID, name: $0.name) })
+            AttachmentJSON(mode: $0.mode.rawValue, device: $0.device.map { DeviceJSON(id: $0.deviceID, name: $0.name) }, agent: $0.agent)
         }
     }
 }

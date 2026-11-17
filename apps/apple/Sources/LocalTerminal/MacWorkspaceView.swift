@@ -16,6 +16,8 @@ enum MacDestination: Hashable {
     case home
     /// Paired devices, invitations and remote access, in the window rather than Settings.
     case devices
+    /// Orbit, the assistant: its conversations and delegated tasks.
+    case orbit
     case local(String)
     case ssh(UUID)
 
@@ -24,6 +26,7 @@ enum MacDestination: Hashable {
         switch self {
         case .home: "place:home"
         case .devices: "place:devices"
+        case .orbit: "place:orbit"
         case .local(let id): "local:\(id)"
         case .ssh(let id): "ssh:\(id.uuidString)"
         }
@@ -33,7 +36,7 @@ enum MacDestination: Hashable {
     var isTerminal: Bool {
         switch self {
         case .local, .ssh: true
-        case .home, .devices: false
+        case .home, .devices, .orbit: false
         }
     }
 }
@@ -43,6 +46,7 @@ enum MacDestination: Hashable {
 /// its own +. The detail column is the work itself, or the page chosen.
 struct MacWorkspaceView: View {
     let service: LocalAgentService
+    let orbit: OrbitService
     @Environment(ServerList.self) private var servers
     @Environment(MacPairedDevices.self) private var pairedDevices
     @State private var selection: MacDestination? = .home
@@ -331,7 +335,7 @@ struct MacWorkspaceView: View {
         switch selection {
         case .local?: if terminal.attachment != nil { terminal.focusTerminal() }
         case .ssh(let id)?: ssh.session(for: id)?.terminal.surface.terminal.requestFocus()
-        case .home?, .devices?, nil: break
+        case .home?, .devices?, .orbit?, nil: break
         }
     }
 
@@ -358,7 +362,7 @@ struct MacWorkspaceView: View {
                 sshUI.open(profile, model: ssh)
             }
             return true
-        case .home?, .devices?, nil:
+        case .home?, .devices?, .orbit?, nil:
             return false
         }
     }
@@ -505,6 +509,14 @@ struct MacWorkspaceView: View {
                                 keywords: ["preferences", "font", "colors", "snippets"]) { openSettings() })
         commands.append(command("home", LocalTerminalHelp.homePage, symbol: "house",
                                 keywords: ["start", "overview"]) { selection = .home })
+        commands.append(command("orbit", String(localized: "Orbit", bundle: .main), symbol: "sparkles",
+                                keywords: ["ai", "assistant", "agent", "ask", "task", "openai"]) { selection = .orbit })
+        if let session = selectedLocalSession {
+            commands.append(command("askOrbit", String(localized: "Ask Orbit About “\(session.name)”", bundle: .main),
+                                    symbol: "sparkles", keywords: ["ai", "assistant", "explain", "summarize"]) {
+                askOrbit(about: session)
+            })
+        }
         commands.append(command("devices", String(localized: "Devices", bundle: .main), symbol: WitermSymbols.openOn,
                                 keywords: ["paired", "unpair", "relay server", "remote access", "iphone", "ipad"],
                                 detail: devicesStatus) { selection = .devices })
@@ -541,7 +553,7 @@ struct MacWorkspaceView: View {
         switch selection {
         case .local?: terminal.attachment != nil
         case .ssh(let id)?: ssh.session(for: id) != nil
-        case .home?, .devices?, nil: false
+        case .home?, .devices?, .orbit?, nil: false
         }
     }
 
@@ -556,6 +568,7 @@ struct MacWorkspaceView: View {
                 .tag(MacDestination.home)
                 .accessibilityIdentifier("homeSidebarRow")
             devicesRow
+            orbitRow
             Section {
                 localRows
             } header: {
@@ -747,6 +760,10 @@ struct MacWorkspaceView: View {
                         .disabled(!canCreateSession)
                         .help(LocalTerminalHelp.newTerminalBeside)
                         .accessibilityIdentifier("newLocalSessionBesideMenu")
+                        Button(String(localized: "Ask Orbit About This Terminal", bundle: .main), systemImage: "sparkles") {
+                            askOrbit(about: session)
+                        }
+                        .accessibilityIdentifier("askOrbitMenu")
                         Divider()
                         Menu(String(localized: "Open On", bundle: .main)) {
                             OpenOnItems(devices: openOnDevices) { continuing = ContinueRequest(sessionID: session.id, target: $0) }
@@ -793,6 +810,41 @@ struct MacWorkspaceView: View {
     /// whether this Mac is reachable, from what the background service
     /// reports rather than the setting alone (Round 27; it was a footer that
     /// opened Settings → Devices).
+    /// Orbit, with what it's doing at a glance.
+    private var orbitRow: some View {
+        Label {
+            VStack(alignment: .leading, spacing: WitermMetrics.Space.xxs) {
+                Text(String(localized: "Orbit", bundle: .main))
+                Text(orbitStatus)
+                    .font(WitermType.rowDetail)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        } icon: {
+            Image(systemName: "sparkles")
+                .foregroundStyle(orbit.runningCount > 0 ? WitermTheme.positive : orbit.waitingCount > 0 ? WitermTheme.warning : .secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .witermRowHover(selected: selection == .orbit)
+        .tag(MacDestination.orbit)
+        .accessibilityLabel(String(localized: "Orbit", bundle: .main))
+        .accessibilityValue(orbitStatus)
+        .accessibilityIdentifier("orbitSidebarRow")
+    }
+
+    private var orbitStatus: String {
+        if orbit.runningCount > 0 { return String(localized: "Working on \(orbit.runningCount)", bundle: .main) }
+        if orbit.waitingCount > 0 { return String(localized: "\(orbit.waitingCount) waiting for you", bundle: .main) }
+        if orbit.keyState == .none && orbit.status?.hasKey != true { return String(localized: "Needs an API key", bundle: .main) }
+        return String(localized: "Your terminal assistant", bundle: .main)
+    }
+
+    /// A new conversation about this terminal, on Orbit's page.
+    private func askOrbit(about session: LocalSessionInfo) {
+        orbit.newThread(about: session.id)
+        selection = .orbit
+    }
+
     private var devicesRow: some View {
         Label {
             VStack(alignment: .leading, spacing: WitermMetrics.Space.xxs) {
@@ -897,6 +949,8 @@ struct MacWorkspaceView: View {
             } else {
                 home
             }
+        case .orbit?:
+            OrbitView(orbit: orbit, terminals: terminal.sessions) { show(.local($0)) }
         case .devices?:
             MacDevicesView(service: service)
                 .navigationTitle(String(localized: "Devices", bundle: .main))

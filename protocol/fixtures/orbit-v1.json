@@ -1,0 +1,38 @@
+{
+  "request": {
+    "version": 1,
+    "id": "66666666-6666-4666-8666-666666666666",
+    "operation": "send",
+    "thread_id": "77777777-7777-4777-8777-777777777777",
+    "text": "先跑单元测试。",
+    "agent": "Codex"
+  },
+  "response": {
+    "version": 1,
+    "id": "66666666-6666-4666-8666-666666666666",
+    "ok": true,
+    "thread": {
+      "summary": {
+        "id": "77777777-7777-4777-8777-777777777777",
+        "title": "Fix the failing build",
+        "kind": "task",
+        "status": "running",
+        "terminal_id": "44444444-4444-4444-8444-444444444444",
+        "updated_at": "2026-11-17T12:00:00Z",
+        "revision": 12
+      },
+      "plan": [
+        {"text": "Read the build log", "status": "done"},
+        {"text": "Fix the import", "status": "active"}
+      ],
+      "entries": [
+        {"id": "a1", "at": "2026-11-17T11:59:00Z", "kind": "user", "text": "Fix the failing build"},
+        {"id": "a2", "at": "2026-11-17T11:59:10Z", "kind": "action", "tool": "run_command", "terminal": "api", "command": "swift build", "detail": "error: no such module 'Foo'", "failed": false},
+        {"id": "a3", "at": "2026-11-17T12:00:00Z", "kind": "user", "text": "先跑单元测试。", "from": "Codex"},
+        {"id": "a4", "at": "2026-11-17T12:00:00Z", "kind": "error", "failure": "limited", "text": "Rate limit reached."}
+      ],
+      "earlier_entries": 0,
+      "usage": {"input_tokens": 5200, "cached_tokens": 4100, "output_tokens": 300}
+    }
+  }
+}

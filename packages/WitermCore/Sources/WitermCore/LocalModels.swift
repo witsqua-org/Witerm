@@ -7,6 +7,10 @@ public enum LocalAgentOperation: String, Codable, Sendable {
   /// Local only: the folder a session's shell is in now, for starting a new
   /// session beside it. Never answered through the relay.
   case folder
+  /// Local only: a session's screen and recent history as plain text, for
+  /// agents that read the terminal (`witerm mcp`). Never answered through
+  /// the relay.
+  case capture
   /// From the relay endpoint: a recipient proving it holds an invitation's key.
   case redeem
   /// Relay only, never sent to the local service: a paired device
@@ -220,10 +224,14 @@ public struct LocalDeviceAccess: Codable, Sendable, Equatable, Identifiable {
 public struct LocalAttachmentInfo: Codable, Sendable, Equatable {
   public let mode: LocalAttachmentMode
   public let device: LocalRemotePeer?
+  /// Local only: the AI agent this Mac's attachment acts for ("Orbit",
+  /// "Codex"), named when it attached. Absent for people.
+  public let agent: String?
 
-  public init(mode: LocalAttachmentMode, device: LocalRemotePeer?) {
+  public init(mode: LocalAttachmentMode, device: LocalRemotePeer?, agent: String? = nil) {
     self.mode = mode
     self.device = device
+    self.agent = agent
   }
 }
 
@@ -415,6 +423,12 @@ public struct LocalAgentRequest: Codable, Sendable, Equatable {
   /// first, above the live screen, and tmux stays on the normal screen so new
   /// output scrolls into that scrollback.
   public let history: Bool?
+  /// `capture` only: the first line to capture, counted as tmux does: 0 is
+  /// the screen's top row, negative lines are history above it.
+  public let start: Int?
+  /// Local `attach` only: the AI agent this attachment types for, shown to
+  /// people as "Orbit is typing". Its input waits while a person types.
+  public let agent: String?
   /// `list` and `attach` from the Mac's relay endpoint only.
   public let peer: LocalRemotePeer?
   /// Relay `attach` only: the flow-control version this device speaks
@@ -430,8 +444,8 @@ public struct LocalAgentRequest: Codable, Sendable, Equatable {
     mode: LocalAttachmentMode? = nil, data: Data? = nil, cwd: String? = nil,
     shared: Bool? = nil, keepPrivate: Bool? = nil, remoteTyping: Bool? = nil,
     access: LocalDeviceAccess? = nil, guest: LocalGuestInvite? = nil, pairingID: String? = nil,
-    proof: Data? = nil, automatic: Bool? = nil, history: Bool? = nil, peer: LocalRemotePeer? = nil,
-    flow: Int? = nil, consumed: Int? = nil
+    proof: Data? = nil, automatic: Bool? = nil, history: Bool? = nil, start: Int? = nil,
+    agent: String? = nil, peer: LocalRemotePeer? = nil, flow: Int? = nil, consumed: Int? = nil
   ) {
     self.version = version
     self.id = id
@@ -452,6 +466,8 @@ public struct LocalAgentRequest: Codable, Sendable, Equatable {
     self.proof = proof
     self.automatic = automatic
     self.history = history
+    self.start = start
+    self.agent = agent
     self.peer = peer
     self.flow = flow
     self.consumed = consumed
@@ -459,7 +475,7 @@ public struct LocalAgentRequest: Codable, Sendable, Equatable {
 
   enum CodingKeys: String, CodingKey {
     case version, id, operation, name, columns, rows, mode, data, cwd, shared, access, guest, proof,
-      automatic, history, peer, flow, consumed
+      automatic, history, start, agent, peer, flow, consumed
     case pairingID = "pairing_id"
     case sessionID = "session_id"
     case keepPrivate = "keep_private"
@@ -491,13 +507,16 @@ public struct LocalAgentFrame: Codable, Sendable, Equatable {
   /// `folder` replies only: the foreground program's name, absent while the
   /// session's own shell is in the foreground (at the prompt).
   public let command: String?
+  /// `capture` replies only.
+  public let capture: LocalTerminalCapture?
 
   public init(
     version: Int = 1, id: String? = nil, kind: LocalFrameKind, ok: Bool? = nil,
     error: LocalAgentErrorCode? = nil, status: LocalAgentStatus? = nil,
     sessions: [LocalSessionInfo]? = nil, session: LocalSessionInfo? = nil,
     mode: LocalAttachmentMode? = nil, data: Data? = nil, accesses: [LocalDeviceAccess]? = nil,
-    guests: [LocalGuestInvite]? = nil, flow: Int? = nil, cwd: String? = nil, command: String? = nil
+    guests: [LocalGuestInvite]? = nil, flow: Int? = nil, cwd: String? = nil, command: String? = nil,
+    capture: LocalTerminalCapture? = nil
   ) {
     self.version = version
     self.id = id
@@ -514,6 +533,51 @@ public struct LocalAgentFrame: Codable, Sendable, Equatable {
     self.flow = flow
     self.cwd = cwd
     self.command = command
+    self.capture = capture
+  }
+}
+
+/// A session's text as tmux holds it (`capture` replies): wrapped lines
+/// joined, no colors or escapes, trailing blanks removed. Where the capture
+/// starts and the cursor are in tmux's counting, so a later capture can start
+/// where an earlier one's cursor was.
+public struct LocalTerminalCapture: Codable, Sendable, Equatable {
+  /// The captured lines, joined with line feeds.
+  public let text: String
+  /// Lines in the pane's history above the screen when it was captured.
+  public let historySize: Int
+  /// The cursor's column and row on the screen, from 0.
+  public let cursorColumn: Int
+  public let cursorRow: Int
+  /// Whether a full-screen program (vim, top) has the alternate screen.
+  public let alternateScreen: Bool
+  /// Whether earlier lines were left out to fit the reply.
+  public let truncated: Bool
+
+  /// Text kept in one reply, in UTF-8 bytes: JSON escaping at most doubles
+  /// it, which stays under the 64 KiB line limit.
+  public static let textLimit = 24 * 1024
+  /// The farthest back a capture may start: tmux's history limit here.
+  public static let historyLimit = 10_000
+
+  public init(
+    text: String, historySize: Int, cursorColumn: Int, cursorRow: Int, alternateScreen: Bool,
+    truncated: Bool
+  ) {
+    self.text = text
+    self.historySize = historySize
+    self.cursorColumn = cursorColumn
+    self.cursorRow = cursorRow
+    self.alternateScreen = alternateScreen
+    self.truncated = truncated
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case text, truncated
+    case historySize = "history_size"
+    case cursorColumn = "cursor_column"
+    case cursorRow = "cursor_row"
+    case alternateScreen = "alternate_screen"
   }
 }
 

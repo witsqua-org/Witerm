@@ -10,6 +10,8 @@ final class AgentConnection: @unchecked Sendable {
     var mode: LocalAttachmentMode?
     /// The paired device an attachment acts for; nil for this Mac.
     var peer: LocalRemotePeer?
+    /// The AI agent a local attachment types for ("Orbit"); nil for people.
+    var agent: String?
     var child: PTYChild?
     /// Keeps a renderer's scrollback filled from tmux's history.
     var fill: ScrollbackFill?

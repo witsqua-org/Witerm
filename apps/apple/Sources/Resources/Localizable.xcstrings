@@ -154,6 +154,23 @@
         }
       }
     },
+    "%@ finished it: %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ finished it: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 已完成：%2$@"
+          }
+        }
+      }
+    },
     "%@ is already paired with this Mac. It can open this terminal from Terminals if you allow it in Devices." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -184,6 +201,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ 正在运行但尚未就绪，可能是数据库不可用。请稍后重试。"
+          }
+        }
+      }
+    },
+    "%@ is typing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is typing"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 正在输入"
           }
         }
       }
@@ -269,6 +303,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ 运行的 Witerm 版本无法与此应用配合使用。请更新中继服务器或应用。"
+          }
+        }
+      }
+    },
+    "%@ took this over." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ took this over."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 接手了这项任务。"
           }
         }
       }
@@ -438,6 +489,23 @@
         }
       }
     },
+    "%lld earlier entries aren’t shown" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld earlier entries aren’t shown"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未显示更早的 %lld 条记录"
+          }
+        }
+      }
+    },
     "%lld keys" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -548,6 +616,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld 个终端"
+          }
+        }
+      }
+    },
+    "%lld waiting for you" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld waiting for you"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 个等你处理"
           }
         }
       }
@@ -807,6 +892,23 @@
         }
       }
     },
+    "API Key" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API Key"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API 密钥"
+          }
+        }
+      }
+    },
     "Aa 0123456789" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -820,6 +922,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Aa 0123456789 中文"
+          }
+        }
+      }
+    },
+    "About" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "About"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关于"
           }
         }
       }
@@ -973,6 +1092,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "如果端口不是 22，请在主机后加上“:端口”。"
+          }
+        }
+      }
+    },
+    "Add API Key…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add API Key…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加 API 密钥…"
           }
         }
       }
@@ -1283,6 +1419,23 @@
         }
       }
     },
+    "Add your OpenAI API key in Settings, then send again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add your OpenAI API key in Settings, then send again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请在设置中添加 OpenAI API 密钥，然后重新发送。"
+          }
+        }
+      }
+    },
     "Address" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1381,6 +1534,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "全部可访问"
+          }
+        }
+      }
+    },
+    "All Terminals" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All Terminals"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所有终端"
           }
         }
       }
@@ -1555,6 +1725,23 @@
         }
       }
     },
+    "Another agent" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Another agent"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "另一个智能体"
+          }
+        }
+      }
+    },
     "Another file already uses this path. Witerm won't replace it." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1568,6 +1755,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此路径已被其他文件占用，Witerm 不会替换它。"
+          }
+        }
+      }
+    },
+    "Any OpenAI model that supports the Responses API and function calling. The default is %@." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Any OpenAI model that supports the Responses API and function calling. The default is %@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "任何支持 Responses API 和函数调用的 OpenAI 模型。默认是 %@。"
           }
         }
       }
@@ -1704,6 +1908,108 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在批准…"
+          }
+        }
+      }
+    },
+    "Ask" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ask"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提问"
+          }
+        }
+      }
+    },
+    "Ask Orbit About This Terminal" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ask Orbit About This Terminal"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "向 Orbit 询问这个终端"
+          }
+        }
+      }
+    },
+    "Ask Orbit About “%@”" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ask Orbit About “%@”"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "向 Orbit 询问“%@”"
+          }
+        }
+      }
+    },
+    "Ask Orbit something, or give it a task" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ask Orbit something, or give it a task"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "向 Orbit 提问，或交给它一项任务"
+          }
+        }
+      }
+    },
+    "Ask about your terminals: what failed, what a command did, how to fix it. Orbit can run commands to find out." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ask about your terminals: what failed, what a command did, how to fix it. Orbit can run commands to find out."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "询问你的终端：哪里出错了、某条命令做了什么、如何修复。Orbit 可以运行命令来查明。"
+          }
+        }
+      }
+    },
+    "Ask about your terminals…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ask about your terminals…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "询问你的终端…"
           }
         }
       }
@@ -3260,6 +3566,40 @@
         }
       }
     },
+    "Conversations" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conversations"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "对话"
+          }
+        }
+      }
+    },
+    "Conversations and tasks are kept only on this Mac, and removed after 30 days without use." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conversations and tasks are kept only on this Mac, and removed after 30 days without use."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "对话和任务只保存在这台 Mac 上，30 天未使用后删除。"
+          }
+        }
+      }
+    },
     "Cool blue-gray, deep blue accent" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3396,6 +3736,40 @@
         }
       }
     },
+    "Couldn’t reach OpenAI. Check your internet connection." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t reach OpenAI. Check your internet connection."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法连接 OpenAI。请检查网络连接。"
+          }
+        }
+      }
+    },
+    "Couldn’t save the key in the Keychain." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t save the key in the Keychain."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法将密钥存入钥匙串。"
+          }
+        }
+      }
+    },
     "Create" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3498,6 +3872,40 @@
         }
       }
     },
+    "Default" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Default"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "默认"
+          }
+        }
+      }
+    },
+    "Delegate a Task" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delegate a Task"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "委托任务"
+          }
+        }
+      }
+    },
     "Delete" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3511,6 +3919,57 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "删除"
+          }
+        }
+      }
+    },
+    "Delete All" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete All"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全部删除"
+          }
+        }
+      }
+    },
+    "Delete All Conversations?" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete All Conversations?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除所有对话？"
+          }
+        }
+      }
+    },
+    "Delete All Conversations…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete All Conversations…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除所有对话…"
           }
         }
       }
@@ -3583,6 +4042,23 @@
         }
       }
     },
+    "Delete “%@”?" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete “%@”?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除“%@”？"
+          }
+        }
+      }
+    },
     "Deleted %@ and its saved credentials." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3647,6 +4123,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "删除…"
+          }
+        }
+      }
+    },
+    "Describe a task. Orbit plans it, works in your terminals until it’s done, and tells you when it needs you." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Describe a task. Orbit plans it, works in your terminals until it’s done, and tells you when it needs you."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "描述一项任务。Orbit 会制定计划，在你的终端中工作直到完成，需要你时会告诉你。"
+          }
+        }
+      }
+    },
+    "Describe the task…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Describe the task…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "描述任务…"
           }
         }
       }
@@ -3783,6 +4293,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "你添加的设备会显示在这里。"
+          }
+        }
+      }
+    },
+    "Didn’t finish" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Didn’t finish"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未完成"
           }
         }
       }
@@ -4364,6 +4891,23 @@
         }
       }
     },
+    "Ended %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ended %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "结束了 %@"
+          }
+        }
+      }
+    },
     "Ending terminal…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4602,6 +5146,23 @@
         }
       }
     },
+    "Every conversation and task is removed from this Mac, and running ones stop. Terminals keep running." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every conversation and task is removed from this Mac, and running ones stop. Terminals keep running."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所有对话和任务都会从这台 Mac 上删除，正在进行的会停止。终端继续运行。"
+          }
+        }
+      }
+    },
     "Examples" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4683,6 +5244,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "由面容 ID 保护。"
+          }
+        }
+      }
+    },
+    "Failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Failed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "失败"
           }
         }
       }
@@ -4976,6 +5554,23 @@
         }
       }
     },
+    "From %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "From %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "来自 %@"
+          }
+        }
+      }
+    },
     "From an SSH config file" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5129,6 +5724,23 @@
         }
       }
     },
+    "Guide Orbit while it works…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guide Orbit while it works…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Orbit 工作时给它指引…"
+          }
+        }
+      }
+    },
     "Help" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5159,6 +5771,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "隐藏键盘"
+          }
+        }
+      }
+    },
+    "Hide Output" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide Output"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隐藏输出"
           }
         }
       }
@@ -5460,6 +6089,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "使用中"
+          }
+        }
+      }
+    },
+    "In progress" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In progress"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "进行中"
           }
         }
       }
@@ -5957,6 +6603,23 @@
         }
       }
     },
+    "Its messages are removed from this Mac. Terminals it used keep running." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Its messages are removed from this Mac. Terminals it used keep running."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它的消息会从这台 Mac 上删除。它用过的终端继续运行。"
+          }
+        }
+      }
+    },
     "Its shell and the programs in it stop, here and on every device. Unsaved work in them is lost." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6110,6 +6773,23 @@
         }
       }
     },
+    "Keep in Keychain on This Mac" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep in Keychain on This Mac"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存在这台 Mac 的钥匙串中"
+          }
+        }
+      }
+    },
     "Keep watching; nothing you press is sent" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6168,6 +6848,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已设为私密"
+          }
+        }
+      }
+    },
+    "Kept until Witerm quits" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kept until Witerm quits"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保留到 Witerm 退出"
           }
         }
       }
@@ -6253,6 +6950,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "不会导入密钥和密码。"
+          }
+        }
+      }
+    },
+    "Kind" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kind"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "类型"
           }
         }
       }
@@ -6444,6 +7158,23 @@
         }
       }
     },
+    "Looked at your terminals" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Looked at your terminals"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看了你的终端"
+          }
+        }
+      }
+    },
     "Made on this device. Add its public key to the SSH host." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6525,6 +7256,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "“跟随主题”使用“设置 ▸ 外观”中所选主题的颜色。配色方案跟随系统的浅色或深色外观；增强对比度会覆盖配色方案。"
+          }
+        }
+      }
+    },
+    "Model" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型"
           }
         }
       }
@@ -6699,6 +7447,23 @@
         }
       }
     },
+    "Needs an API key" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Needs an API key"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要 API 密钥"
+          }
+        }
+      }
+    },
     "Needs an address and a login" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6763,6 +7528,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "新建"
+          }
+        }
+      }
+    },
+    "New Conversation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Conversation"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新对话"
           }
         }
       }
@@ -7209,6 +7991,23 @@
         }
       }
     },
+    "No conversations yet" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No conversations yet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "还没有对话"
+          }
+        }
+      }
+    },
     "No hosts were found in this file." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7547,6 +8346,40 @@
         }
       }
     },
+    "Not set" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not set"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未设置"
+          }
+        }
+      }
+    },
+    "Not started" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not started"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未开始"
+          }
+        }
+      }
+    },
     "Not used yet" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7649,6 +8482,23 @@
         }
       }
     },
+    "Off: Witerm forgets the key when it quits." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Off: Witerm forgets the key when it quits."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭时：Witerm 退出后会忘记密钥。"
+          }
+        }
+      }
+    },
     "Off: it can type only while nobody types on this Mac" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7747,6 +8597,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在 %1$@ 上打开 Witerm，“%2$@”位于“终端 → %3$@”中。"
+          }
+        }
+      }
+    },
+    "On This Mac" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On This Mac"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在这台 Mac 上"
           }
         }
       }
@@ -8193,6 +9060,74 @@
         }
       }
     },
+    "OpenAI API Key" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI API Key"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI API 密钥"
+          }
+        }
+      }
+    },
+    "OpenAI refused the API key. Check it in Settings." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI refused the API key. Check it in Settings."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI 拒绝了该 API 密钥。请在设置中检查。"
+          }
+        }
+      }
+    },
+    "OpenAI returned an error." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI returned an error."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI 返回了错误。"
+          }
+        }
+      }
+    },
+    "OpenAI’s rate or usage limit was reached. Try again later." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI’s rate or usage limit was reached. Try again later."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已达到 OpenAI 的速率或用量限制。请稍后再试。"
+          }
+        }
+      }
+    },
     "OpenSSH Private Key" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8206,6 +9141,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "OpenSSH 私钥"
+          }
+        }
+      }
+    },
+    "Opened the terminal %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opened the terminal %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开了终端 %@"
           }
         }
       }
@@ -8308,6 +9260,193 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "也可以在任意终端应用中启动："
+          }
+        }
+      }
+    },
+    "Orbit" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orbit"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orbit"
+          }
+        }
+      }
+    },
+    "Orbit Needs an OpenAI API Key" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orbit Needs an OpenAI API Key"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orbit 需要 OpenAI API 密钥"
+          }
+        }
+      }
+    },
+    "Orbit can read and type in every terminal on this Mac. What it reads is sent to OpenAI." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orbit can read and type in every terminal on this Mac. What it reads is sent to OpenAI."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orbit 可以读取这台 Mac 上的所有终端并在其中输入。它读取的内容会发送给 OpenAI。"
+          }
+        }
+      }
+    },
+    "Orbit didn’t answer. Try again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orbit didn’t answer. Try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orbit 没有响应。请重试。"
+          }
+        }
+      }
+    },
+    "Orbit didn’t start. Try again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orbit didn’t start. Try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orbit 未能启动。请重试。"
+          }
+        }
+      }
+    },
+    "Orbit is missing from this copy of Witerm. Reinstall Witerm." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orbit is missing from this copy of Witerm. Reinstall Witerm."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这份 Witerm 缺少 Orbit。请重新安装 Witerm。"
+          }
+        }
+      }
+    },
+    "Orbit is working…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orbit is working…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orbit 正在工作…"
+          }
+        }
+      }
+    },
+    "Orbit paused after many steps. Send a message to let it continue." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orbit paused after many steps. Send a message to let it continue."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orbit 执行多步后暂停了。发送消息让它继续。"
+          }
+        }
+      }
+    },
+    "Orbit reads and operates your terminals using OpenAI’s models, with your own API key." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orbit reads and operates your terminals using OpenAI’s models, with your own API key."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orbit 使用 OpenAI 的模型和你自己的 API 密钥来读取和操作你的终端。"
+          }
+        }
+      }
+    },
+    "Orbit summarized the earlier messages to keep this conversation short." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orbit summarized the earlier messages to keep this conversation short."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orbit 总结了较早的消息，让对话保持简短。"
+          }
+        }
+      }
+    },
+    "Orbit uses your own API key from platform.openai.com. What Orbit reads in your terminals is sent to OpenAI to answer you; nothing goes to Witerm’s servers." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orbit uses your own API key from platform.openai.com. What Orbit reads in your terminals is sent to OpenAI to answer you; nothing goes to Witerm’s servers."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orbit 使用你在 platform.openai.com 获取的 API 密钥。Orbit 在终端中读取的内容会发送给 OpenAI 来回答你，不会发送到 Witerm 的服务器。"
           }
         }
       }
@@ -8856,6 +9995,23 @@
         }
       }
     },
+    "Plan" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plan"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "计划"
+          }
+        }
+      }
+    },
     "Point at the QR code on the other device" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9128,6 +10284,23 @@
         }
       }
     },
+    "Ran %@ in %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ran %@ in %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 %2$@ 中运行了 %1$@"
+          }
+        }
+      }
+    },
     "Reachable" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9141,6 +10314,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "可以访问"
+          }
+        }
+      }
+    },
+    "Read %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "读取了 %@"
           }
         }
       }
@@ -9825,6 +11015,23 @@
         }
       }
     },
+    "Remove Key" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove Key"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移除密钥"
+          }
+        }
+      }
+    },
     "Remove Relay Server?" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10008,6 +11215,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重命名…"
+          }
+        }
+      }
+    },
+    "Replace Key" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replace Key"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "替换密钥"
+          }
+        }
+      }
+    },
+    "Reply to Orbit…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reply to Orbit…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回复 Orbit…"
           }
         }
       }
@@ -10437,6 +11678,23 @@
         }
       }
     },
+    "Save Key" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save Key"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存密钥"
+          }
+        }
+      }
+    },
     "Save and Check" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10467,6 +11725,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "保存以后使用"
+          }
+        }
+      }
+    },
+    "Saved in Keychain" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saved in Keychain"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已存入钥匙串"
           }
         }
       }
@@ -10671,6 +11946,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "选择整行"
+          }
+        }
+      }
+    },
+    "Send" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Send"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "发送"
+          }
+        }
+      }
+    },
+    "Send (⌘↩)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Send (⌘↩)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "发送 (⌘↩)"
           }
         }
       }
@@ -10941,6 +12250,23 @@
         }
       }
     },
+    "Show" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示"
+          }
+        }
+      }
+    },
     "Show All" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11009,6 +12335,23 @@
         }
       }
     },
+    "Show Output" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Output"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示输出"
+          }
+        }
+      }
+    },
     "Show Previous Terminal" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11039,6 +12382,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "显示二维码"
+          }
+        }
+      }
+    },
+    "Show this terminal" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show this terminal"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示这个终端"
           }
         }
       }
@@ -11553,6 +12913,23 @@
         }
       }
     },
+    "Stop" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止"
+          }
+        }
+      }
+    },
     "Stop Forwarding" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11566,6 +12943,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "停止转发"
+          }
+        }
+      }
+    },
+    "Stop Orbit; what it already did stays done" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop Orbit; what it already did stays done"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止 Orbit；已完成的操作保持不变"
           }
         }
       }
@@ -11634,6 +13028,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "不再在这里显示；它会继续运行"
+          }
+        }
+      }
+    },
+    "Stopped" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stopped"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已停止"
           }
         }
       }
@@ -12289,6 +13700,23 @@
         }
       }
     },
+    "Terminals on this Mac are off. Turn them on in Settings." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terminals on this Mac are off. Turn them on in Settings."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这台 Mac 上的终端已关闭。请在设置中打开。"
+          }
+        }
+      }
+    },
     "Terminals you choose" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -12857,6 +14285,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "终端会保持连接。"
+          }
+        }
+      }
+    },
+    "The terminal “this terminal” means. Orbit can still use every terminal." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The terminal “this terminal” means. Orbit can still use every terminal."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“这个终端”指的终端。Orbit 仍可使用所有终端。"
           }
         }
       }
@@ -13758,6 +15203,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "与这台 Mac 同时输入"
+          }
+        }
+      }
+    },
+    "Typed %@ in %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Typed %@ in %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 %2$@ 中输入了 %1$@"
           }
         }
       }
@@ -14691,6 +16153,23 @@
         }
       }
     },
+    "Use Model" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use Model"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用模型"
+          }
+        }
+      }
+    },
     "Use Selection for Find" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -14840,6 +16319,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "请使用服务器的根地址"
+          }
+        }
+      }
+    },
+    "Used %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Used %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用了 %@"
           }
         }
       }
@@ -14997,6 +16493,23 @@
         }
       }
     },
+    "Waited for %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waited for %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "等待了 %@"
+          }
+        }
+      }
+    },
     "Waiting for %@ to open “%@”…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -15095,6 +16608,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在等待对方加入…"
+          }
+        }
+      }
+    },
+    "Waiting for you" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for you"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "等你处理"
           }
         }
       }
@@ -15303,6 +16833,23 @@
         }
       }
     },
+    "What should Orbit do?" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What should Orbit do?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orbit 该做什么？"
+          }
+        }
+      }
+    },
     "What they can do" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -15354,6 +16901,23 @@
         }
       }
     },
+    "With %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "With %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由 %@ 处理"
+          }
+        }
+      }
+    },
     "Without Return, the command waits on the line for you to check it." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -15367,6 +16931,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "不按回车时，命令会停留在命令行上供你检查。"
+          }
+        }
+      }
+    },
+    "Working on %lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Working on %lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在处理 %lld 项"
+          }
+        }
+      }
+    },
+    "Working…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Working…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "工作中…"
           }
         }
       }
@@ -15435,6 +17033,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "最多可保存 8 台中继服务器。请先移除一台再添加。"
+          }
+        }
+      }
+    },
+    "You stopped Orbit." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You stopped Orbit."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你停止了 Orbit。"
           }
         }
       }
@@ -15524,6 +17139,23 @@
         }
       }
     },
+    "Your terminal assistant" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your terminal assistant"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你的终端助手"
+          }
+        }
+      }
+    },
     "Your terminals keep running, but you can’t open them here or from other devices until you turn this back on." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -15537,6 +17169,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "你的终端会继续运行，但在重新开启之前，你无法在这里或其他设备上打开它们。"
+          }
+        }
+      }
+    },
+    "a terminal" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "a terminal"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "某个终端"
           }
         }
       }

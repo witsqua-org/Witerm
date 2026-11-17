@@ -23,6 +23,8 @@ witerm rename <session> <name>   # Change a session's display name
 witerm sessions            # List sessions, sharing, and who is attached
 witerm attach <session>    # Attach with control; --view to watch
 witerm status              # Background service, tmux, and remote access
+witerm mcp                 # Serve terminals to AI agents (Codex, Claude Code); see agents.md
+witerm orbit serve         # Orbit's background process (Witerm starts it); see orbit.md
 ```
 
 - **Naming a session.** Use its ID, a unique ID prefix of at least 4 characters, or its exact name. `new` names the session after the folder unless you pass `--name`.

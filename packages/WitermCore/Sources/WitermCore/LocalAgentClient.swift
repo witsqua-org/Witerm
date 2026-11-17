@@ -177,6 +177,21 @@
       return LocalSessionPlace(cwd: cwd, command: frame.command)
     }
 
+    /// A session's screen as plain text, starting at `start` (tmux's
+    /// counting: 0 is the screen's top row, negative lines are history).
+    public func capture(sessionID: String, start: Int = 0) async throws -> LocalTerminalCapture {
+      try LocalWire.validateID(sessionID)
+      guard (-LocalTerminalCapture.historyLimit...200).contains(start) else {
+        throw LocalAgentClientError.rejected(.invalidRequest)
+      }
+      let frame = try await rpc(LocalAgentRequest(operation: .capture, sessionID: sessionID, start: start))
+      guard let capture = frame.capture, frame.session == nil, frame.sessions == nil,
+        capture.text.utf8.count <= LocalTerminalCapture.textLimit, capture.historySize >= 0,
+        (0..<500).contains(capture.cursorColumn), (0..<200).contains(capture.cursorRow)
+      else { throw LocalAgentClientError.invalidResponse }
+      return capture
+    }
+
     public func close(sessionID: String) async throws {
       try LocalWire.validateID(sessionID)
       _ = try await rpc(LocalAgentRequest(operation: .close, sessionID: sessionID))
@@ -190,9 +205,13 @@
     /// own limit to the device, passes a longer one.
     public func attach(
       sessionID: String, columns: Int = 80, rows: Int = 24, mode: LocalAttachmentMode = .control,
-      history: Bool = false, peer: LocalRemotePeer? = nil, outputStall: Duration = .seconds(30)
+      history: Bool = false, peer: LocalRemotePeer? = nil, agent: String? = nil,
+      outputStall: Duration = .seconds(30)
     ) async throws -> LocalTerminalAttachment {
       try LocalWire.validateID(sessionID)
+      guard agent.map(LocalWire.validName) ?? true, agent == nil || peer == nil else {
+        throw LocalAgentClientError.rejected(.invalidRequest)
+      }
       try peer.map(LocalWire.validatePeer)
       guard LocalWire.validSize(columns: columns, rows: rows) else {
         throw LocalAgentClientError.rejected(.invalidRequest)
@@ -201,7 +220,7 @@
       do {
         let request = LocalAgentRequest(
           operation: .attach, sessionID: sessionID, columns: columns, rows: rows, mode: mode,
-          history: history ? true : nil, peer: peer)
+          history: history ? true : nil, agent: agent, peer: peer)
         let frame = try await connection.request(request)
         guard let session = frame.session, session.id == sessionID, frame.mode == mode else {
           throw LocalAgentClientError.invalidResponse
@@ -304,6 +323,8 @@
           do { try attachment.device.map(validatePeer) } catch {
             throw LocalAgentClientError.invalidResponse
           }
+          guard attachment.agent.map(validName) ?? true, attachment.agent == nil || attachment.device == nil
+          else { throw LocalAgentClientError.invalidResponse }
         }
       }
     }

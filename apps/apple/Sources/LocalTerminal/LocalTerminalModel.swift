@@ -81,8 +81,14 @@ extension LocalSessionInfo {
         }
         var phrases = typing.map { String(localized: "Typing on \($0)", bundle: .main) }
         let own = (here == .control ? 1 : 0) + (switchedFrom == .control && here != .control ? 1 : 0)
-        let localTypists = attachments.filter { $0.device == nil && $0.mode == .control }.count - own
+        let localTypists = attachments.filter { $0.device == nil && $0.agent == nil && $0.mode == .control }.count - own
         if localTypists > 0 { phrases.append(String(localized: "Typing in another window", bundle: .main)) }
+        // AI agents (Orbit, Codex) by name: "Orbit is typing".
+        var agents = Set<String>()
+        for attachment in attachments where attachment.device == nil {
+            guard let agent = attachment.agent, agents.insert(agent).inserted else { continue }
+            phrases.append(String(localized: "\(agent) is typing", bundle: .main))
+        }
         phrases += watching.map { String(localized: "Watching on \($0)", bundle: .main) }
         return phrases
     }

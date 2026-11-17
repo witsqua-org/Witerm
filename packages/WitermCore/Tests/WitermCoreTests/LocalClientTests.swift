@@ -163,6 +163,68 @@
       XCTAssertThrowsError(try LocalWire.decode(Data("{\"version\":2,\"kind\":\"closed\"}".utf8)))
     }
 
+    /// `capture` (local only, for agents): the request's `start` and the
+    /// reply's text and counters, as `protocol/fixtures/local-capture-v1.json`.
+    func testCaptureWireMatchesTheFixture() throws {
+      let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+      let fixture = try XCTUnwrap(
+        JSONSerialization.jsonObject(
+          with: Data(contentsOf: root.appendingPathComponent("protocol/fixtures/local-capture-v1.json")))
+          as? [String: Any])
+      let requestData = try JSONSerialization.data(withJSONObject: try XCTUnwrap(fixture["request"]))
+      let request = try JSONDecoder().decode(LocalAgentRequest.self, from: requestData)
+      XCTAssertEqual(request.operation, .capture)
+      XCTAssertEqual(request.start, -3)
+      let encoded = try XCTUnwrap(
+        JSONSerialization.jsonObject(with: try LocalWire.encode(request)) as? [String: Any])
+      XCTAssertEqual(encoded["start"] as? Int, -3)
+      XCTAssertEqual(encoded["session_id"] as? String, request.sessionID)
+      let frame = try LocalWire.decode(
+        JSONSerialization.data(withJSONObject: try XCTUnwrap(fixture["response"])))
+      let capture = try XCTUnwrap(frame.capture)
+      XCTAssertEqual(capture.historySize, 120)
+      XCTAssertEqual(capture.cursorRow, 3)
+      XCTAssertEqual(capture.cursorColumn, 2)
+      XCTAssertFalse(capture.alternateScreen)
+      XCTAssertFalse(capture.truncated)
+      XCTAssertTrue(capture.text.hasSuffix("完成\n%"))
+      XCTAssertEqual(try LocalWire.decode(try JSONEncoder().encode(frame)), frame)
+    }
+
+    /// Orbit's wire (protocol/orbit-v1.md), as `fixtures/orbit-v1.json`.
+    func testOrbitWireMatchesTheFixture() throws {
+      let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+      let fixture = try XCTUnwrap(
+        JSONSerialization.jsonObject(
+          with: Data(contentsOf: root.appendingPathComponent("protocol/fixtures/orbit-v1.json"))) as? [String: Any])
+      let request = try OrbitWire.decoder().decode(
+        OrbitRequest.self, from: JSONSerialization.data(withJSONObject: try XCTUnwrap(fixture["request"])))
+      XCTAssertEqual(request.operation, .send)
+      XCTAssertEqual(request.agent, "Codex")
+      XCTAssertEqual(request.threadID, "77777777-7777-4777-8777-777777777777")
+      let response = try OrbitWire.decoder().decode(
+        OrbitResponse.self, from: JSONSerialization.data(withJSONObject: try XCTUnwrap(fixture["response"])))
+      let thread = try XCTUnwrap(response.thread)
+      XCTAssertEqual(thread.summary.kind, .task)
+      XCTAssertEqual(thread.summary.status, .running)
+      XCTAssertEqual(thread.summary.terminalID, "44444444-4444-4444-8444-444444444444")
+      XCTAssertEqual(thread.plan.map(\.status), [.done, .active])
+      XCTAssertEqual(thread.entries.map(\.kind), [.user, .action, .user, .error])
+      XCTAssertEqual(thread.entries[2].from, "Codex")
+      XCTAssertEqual(thread.entries[3].failure, .limited)
+      XCTAssertEqual(thread.usage.cachedTokens, 4100)
+      // Round trip, and the snake_case keys the fixture uses.
+      let encoded = try OrbitWire.encoder().encode(request)
+      let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+      XCTAssertEqual(object["thread_id"] as? String, request.threadID)
+      XCTAssertEqual(try OrbitWire.decoder().decode(OrbitResponse.self, from: OrbitWire.encoder().encode(response)), response)
+      XCTAssertTrue(OrbitWire.validModel("gpt-6.1-sol"))
+      XCTAssertFalse(OrbitWire.validModel("gpt 6"))
+      XCTAssertFalse(OrbitWire.validAgent(" Codex"))
+    }
+
     func testStatusAndListUseSeparateRealSocketRPCs() async throws {
       let broker = try LocalTestBroker { request, descriptor in
         if request.operation == .status {

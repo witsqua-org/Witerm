@@ -23,6 +23,18 @@ enum AgentLocator {
         return socketURL(appGroup: app.appGroup)
     }
 
+    /// Orbit's folder: `WITERM_ORBIT_DIRECTORY` for development and tests,
+    /// otherwise `orbit/` in the containing app's group container. Nil for a
+    /// development build outside an app.
+    static func orbitDirectory(environment: [String: String]) -> URL? {
+        if let path = environment["WITERM_ORBIT_DIRECTORY"], path.hasPrefix("/") {
+            return URL(fileURLWithPath: path, isDirectory: true)
+        }
+        guard let app = containingApp() else { return nil }
+        return socketURL(appGroup: app.appGroup).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("orbit", isDirectory: true)
+    }
+
     /// The group container path, built directly: a command-line tool has no
     /// App Group entitlement for the system to resolve it from.
     static func socketURL(appGroup: String) -> URL {
@@ -59,7 +71,7 @@ enum AgentLocator {
         _ = _NSGetExecutablePath(nil, &size)
         var buffer = [CChar](repeating: 0, count: Int(size) + 1)
         guard _NSGetExecutablePath(&buffer, &size) == 0 else { return nil }
-        return String(cString: buffer)
+        return String(decoding: buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
     }
 
     /// The account's home directory, not `$HOME`, which a shell may override.

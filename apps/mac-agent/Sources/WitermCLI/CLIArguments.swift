@@ -10,6 +10,9 @@ enum CLICommand: Equatable {
     case unshare(session: String?)
     case rename(session: String, name: String)
     case attach(session: String, view: Bool)
+    case mcp(readOnly: Bool)
+    /// Orbit's background process; Witerm starts it.
+    case orbitServe
 }
 
 struct CLIInvocation: Equatable {
@@ -60,6 +63,8 @@ enum CLIParser {
       attach <session> [--view]
                         Attach to a session (control by default)
       status            Show the background service and remote access state
+      mcp [--read-only] Serve terminals to AI agents (Model Context Protocol on stdio)
+      orbit serve       Run Orbit, Witerm's assistant (Witerm starts it)
       version           Show the version
 
     Options:
@@ -77,7 +82,7 @@ enum CLIParser {
         var values: [String: String] = [:]
         var iterator = arguments.makeIterator()
         let valued: Set<String> = ["--name", "--wait", "--socket", "--escape"]
-        let known: Set<String> = ["--json", "--share", "--detach", "--view", "--help", "-h", "--version"]
+        let known: Set<String> = ["--json", "--share", "--detach", "--view", "--read-only", "--help", "-h", "--version"]
         while let argument = iterator.next() {
             if valued.contains(argument) {
                 guard values[argument] == nil, let value = iterator.next() else {
@@ -133,10 +138,17 @@ enum CLIParser {
             allowedValues.insert("--escape")
             guard let session = rest.first else { throw CLIFailure.usage("Name the session to attach to.") }
             command = .attach(session: session, view: flags.contains("--view"))
+        case "orbit":
+            guard rest == ["serve"] else { throw CLIFailure.usage("Use: witerm orbit serve") }
+            allowedFlags = []
+            command = .orbitServe
+        case "mcp":
+            allowedFlags = ["--read-only"]
+            command = .mcp(readOnly: flags.contains("--read-only"))
         default:
             throw CLIFailure.usage("Unknown command \(name). Run witerm help.")
         }
-        let maxPositionals = name == "rename" ? 3 : ["share", "unshare", "attach"].contains(name) ? 2 : 1
+        let maxPositionals = name == "rename" ? 3 : ["share", "unshare", "attach", "orbit"].contains(name) ? 2 : 1
         guard positionals.count <= maxPositionals else { throw CLIFailure.usage("Too many arguments.") }
         if let extra = flags.subtracting(allowedFlags).sorted().first {
             throw CLIFailure.usage("\(extra) doesn't apply to \(name).")

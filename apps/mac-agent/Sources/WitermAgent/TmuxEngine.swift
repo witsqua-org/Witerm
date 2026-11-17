@@ -237,6 +237,47 @@ final class TmuxEngine {
         return (path, Self.foregroundCommand(String(lines[1]), shell: configuration.shellPath))
     }
 
+    /// A pane's text for agents that read the terminal: lines from `start`
+    /// (tmux's counting) to the bottom of the screen, wrapped lines joined,
+    /// without colors, and where the history and cursor stood, all from one
+    /// tmux command. Only the latest lines are kept when it's too long.
+    func capture(_ id: String, start: Int) throws -> LocalTerminalCapture {
+        _ = try session(id)
+        let target = internalName(id)
+        let output = try command(["display-message", "-p", "-t", target,
+                                  "#{history_size} #{cursor_x} #{cursor_y} #{alternate_on}", ";",
+                                  "capture-pane", "-p", "-J", "-t", target, "-S", String(start)],
+                                 timeout: 2, limit: Self.captureLimit)
+        var lines = output.split(separator: 0x0a, omittingEmptySubsequences: false)
+        guard !lines.isEmpty else { throw AgentFailure() }
+        let numbers = lines.removeFirst().split(separator: 0x20).compactMap { Int(String(decoding: $0, as: UTF8.self)) }
+        guard numbers.count == 4, numbers[0] >= 0, numbers[1] >= 0, numbers[2] >= 0 else { throw AgentFailure() }
+        return Self.captured(lines.map { String(decoding: $0, as: UTF8.self) }, historySize: numbers[0],
+                             cursorColumn: min(numbers[1], 499), cursorRow: min(numbers[2], 199), alternate: numbers[3] == 1)
+    }
+
+    /// Trailing blanks and blank lines at the bottom removed, then the
+    /// latest lines that fit one reply.
+    static func captured(_ raw: [String], historySize: Int, cursorColumn: Int, cursorRow: Int, alternate: Bool) -> LocalTerminalCapture {
+        var lines = raw.map { line in
+            var line = line
+            while let last = line.unicodeScalars.last, last == " " || last == "\t" { line.unicodeScalars.removeLast() }
+            return line
+        }
+        while lines.last?.isEmpty == true { lines.removeLast() }
+        var kept: [String] = []
+        var size = 0
+        for line in lines.reversed() {
+            let bytes = line.utf8.count + (kept.isEmpty ? 0 : 1)
+            guard size + bytes <= LocalTerminalCapture.textLimit else { break }
+            size += bytes
+            kept.append(line)
+        }
+        return LocalTerminalCapture(text: kept.reversed().joined(separator: "\n"), historySize: historySize,
+                                    cursorColumn: cursorColumn, cursorRow: cursorRow, alternateScreen: alternate,
+                                    truncated: kept.count < lines.count)
+    }
+
     /// Whether `pid` (a pane's shell) leads its terminal's foreground
     /// process group, from the kernel; nil when that can't be read.
     static func shellInForeground(pid: pid_t) -> Bool? {

@@ -10,13 +10,14 @@ struct WitermApp: App {
     #if os(macOS)
     @State private var service = LocalAgentService()
     @State private var pairedDevices = MacPairedDevices()
+    @State private var orbit = OrbitService()
     #endif
 
     var body: some Scene {
         mainWindow
         #if os(macOS)
         Settings {
-            MacSettingsView(service: service)
+            MacSettingsView(service: service, orbit: orbit)
                 .environment(servers)
                 .environment(pairedDevices)
                 .environment(\.localAgent, service.client)
@@ -46,7 +47,7 @@ struct WitermApp: App {
     private var workspace: some View {
         Group {
             #if os(macOS)
-                MacWorkspaceView(service: service)
+                MacWorkspaceView(service: service, orbit: orbit)
                     .environment(pairedDevices)
                     .environment(\.localAgent, service.client)
             #else

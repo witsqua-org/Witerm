@@ -20,7 +20,7 @@ final class RelayTerminalPolicyTests: XCTestCase {
 
     func testRemoteSurfaceExcludesCreateCloseAndUnexpectedFields() throws {
         let encoder = JSONEncoder()
-        for operation in [LocalAgentOperation.create, .close, .share, .rename, .access, .guest, .folder] {
+        for operation in [LocalAgentOperation.create, .close, .share, .rename, .access, .guest, .folder, .capture] {
             XCTAssertThrowsError(try RelayTerminalPolicy.request(encoder.encode(LocalAgentRequest(operation: operation)), attached: false, permission: .control))
         }
         // A recipient may send only its invitation proof, never a peer or a key.
@@ -29,6 +29,10 @@ final class RelayTerminalPolicyTests: XCTestCase {
         XCTAssertThrowsError(try RelayTerminalPolicy.request(encoder.encode(LocalAgentRequest(operation: .redeem, proof: Data(count: 32), peer: forged)), attached: false, permission: .view))
         XCTAssertThrowsError(try RelayTerminalPolicy.request(encoder.encode(LocalAgentRequest(operation: .list, peer: forged)), attached: false, permission: .control))
         XCTAssertThrowsError(try RelayTerminalPolicy.request(encoder.encode(LocalAgentRequest(operation: .redeem, proof: Data(count: 31))), attached: false, permission: .view))
+        // Only this Mac's own clients name an agent.
+        XCTAssertThrowsError(try RelayTerminalPolicy.request(encoder.encode(LocalAgentRequest(
+            operation: .attach, sessionID: UUID().uuidString.lowercased(), columns: 80, rows: 24, mode: .control, agent: "Orbit")),
+            attached: false, permission: .control))
         var raw = try XCTUnwrap(JSONSerialization.jsonObject(with: encoder.encode(LocalAgentRequest(operation: .list))) as? [String: Any])
         raw["command"] = "not an API"
         XCTAssertThrowsError(try RelayTerminalPolicy.request(JSONSerialization.data(withJSONObject: raw), attached: false, permission: .control))

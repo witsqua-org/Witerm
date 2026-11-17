@@ -1016,6 +1016,115 @@ final class AgentTests: XCTestCase {
         try await client.close(sessionID: session.id)
     }
 
+    /// Agents read a session as plain text: wrapped lines joined, trailing
+    /// blanks gone, history above the screen on request, and the cursor and
+    /// history counters that let a later capture start where this one ended.
+    func testCaptureReadsTheScreenAndHistoryAsText() async throws {
+        guard FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/tmux") else { throw XCTSkip("tmux is required") }
+        let url = try directory()
+        let configuration = try AgentConfiguration(stateDirectory: url, shellPath: "/bin/sh")
+        let broker = try AgentBroker(configuration: configuration)
+        try broker.start()
+        defer {
+            broker.stop()
+            _ = try? CommandRunner(executable: "/opt/homebrew/bin/tmux", environment: configuration.environment)
+                .run(["-S", url.appendingPathComponent("tmux.sock").path, "kill-server"])
+        }
+        let client = LocalAgentClient(socketURL: url.appendingPathComponent("agent.sock"))
+        let session = try await client.create(name: "Read me", columns: 40, rows: 10)
+        let attachment = try await client.attach(sessionID: session.id, columns: 40, rows: 10)
+        let drain = Task { do { for try await _ in attachment.events {} } catch {} }
+        defer { drain.cancel() }
+        let long = String(repeating: "w", count: 70)
+        try await attachment.send(Data("seq 1 30; echo \(long); echo done-$((1+1))\n".utf8))
+        var capture = try await client.capture(sessionID: session.id)
+        for _ in 0..<200 where !capture.text.contains("done-2\n") {
+            try await Task.sleep(for: .milliseconds(25))
+            capture = try await client.capture(sessionID: session.id)
+        }
+        XCTAssertTrue(capture.text.contains("\n" + long + "\n"), "A wrapped line wasn't joined")
+        XCTAssertFalse(capture.text.contains("\n1\n"), "The screen alone reached back into history")
+        XCTAssertGreaterThan(capture.historySize, 20)
+        XCTAssertFalse(capture.alternateScreen)
+        XCTAssertFalse(capture.truncated)
+        XCTAssertFalse(capture.text.split(separator: "\n").contains { $0.hasSuffix(" ") }, "Trailing blanks were kept")
+        let earlier = try await client.capture(sessionID: session.id, start: -capture.historySize)
+        XCTAssertTrue(earlier.text.contains("\n1\n2\n3\n"), "History wasn't included")
+        // From the cursor's absolute line, only what came after it.
+        let line = capture.historySize + capture.cursorRow
+        try await attachment.send(Data("echo after-$((2+2))\n".utf8))
+        var after = try await client.capture(sessionID: session.id)
+        for _ in 0..<200 where !after.text.contains("after-4\n") {
+            try await Task.sleep(for: .milliseconds(25))
+            after = try await client.capture(sessionID: session.id)
+        }
+        let since = try await client.capture(sessionID: session.id, start: line - after.historySize)
+        XCTAssertFalse(since.text.contains("done-2"), "The capture started before the cursor's line")
+        XCTAssertTrue(since.text.contains("echo after-$((2+2))\nafter-4"))
+        for start in [-10_001, 201] {
+            do { _ = try await client.capture(sessionID: session.id, start: start); XCTFail("start \(start) was accepted") }
+            catch LocalAgentClientError.rejected(let code) { XCTAssertEqual(code, .invalidRequest) }
+        }
+        do { _ = try await client.capture(sessionID: UUID().uuidString.lowercased()); XCTFail("Unknown session answered") }
+        catch LocalAgentClientError.rejected(let code) { XCTAssertEqual(code, .notFound) }
+        try await attachment.detach()
+        try await client.close(sessionID: session.id)
+    }
+
+    /// An agent's attachment is named for people ("Orbit is typing"), and
+    /// its input waits while a person types in the same session.
+    func testAgentsAreNamedAndWaitForPeopleTyping() async throws {
+        guard FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/tmux") else { throw XCTSkip("tmux is required") }
+        let url = try directory()
+        let configuration = try AgentConfiguration(stateDirectory: url, shellPath: "/bin/sh")
+        let broker = try AgentBroker(configuration: configuration)
+        try broker.start()
+        defer {
+            broker.stop()
+            _ = try? CommandRunner(executable: "/opt/homebrew/bin/tmux", environment: configuration.environment)
+                .run(["-S", url.appendingPathComponent("tmux.sock").path, "kill-server"])
+        }
+        let client = LocalAgentClient(socketURL: url.appendingPathComponent("agent.sock"))
+        let session = try await client.create(name: "Shared", columns: 80, rows: 24)
+        let person = try await client.attach(sessionID: session.id, columns: 80, rows: 24)
+        let agent = try await client.attach(sessionID: session.id, columns: 80, rows: 24, agent: "Orbit")
+        let drains = [person, agent].map { attachment in Task { do { for try await _ in attachment.events {} } catch {} } }
+        defer { drains.forEach { $0.cancel() } }
+        let listed = try await client.sessions().first { $0.id == session.id }
+        XCTAssertEqual(Set((listed?.sharing?.attachments ?? []).map(\.agent)), [nil, "Orbit"])
+        try await person.send(Data("e".utf8))
+        do { try await agent.send(Data("x".utf8)); XCTFail("An agent typed over a person") }
+        catch LocalAgentClientError.rejected(let code) { XCTAssertEqual(code, .sessionBusy) }
+        try await Task.sleep(for: .milliseconds(2_100))
+        try await agent.send(Data("cho agent-$((5+5))\n".utf8))
+        var text = ""
+        for _ in 0..<200 where !text.contains("agent-10\n") {
+            try await Task.sleep(for: .milliseconds(25))
+            text = try await client.capture(sessionID: session.id).text
+        }
+        XCTAssertTrue(text.contains("agent-10"), "The agent's input didn't arrive after the person paused")
+        // A paired device can't claim to be an agent, and names are checked.
+        let peer = LocalRemotePeer(deviceID: UUID().uuidString.lowercased(), name: "Phone")
+        do { _ = try await client.attach(sessionID: session.id, mode: .view, peer: peer, agent: "Orbit"); XCTFail("A peer named an agent") }
+        catch LocalAgentClientError.rejected(let code) { XCTAssertEqual(code, .invalidRequest) }
+        try await person.detach()
+        try await agent.detach()
+        try await client.close(sessionID: session.id)
+    }
+
+    func testCapturedTextKeepsTheLatestLinesThatFit() {
+        let trimmed = TmuxEngine.captured(["a  ", "b\t", "", "c", "", ""], historySize: 3, cursorColumn: 1, cursorRow: 2, alternate: true)
+        XCTAssertEqual(trimmed.text, "a\nb\n\nc")
+        XCTAssertFalse(trimmed.truncated)
+        XCTAssertTrue(trimmed.alternateScreen)
+        let line = String(repeating: "x", count: 999)
+        let long = TmuxEngine.captured((0..<100).map { "\($0)" + line }, historySize: 0, cursorColumn: 0, cursorRow: 0, alternate: false)
+        XCTAssertTrue(long.truncated)
+        XCTAssertLessThanOrEqual(long.text.utf8.count, LocalTerminalCapture.textLimit)
+        XCTAssertTrue(long.text.hasSuffix("99" + line), "The latest line wasn't kept")
+        XCTAssertFalse(long.text.hasPrefix("0x"))
+    }
+
     func testForegroundCommandLeavesOutTheShell() {
         XCTAssertNil(TmuxEngine.foregroundCommand("zsh", shell: "/bin/zsh"))
         XCTAssertNil(TmuxEngine.foregroundCommand("-zsh\n", shell: "/bin/zsh"))

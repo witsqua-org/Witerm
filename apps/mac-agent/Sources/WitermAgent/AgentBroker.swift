@@ -129,7 +129,7 @@ final class AgentBroker: @unchecked Sendable {
             connection.child = nil
             connection.mode = nil
             connection.sessionID = nil
-            connection.peer = nil
+            connection.peer = nil; connection.agent = nil
             if final { connections.removeValue(forKey: connection.token) }
         }
     }
@@ -177,7 +177,8 @@ final class AgentBroker: @unchecked Sendable {
         case .redeem: allowed.formUnion(["proof", "peer"])
         case .rename: allowed.formUnion(["session_id", "name"])
         case .folder: allowed.insert("session_id")
-        case .attach: allowed.formUnion(["session_id", "columns", "rows", "mode", "history", "peer"])
+        case .capture: allowed.formUnion(["session_id", "start"])
+        case .attach: allowed.formUnion(["session_id", "columns", "rows", "mode", "history", "agent", "peer"])
         case .input: allowed.formUnion(["data", "automatic"])
         case .resize: allowed.formUnion(["columns", "rows"])
         // Flow control lives in the relay endpoint; it never reaches here.
@@ -310,6 +311,12 @@ final class AgentBroker: @unchecked Sendable {
             guard connection.child == nil else { throw AgentFailure(.invalidRequest) }
             let place = try engine.place(try sessionID())
             connection.enqueue(LocalAgentFrame(id: request.id, kind: .response, ok: true, cwd: place.cwd, command: place.command))
+        case .capture:
+            guard connection.child == nil else { throw AgentFailure(.invalidRequest) }
+            let start = request.start ?? 0
+            guard (-LocalTerminalCapture.historyLimit...200).contains(start) else { throw AgentFailure(.invalidRequest) }
+            let capture = try engine.capture(try sessionID(), start: start)
+            connection.enqueue(LocalAgentFrame(id: request.id, kind: .response, ok: true, capture: capture))
         case .close:
             let id = try sessionID()
             try engine.close(id)
@@ -324,6 +331,10 @@ final class AgentBroker: @unchecked Sendable {
             let id = try sessionID()
             let (columns, rows) = try dimensions()
             let remote = try peer()
+            // Only this Mac's own clients act for agents, and they name one.
+            if let agent = request.agent {
+                guard remote == nil, validDisplayName(agent) else { throw AgentFailure(.invalidRequest) }
+            }
             if let remote {
                 // A session a paired device may not reach does not exist for it.
                 guard reachable(id, by: remote) else { throw AgentFailure(.notFound) }
@@ -346,6 +357,7 @@ final class AgentBroker: @unchecked Sendable {
             let renderer = request.history == true ? engine.rendererEnvironment() : nil
             let child = try engine.attach(id, columns: info.columns, rows: info.rows, mode: mode, renderer: renderer)
             connection.child = child; connection.sessionID = id; connection.mode = mode; connection.peer = remote
+            connection.agent = request.agent
             if mode == .control {
                 writers[id, default: []].insert(connection.token)
                 preferred[connection.token] = (columns, rows)
@@ -388,6 +400,12 @@ final class AgentBroker: @unchecked Sendable {
             // example) aren't typing: they never take the grid.
             guard request.automatic != true else { try child.send(data); reply(); return }
             let now = ProcessInfo.processInfo.systemUptime
+            // An agent waits while a person types here: its input is refused
+            // until every other writer has paused, and nothing is reordered.
+            if connection.agent != nil, (writers[id] ?? []).contains(where: { token in
+                token != connection.token && connections[token]?.agent == nil
+                    && now - (lastInput[token] ?? -.infinity) < Self.ownerHold
+            }) { throw AgentFailure(.sessionBusy) }
             defer { lastInput[connection.token] = now }
             let owner = sizeOwners[id]
             let ownerTyping = owner.map { writers[id]?.contains($0) == true && now - (lastInput[$0] ?? -.infinity) < Self.ownerHold } ?? false
@@ -437,7 +455,7 @@ final class AgentBroker: @unchecked Sendable {
             connection.child = nil
             connection.mode = nil
             connection.sessionID = nil
-            connection.peer = nil
+            connection.peer = nil; connection.agent = nil
             reply()
             connection.finish(afterFlush: true)
             child.stop()
@@ -496,7 +514,7 @@ final class AgentBroker: @unchecked Sendable {
         let attachments = connections.values
             .filter { $0.sessionID == session.id && $0.child != nil && $0.mode != nil }
             .sorted { $0.token.uuidString < $1.token.uuidString }
-            .map { LocalAttachmentInfo(mode: $0.mode!, device: $0.peer?.identity) }
+            .map { LocalAttachmentInfo(mode: $0.mode!, device: $0.peer?.identity, agent: $0.agent) }
         return LocalSessionInfo(id: session.id, name: session.name, createdAt: session.createdAt,
                                 columns: session.columns, rows: session.rows,
                                 sharing: LocalSessionSharing(shared: engine.shared.contains(session.id),

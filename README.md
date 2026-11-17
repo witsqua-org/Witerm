@@ -116,6 +116,8 @@ Never edit an applied migration; add a new numbered one. Contributor rules are i
 - [Direct SSH](docs/ssh.md): host keys, jump hosts, SFTP, forwarding
 - [Mac local terminal](docs/local-terminal.md): the background service, sessions, signing
 - [Command line](docs/cli.md): `witerm`, sharing, scripting
+- [AI agents](docs/agents.md): `witerm mcp` for Codex and Claude Code
+- [Orbit](docs/orbit.md): the built-in assistant, with an OpenAI API key
 - [Device pairing](docs/pairing.md): identities, invitations, grants
 - [Encrypted relay](docs/relay.md): remote sessions, privacy, deployment
 - [Terminal experience](docs/terminal-experience.md): grid size, display, accessibility, sleep
