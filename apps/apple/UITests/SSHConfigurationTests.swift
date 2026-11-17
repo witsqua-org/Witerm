@@ -49,7 +49,7 @@ import XCTest
             await MainActor.run {
                 if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
                 let search = app.searchFields.firstMatch
-                if search.exists, let text = search.value as? String, !text.isEmpty, text != "Search Terminals" {
+                if search.exists, let text = search.value as? String, !text.isEmpty, text != "Search or enter user@host" {
                     search.tap(); search.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: text.count))
                 }
                 guard menu.exists else { return }
@@ -76,10 +76,11 @@ import XCTest
         favoriteItem.tap()
         let favorite = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", "favorite"), object: row)
         wait(for: [favorite], timeout: 5)
-        // With only a few hosts, search and filters stay out of the way.
+        // With only a few hosts, Favorites Only stays out of the way; search
+        // is always there, since it also takes an address to add (Round 27).
         app.swipeDown()
         XCTAssertFalse(app.switches["sshFavoritesOnly"].exists)
-        XCTAssertFalse(app.searchFields.firstMatch.exists)
+        XCTAssertTrue(app.searchFields.firstMatch.exists)
     }
 
     /// Generating a key never saves or sends it; the form only shows the public half.

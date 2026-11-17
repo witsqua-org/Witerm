@@ -13,7 +13,7 @@ On the Mac, **Open On ▸** in a terminal's context menu, File, or Terminal (Cho
 3. **Approve.** For a new device, compare its code and choose what it can open: **only this session** (the default), **sessions you choose**, or **all sessions**, and whether it can type.
 4. **Open.** On iOS the session opens as soon as pairing finishes; an already paired device finds it under Terminals → the Mac.
 
-**What a device reaches.** This Mac keeps its own policy for each paired device (Settings → Devices, under each device):
+**What a device reaches.** This Mac keeps its own policy for each paired device (Devices in the sidebar, under each device):
 
 | Setting | Effect |
 |---|---|

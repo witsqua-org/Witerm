@@ -333,6 +333,14 @@ struct SSHTrustView: View {
 extension SSHProfile {
     var endpointSummary: String { "\(host.username)@\(host.hostname):\(host.port)" }
 
+    /// The address under the name, without repeating what the name says:
+    /// nil for a host named `user@host` on port 22, `:2222` for one on
+    /// another port, the whole address otherwise.
+    var distinctAddress: String? {
+        guard name == "\(host.username)@\(host.hostname)" else { return endpointSummary }
+        return host.port == 22 ? nil : ":\(host.port)"
+    }
+
     var accessibilitySummary: String {
         endpointSummary + (jumpHosts.isEmpty ? "" : String(localized: ", jump hosts: \(String(jumpHosts.count))", bundle: .main))
     }
@@ -370,8 +378,7 @@ struct SSHHostRowContent: View {
     /// what the name leaves out (a port other than 22), not the address twice.
     private var addressLine: String? {
         if let doing = activity?.summary(home: nil) { return doing }
-        guard expanded, profile.name == "\(profile.host.username)@\(profile.host.hostname)" else { return profile.endpointSummary }
-        return profile.host.port == 22 ? nil : ":\(profile.host.port)"
+        return profile.distinctAddress
     }
 
     private var details: some View {

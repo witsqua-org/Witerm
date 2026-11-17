@@ -184,6 +184,25 @@ func waitForAgent(_ client: LocalAgentClient) async throws {
         try await restarted.send(Data("printf 'WT_''PID=%s\\n' \"$$\"; printf 'WT_''RENAMED\\n'\n".utf8))
         try await waitFor("WT_RENAMED", in: capture)
         guard try await shellPID(capture) == originalPID else { throw SmokeFailure("Shell changed after rename") }
+        // New Terminal in Same Folder: the folder follows the shell's cd, and
+        // a session started there runs its shell there.
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("witerm-smoke-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let real = try realpath(folder.path, nil).map { defer { free($0) }; return String(cString: $0) } ?? folder.path
+        await capture.clear()
+        try await restarted.send(Data("cd '\(real)'; printf 'WT_''MOVED\\n'\n".utf8))
+        try await waitFor("WT_MOVED", in: capture)
+        var reported = ""
+        for _ in 0..<100 {
+            reported = (try? await client.folder(sessionID: session.id)) ?? ""
+            if reported == real { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        guard reported == real else { throw SmokeFailure("Folder reported \(reported), not \(real)") }
+        let beside = try await client.create(name: "Smoke beside", cwd: reported)
+        guard try await client.folder(sessionID: beside.id) == real else { throw SmokeFailure("New session started elsewhere") }
+        try await client.close(sessionID: beside.id)
         await restarted.disconnect(); reader.cancel()
         // Bursts far bigger than any queue, read slowly: the window's reader
         // waits, the agent stops reading the pane meanwhile, tmux coalesces
@@ -197,6 +216,6 @@ func waitForAgent(_ client: LocalAgentClient) async throws {
         }
         try await client.close(sessionID: session.id)
         guard try await client.sessions().isEmpty else { throw SmokeFailure("Close left a session") }
-        print("PASS: real PTY input, resize, shared typing with a refused paired writer, read-only, alternate-screen repaint, reconnect, agent restart, rename, bursts to a slow renderer (\(timings.joined(separator: ", "))) and explicit close")
+        print("PASS: real PTY input, resize, shared typing with a refused paired writer, read-only, alternate-screen repaint, reconnect, agent restart, rename, the shell's folder and a session started beside it, bursts to a slow renderer (\(timings.joined(separator: ", "))) and explicit close")
     }
 }

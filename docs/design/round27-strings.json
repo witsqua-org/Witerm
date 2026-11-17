@@ -1,0 +1,49 @@
+{
+  "add": {
+    "Import hosts from an OpenSSH config file": "从 OpenSSH 配置文件导入主机",
+    "Import…": "导入…",
+    "Keeps running after you quit, and opens on your other devices": "退出后仍会运行，也能在你的其他设备上打开",
+    "None running": "没有正在运行的终端",
+    "None saved": "尚未保存",
+    "Not connected": "未连接",
+    "Open Quickly (⇧⌘O): terminals, hosts, snippets and commands": "快速打开（⇧⌘O）：终端、主机、片段和命令",
+    "Open Quickly from anywhere": "在任何页面都能快速打开",
+    "Open a terminal, connect to a host, or run a command": "打开终端、连接主机或执行命令",
+    "Or start one from any terminal app:": "也可以在任意终端应用中启动：",
+    "Pair your iPhone or iPad to open these terminals there.": "配对 iPhone 或 iPad，即可在上面打开这些终端。",
+    "Relay server: %@": "中继服务器：%@",
+    "Remote access off": "远程访问已关闭",
+    "Search or enter user@host": "搜索或输入 user@host",
+    "Sign in to another computer. No relay server needed.": "登录另一台电脑，无需中继服务器。",
+    "Started %@": "%@启动",
+    "page.home": "主页 (en: Home; its own key, since \"Home\" is the iOS Home key)"
+  },
+  "change": {
+    "%@ is already paired with this Mac. It can open this terminal from Terminals if you allow it in Settings → Devices.": {
+      "en": "%@ is already paired with this Mac. It can open this terminal from Terminals if you allow it in Devices.",
+      "zh-Hans": "%@ 已与这台 Mac 配对。只要你在“设备”中允许，它就可以从“终端”中打开此终端。"
+    },
+    "Change what it can open at any time in Settings → Devices.": {
+      "en": "Change what it can open at any time in Devices.",
+      "zh-Hans": "可以随时在“设备”中更改它能打开的内容。"
+    },
+    "Change what it can open in Settings → Devices.": {
+      "en": "Change what it can open in Devices.",
+      "zh-Hans": "在“设备”中更改它能打开的内容。"
+    },
+    "End their access at any time in Settings → Devices.": {
+      "en": "End their access at any time in Devices.",
+      "zh-Hans": "可以随时在“设备”中结束对方的访问。"
+    },
+    "No terminals yet. Choose later in Settings → Devices.": {
+      "en": "No terminals yet. Choose later in Devices.",
+      "zh-Hans": "还没有终端。稍后可在“设备”中选择。"
+    }
+  },
+  "remove": [
+    "Opens Settings → Devices",
+    "Search Terminals and Hosts",
+    "Search Terminals",
+    "Relay server: %@. Opens Settings → Devices."
+  ]
+}

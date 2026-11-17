@@ -95,6 +95,29 @@ import XCTest
 
     /// A terminal row has no swipe: no watching mode to pick (the keyboard
     /// decides) and no delete (ending it is the Mac's decision).
+    /// Round 27: search is always there, finds terminals by name, and takes
+    /// an address no saved host has as a host to add, its form filled in.
+    func testSearchTakesAnAddressToAdd() {
+        launch()
+        let search = app.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 10), "Search is always on Terminals")
+        search.tap()
+        search.typeText("deploy@10.0.0.5")
+        let add = any("quickAddSSHHost")
+        XCTAssertTrue(add.waitForExistence(timeout: 5), "An address offers Add SSH Host")
+        XCTAssertTrue(add.label.contains("deploy@10.0.0.5"))
+        shot("27-search-address")
+        add.tap()
+        let address = app.textFields["sshHostAddress"].firstMatch
+        XCTAssertTrue(address.waitForExistence(timeout: 5), "The host form opens")
+        XCTAssertEqual(address.value as? String, "deploy@10.0.0.5", "The form starts with the typed address")
+        app.buttons["Cancel"].firstMatch.tap()
+        // A plain word only searches.
+        search.tap()
+        search.typeText("build")
+        XCTAssertFalse(any("quickAddSSHHost").waitForExistence(timeout: 2))
+    }
+
     func testTerminalRowsHaveNoSwipeActions() {
         launch()
         let terminal = app.buttons["remoteSession-fixture-s1"]

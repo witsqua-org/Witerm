@@ -214,11 +214,10 @@ final class PhoneContinuityFlowTests: XCTestCase {
         XCTAssertNotNil(awaitSignal("phone-done", timeout: 300), "The phone didn't finish")
         shot("06-after")
 
-        // Opt-in: the phone unpairs itself, and Settings → Devices drops it
+        // Opt-in: the phone unpairs itself, and Devices drops it
         // without anything done here (the Mac rechecks every 10 seconds).
         if environment["WITERM_E2E_PHONE_UNPAIRS"] == "1" {
-            app.typeKey(",", modifierFlags: .command)
-            let devicesTab = app.toolbars.buttons["Devices"].firstMatch
+            let devicesTab = app.descendants(matching: .any)["devicesSidebarRow"].firstMatch
             XCTAssertTrue(devicesTab.waitForExistence(timeout: 10))
             devicesTab.click()
             let edit = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "editDevice-", phone)).firstMatch
@@ -232,11 +231,10 @@ final class PhoneContinuityFlowTests: XCTestCase {
             return
         }
 
-        // Revoke only this test's pairing, in Settings → Devices, unless the
+        // Revoke only this test's pairing, in Devices, unless the
         // next run should start paired to check re-pairing.
         if environment["WITERM_E2E_KEEP_PAIRING"] == "1" { return }
-        app.typeKey(",", modifierFlags: .command)
-        let devicesTab = app.toolbars.buttons["Devices"].firstMatch
+        let devicesTab = app.descendants(matching: .any)["devicesSidebarRow"].firstMatch
         XCTAssertTrue(devicesTab.waitForExistence(timeout: 10))
         devicesTab.click()
         let edit = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "editDevice-", phone)).firstMatch

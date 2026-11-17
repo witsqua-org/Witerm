@@ -91,7 +91,29 @@ extension TerminalView {
     /// session drops it.
     @objc func witermInsertSnippet(_ sender: Any?) {
         guard let snippet = ((sender as? NSMenuItem)?.representedObject as? SnippetBox)?.snippet else { return }
-        send(snippet.input(bracketedPaste: getTerminal().bracketedPasteMode))
+        guard !snippet.placeholders.isEmpty else {
+            send(snippet.input(bracketedPaste: getTerminal().bracketedPasteMode))
+            return
+        }
+        // Blanks are asked for in a sheet over this window; the filled-in
+        // command goes to this terminal, and the keyboard comes back to it.
+        guard let presenter = window?.contentViewController else { NSSound.beep(); return }
+        var sheet: NSViewController?
+        let close: () -> Void = { [weak presenter] in
+            if let sheet { presenter?.dismiss(sheet) }
+        }
+        let host = NSHostingController(rootView: SnippetFillIn(snippet: snippet, cancel: { [weak self] in
+            close()
+            if let self { self.window?.makeFirstResponder(self) }
+        }, insert: { [weak self] filled in
+            close()
+            guard let self else { return }
+            self.window?.makeFirstResponder(self)
+            self.send(filled.input(bracketedPaste: self.getTerminal().bracketedPasteMode))
+        }))
+        host.sizingOptions = .preferredContentSize
+        sheet = host
+        presenter.presentAsSheet(host)
     }
 }
 #endif
@@ -170,6 +192,10 @@ struct SharingMenu: View {
 /// iPad's hardware-keyboard shortcut list.
 struct WorkspaceActions {
     var newSession: (() -> Void)?
+    /// A new terminal in the selected terminal's current folder (Mac).
+    var newSessionBeside: (() -> Void)? = nil
+    /// Open Quickly (Mac): every terminal, host, snippet and command by name.
+    var openQuickly: (() -> Void)? = nil
     var newSSHConnection: () -> Void
     var importSSHHosts: (() -> Void)?
     /// Pairs a device when no terminal is selected (Mac).
@@ -240,6 +266,9 @@ struct WitermCommands: Commands {
             Button(String(localized: "New Terminal", bundle: .main)) { actions?.newSession?() }
                 .keyboardShortcut("n", modifiers: .command)
                 .disabled(actions?.newSession == nil)
+            Button(String(localized: "New Terminal in Same Folder", bundle: .main)) { actions?.newSessionBeside?() }
+                .keyboardShortcut("n", modifiers: [.command, .option])
+                .disabled(actions?.newSessionBeside == nil)
             #endif
             Button(String(localized: "Add SSH Host…", bundle: .main)) { actions?.newSSHConnection() }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
@@ -247,6 +276,10 @@ struct WitermCommands: Commands {
             Button(String(localized: "Import SSH Hosts…", bundle: .main)) { actions?.importSSHHosts?() }
                 .disabled(actions?.importSSHHosts == nil)
             #if os(macOS)
+            Divider()
+            Button(String(localized: "Open Quickly…", bundle: .main)) { actions?.openQuickly?() }
+                .keyboardShortcut("o", modifiers: [.command, .shift])
+                .disabled(actions?.openQuickly == nil)
             Divider()
             if let openOn = actions?.openOn {
                 Menu(String(localized: "Open On", bundle: .main)) {

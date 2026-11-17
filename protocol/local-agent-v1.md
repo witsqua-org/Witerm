@@ -57,6 +57,7 @@ One UTF-8 JSON object per line, `version` 1. Byte fields are standard Base64, da
 | `guest` | optional `guest` (`{pairing_id, session_id, permission, expires_at, key}`, key 32 bytes, at most 24 hours) to record, optional `pairing_id` to forget | `guests`, without keys |
 | `redeem` | `proof` (32 bytes) and `peer` with `pairing_id` and `public_key` | ok, or `not_found` for any failure |
 | `rename` | `session_id`, `name` (1–64 scalars, no controls) | `session` with `sharing`; the shell, attachments, and tmux's internal name are unchanged |
+| `folder` | `session_id` | `cwd`: the absolute folder the session's foreground process is in now (tmux's `pane_current_path`), checked like a start folder, so one removed since is `not_found`. The app starts a session beside it with `create`'s `cwd` (New Terminal in Same Folder) |
 | `attach` | `session_id`, `columns`, `rows`, `mode` (`control` or `view`); optional `history`, `peer` | `session` and `mode`, then events |
 | `input` | `data`, optional `automatic` (on an attached connection, writers only) | ok |
 | `resize` | `columns`, `rows` (writers only) | ok, once the shell sees the new size; from a writer that doesn't own the grid, ok after recording it, preceded by a `geometry` frame with the grid in use when that differs |
@@ -65,7 +66,7 @@ One UTF-8 JSON object per line, `version` 1. Byte fields are standard Base64, da
 
 **Detach.** Once the `detach` acknowledgement arrives, another client can take control immediately. Late requests on the old connection can never regain it.
 
-**Frames** have `version`, `kind` (`response`, `geometry`, `output`, or `closed`), and optionally `id`, `ok`, `error`, `status`, `sessions`, `session`, `mode`, and `data`. A relayed attach response may also carry `flow`, added by the Mac's relay endpoint, never by this service.
+**Frames** have `version`, `kind` (`response`, `geometry`, `output`, or `closed`), and optionally `id`, `ok`, `error`, `status`, `sessions`, `session`, `mode`, `data`, and `cwd` (`folder` replies only). A relayed attach response may also carry `flow`, added by the Mac's relay endpoint, never by this service.
 
 - `status` is `{version, tmux_available, relays}`. `relays` has one `{server, state}` per server with remote access on, where `state` is `connecting` or `ready` (the server accepted this Mac); it is empty when remote access is off. Without tmux, `status` still answers and everything else returns `dependency_missing`.
 - `session` is `{id, name, created_at, columns, rows}`. Local `list`, `create`, `share`, and `rename` replies add `sharing`: `{shared, keep_private, remote_typing, attachments: [{mode, device}]}`, where `device` is `{device_id, name}` for a paired device and absent for this Mac. Several attachments may have mode `control`. A `list` for a `peer` adds `access` (`view` or `control`) instead: the most that device may do there. A `list` for a paired device (not an invitation's guest) also adds `writers`: the others who can type in that session now, each `{name}` with the other paired device's name, or `{}` for this Mac (its app, another window, or the `witerm` command); never their keys or pairings. Older services omit it, and clients then say only that another device is typing.
@@ -101,7 +102,7 @@ Which paired devices reach a session is decided here, per device and per session
   - `cwd` is the shell's absolute start folder. It must exist and be readable: a missing folder is `not_found`; a relative path, a non-directory, or `.`/`..` segments are `invalid_request`.
   - The service launches tmux *in* that folder instead of passing `-c`, because tmux expands formats there (`#{…}`, and `#(…)` runs a command). If tmux then reports a different start folder, the request fails.
   - The shell gets `WITERM_SESSION_ID` in its environment. No other environment is copied from the caller.
-- **Never remote.** `create`, `close`, `share`, `rename`, `access`, `guest`, `cwd`, and `peer` can't arrive through the relay. Paired devices see a new name the next time they list sessions.
+- **Never remote.** `create`, `close`, `share`, `rename`, `access`, `guest`, `folder`, `cwd`, and `peer` can't arrive through the relay: a paired device never learns where a Mac's shell is. Paired devices see a new name the next time they list sessions.
 
 ## Geometry
 

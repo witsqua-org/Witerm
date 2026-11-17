@@ -58,3 +58,87 @@ enum CommandSnippets {
         return nil
     }
 }
+
+/// Blanks in a snippet, written `{{name}}`, that are asked for each time it's
+/// inserted: `git switch {{branch}}`, `ssh {{user}}@{{host}}`. A name starts
+/// with a letter and holds letters, digits, spaces, `-` and `_`, so Go and
+/// Docker templates such as `{{.Name}}` or `{{json .}}` stay as they are.
+/// The same name twice is one blank. Values are typed as given: they're the
+/// person's own input, like typing, and never shell-quoted on their behalf.
+enum SnippetPlaceholders {
+    static let nameLimit = 40
+    static let valueLimit = 1_024
+
+    /// Each blank's name once, in the order it first appears.
+    static func names(in text: String) -> [String] {
+        var seen = Set<String>(), result: [String] = []
+        for match in matches(in: text) where seen.insert(match.name).inserted { result.append(match.name) }
+        return result
+    }
+
+    /// `text` with every blank replaced by its value; a blank without a
+    /// value stays as written.
+    static func fill(_ text: String, values: [String: String]) -> String {
+        var result = "", index = text.startIndex
+        for match in matches(in: text) {
+            result += text[index..<match.range.lowerBound]
+            result += values[match.name] ?? String(text[match.range])
+            index = match.range.upperBound
+        }
+        return result + text[index...]
+    }
+
+    /// A value can't contain line breaks or control characters: it would
+    /// run the command early or drive the terminal itself.
+    static func validValue(_ value: String) -> Bool {
+        value.utf8.count <= valueLimit && !value.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
+    }
+
+    private struct Match { let name: String; let range: Range<String.Index> }
+
+    private static func matches(in text: String) -> [Match] {
+        var result: [Match] = []
+        var search = text.startIndex
+        while let open = text.range(of: "{{", range: search..<text.endIndex) {
+            guard let close = text.range(of: "}}", range: open.upperBound..<text.endIndex) else { break }
+            let inner = text[open.upperBound..<close.lowerBound]
+            let name = inner.trimmingCharacters(in: .whitespaces)
+            if validName(name) {
+                result.append(Match(name: name, range: open.lowerBound..<close.upperBound))
+                search = close.upperBound
+            } else {
+                search = text.index(after: open.lowerBound)
+            }
+        }
+        return result
+    }
+
+    private static func validName(_ name: String) -> Bool {
+        guard let first = name.unicodeScalars.first, CharacterSet.letters.contains(first), name.count <= nameLimit else { return false }
+        let allowed = CharacterSet.letters.union(.decimalDigits).union(CharacterSet(charactersIn: " -_"))
+        return name.unicodeScalars.allSatisfy(allowed.contains)
+    }
+}
+
+extension CommandSnippet {
+    /// The blanks to ask for before inserting, if any.
+    var placeholders: [String] { SnippetPlaceholders.names(in: text) }
+
+    /// This snippet with its blanks filled in, ready to type.
+    func filled(_ values: [String: String]) -> CommandSnippet {
+        var copy = self
+        copy.text = SnippetPlaceholders.fill(text, values: values)
+        return copy
+    }
+}
+
+/// The last value given for each blank of each snippet, so inserting the same
+/// snippet again starts from what was used. In memory only: values can be
+/// anything a person types, so they're never written to disk.
+@MainActor enum SnippetRecentValues {
+    private static var values: [UUID: [String: String]] = [:]
+
+    static func values(for snippet: CommandSnippet) -> [String: String] { values[snippet.id] ?? [:] }
+
+    static func remember(_ given: [String: String], for snippet: CommandSnippet) { values[snippet.id] = given }
+}

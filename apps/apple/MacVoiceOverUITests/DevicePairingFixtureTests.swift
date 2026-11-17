@@ -30,10 +30,10 @@ final class DevicePairingFixtureTests: XCTestCase {
     private func any(_ identifier: String) -> XCUIElement { app.descendants(matching: .any)[identifier].firstMatch }
 
     private func openDevices() {
-        app.typeKey(",", modifierFlags: .command)
-        let tab = app.toolbars.buttons["Devices"].firstMatch
-        XCTAssertTrue(tab.waitForExistence(timeout: 10))
-        tab.click()
+        // Round 27: Devices is a page in the window, first in the sidebar.
+        let row = any("devicesSidebarRow")
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        row.click()
         XCTAssertTrue(any("editDevice-fixture-phone-older").waitForExistence(timeout: 10), "The fixture's devices aren't listed")
     }
 
@@ -171,10 +171,9 @@ final class DevicePairingFixtureTests: XCTestCase {
     func testApproveInChinese() throws {
         continueAfterFailure = false
         try launch(language: "zh-Hans")
-        app.typeKey(",", modifierFlags: .command)
-        let tab = app.toolbars.buttons["设备"].firstMatch
-        XCTAssertTrue(tab.waitForExistence(timeout: 10))
-        tab.click()
+        let row = any("devicesSidebarRow")
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        row.click()
         XCTAssertTrue(any("createPairingInvitation").waitForExistence(timeout: 10))
         any("createPairingInvitation").click()
         let older = app.checkBoxes["pairingUnpairOlder"]

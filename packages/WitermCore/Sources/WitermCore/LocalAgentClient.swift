@@ -159,6 +159,16 @@
       return session
     }
 
+    /// The folder a session's shell is in now, as tmux reports it for the
+    /// pane's foreground process: where a new session beside it should start.
+    public func folder(sessionID: String) async throws -> String {
+      try LocalWire.validateID(sessionID)
+      let frame = try await rpc(LocalAgentRequest(operation: .folder, sessionID: sessionID))
+      guard let cwd = frame.cwd, LocalWire.validDirectory(cwd), frame.session == nil, frame.sessions == nil
+      else { throw LocalAgentClientError.invalidResponse }
+      return cwd
+    }
+
     public func close(sessionID: String) async throws {
       try LocalWire.validateID(sessionID)
       _ = try await rpc(LocalAgentRequest(operation: .close, sessionID: sessionID))

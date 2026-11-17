@@ -12,18 +12,40 @@ struct ContinueRequest: Identifiable {
 }
 
 enum MacDestination: Hashable {
+    /// Home (Round 27): the command bar, this Mac's terminals, SSH hosts and devices.
+    case home
+    /// Paired devices, invitations and remote access, in the window rather than Settings.
+    case devices
     case local(String)
     case ssh(UUID)
+
+    /// The stable ID Open Quickly remembers it by.
+    var quickOpenID: String {
+        switch self {
+        case .home: "place:home"
+        case .devices: "place:devices"
+        case .local(let id): "local:\(id)"
+        case .ssh(let id): "ssh:\(id.uuidString)"
+        }
+    }
+
+    /// A terminal or host, as opposed to a page.
+    var isTerminal: Bool {
+        switch self {
+        case .local, .ssh: true
+        case .home, .devices: false
+        }
+    }
 }
 
-/// One sidebar for everything a person can open: sessions on this Mac and
-/// saved SSH hosts. Paired devices are managed in Settings. The detail column
-/// is always the work itself.
+/// One sidebar for everything a person can open (Round 27): Home and Devices
+/// first, then terminals on this Mac and saved SSH hosts, each section with
+/// its own +. The detail column is the work itself, or the page chosen.
 struct MacWorkspaceView: View {
     let service: LocalAgentService
     @Environment(ServerList.self) private var servers
     @Environment(MacPairedDevices.self) private var pairedDevices
-    @State private var selection: MacDestination?
+    @State private var selection: MacDestination? = .home
     @State private var terminal = LocalTerminalModel()
     @State private var ssh = SSHWorkspaceModel()
     @State private var sshUI = SSHWorkspaceUI()
@@ -31,12 +53,17 @@ struct MacWorkspaceView: View {
     @State private var renamingSession: LocalSessionInfo?
     /// Continuing a session on another device, or pairing one without a session.
     @State private var continuing: ContinueRequest?
-    @State private var search = ""
     @State private var remoteAccess = MacRemoteAccessModel()
-    @AppStorage(SettingsTab.key) private var settingsTab = SettingsTab.general.rawValue
     @AppStorage(WelcomeTour.key) private var tourVersion = 0
     @State private var showingTour = false
     @State private var connectingTooLong = false
+    /// Open Quickly (⇧⌘O), and what was chosen in it: run once the sheet has
+    /// closed, so a sheet it opens or a terminal it focuses isn't racing it.
+    @State private var quickOpen = false
+    @State private var quickOpenChoice: QuickOpenItem?
+    /// The next selection change takes the keyboard even though a key
+    /// (Return in Open Quickly) is what caused it.
+    @State private var focusNextSelection = false
     @Environment(\.openSettings) private var openSettings
     @Environment(NetworkStatus.self) private var network: NetworkStatus?
 
@@ -57,6 +84,13 @@ struct MacWorkspaceView: View {
                         .disabled(!canCreateSession)
                         .accessibilityIdentifier("newLocalSession")
                         .help(LocalTerminalHelp.newTerminal)
+                    if selectedLocalSession != nil {
+                        Button(String(localized: "New Terminal in Same Folder", bundle: .main), systemImage: "folder",
+                               action: newSessionBeside)
+                            .disabled(!canCreateSession)
+                            .accessibilityIdentifier("newLocalSessionBeside")
+                            .help(LocalTerminalHelp.newTerminalBeside)
+                    }
                     Button(String(localized: "Add SSH Host…", bundle: .main), systemImage: "network", action: sshUI.presentNew)
                         .disabled(ssh.connecting)
                         .accessibilityIdentifier("newSSHProfile")
@@ -69,6 +103,12 @@ struct MacWorkspaceView: View {
                 .accessibilityIdentifier("newMenu")
                 .help(LocalTerminalHelp.newTerminal)
             }
+            // Open Quickly from any page; Home also has it inline.
+            ToolbarItem(placement: .primaryAction) {
+                Button(String(localized: "Open Quickly…", bundle: .main), systemImage: "magnifyingglass") { quickOpen = true }
+                    .help(String(localized: "Open Quickly (⇧⌘O): terminals, hosts, snippets and commands", bundle: .main))
+                    .accessibilityIdentifier("openQuicklyToolbar")
+            }
         }
         .focusedSceneValue(\.workspaceActions, workspaceActions)
         .modifier(SSHPresentations(model: ssh, ui: sshUI))
@@ -80,7 +120,22 @@ struct MacWorkspaceView: View {
         }
         .sheet(item: $continuing, onDismiss: refocus) { request in
             ContinueOnDeviceSheet(service: service, sessionID: request.sessionID, target: request.target) { id in
-                terminal.activity(for: id).summary(home: NSHomeDirectory())
+                terminal.summary(for: id)
+            }
+        }
+        .sheet(isPresented: $quickOpen, onDismiss: {
+            if let choice = quickOpenChoice {
+                quickOpenChoice = nil
+                choice.perform()
+            } else {
+                refocus()
+            }
+        }) {
+            MacQuickOpenSheet(items: quickOpenItems, suggestions: quickOpenSuggestions) { choice in
+                quickOpenChoice = choice
+                quickOpen = false
+            } cancel: {
+                quickOpen = false
             }
         }
         .alert(String(localized: "End “\(endingSession?.name ?? "")”?", bundle: .main), isPresented: Binding(get: { endingSession != nil }, set: { if !$0 { endingSession = nil } })) {
@@ -114,6 +169,15 @@ struct MacWorkspaceView: View {
             if tourVersion < WelcomeTour.version { showingTour = true }
             await refresh()
         }
+        // Where each terminal is, rechecked while this Mac's terminals are
+        // in reach; a `cd` shows within a few seconds.
+        .task(id: service.state == .ready && terminal.tmuxAvailable) {
+            guard service.state == .ready, terminal.tmuxAvailable else { return }
+            while !Task.isCancelled {
+                if NSApp.isActive, let client = service.client { await terminal.refreshFolders(using: client) }
+                try? await Task.sleep(for: .seconds(4))
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .witermShowWelcomeTour)) { _ in
             NSApp.activate()
             showingTour = true
@@ -133,14 +197,14 @@ struct MacWorkspaceView: View {
             if let id {
                 selection = .local(id)
             } else if case .local = selection {
-                selection = nil
+                selection = .home
             }
         }
         .onChange(of: ssh.connectingProfile?.id) { _, id in
             if let id { selection = .ssh(id) }
         }
         .onChange(of: ssh.profiles.map(\.id)) { _, ids in
-            if case .ssh(let id) = selection, !ids.contains(id), ssh.connectingProfile?.id != id { selection = nil }
+            if case .ssh(let id) = selection, !ids.contains(id), ssh.connectingProfile?.id != id { selection = .home }
         }
         .onDisappear { ssh.disconnectAll(); terminal.stopWatching() }
         // From a server address that turned out to be an SSH login.
@@ -163,6 +227,8 @@ struct MacWorkspaceView: View {
         let create: (() -> Void)? = canCreateSession ? { newSession() } : nil
         var actions = WorkspaceActions(
             newSession: create,
+            newSessionBeside: canCreateSession && selectedLocalSession != nil ? { newSessionBeside() } : nil,
+            openQuickly: { quickOpen = true },
             newSSHConnection: sshUI.presentNew,
             importSSHHosts: sshUI.presentImport,
             continueOnDevice: { continuing = ContinueRequest(sessionID: selectedLocalSessionID) },
@@ -248,12 +314,19 @@ struct MacWorkspaceView: View {
         terminal.create(name: terminal.nextSessionName, using: client)
     }
 
+    /// A new terminal in the folder the selected terminal's shell is in now,
+    /// named after that folder.
+    private func newSessionBeside() {
+        guard canCreateSession, let client = service.client, let session = selectedLocalSession else { return }
+        terminal.createBeside(session, using: client)
+    }
+
     /// Gives the keyboard back to the terminal on screen after a sheet.
     private func refocus() {
         switch selection {
         case .local?: if terminal.attachment != nil { terminal.focusTerminal() }
         case .ssh(let id)?: ssh.session(for: id)?.terminal.surface.terminal.requestFocus()
-        case nil: break
+        case .home?, .devices?, nil: break
         }
     }
 
@@ -280,7 +353,7 @@ struct MacWorkspaceView: View {
                 sshUI.open(profile, model: ssh)
             }
             return true
-        case nil:
+        case .home?, .devices?, nil:
             return false
         }
     }
@@ -299,7 +372,11 @@ struct MacWorkspaceView: View {
     }
 
     private func selectionChanged(from old: MacDestination?, to new: MacDestination?) {
-        let focus = !browsingWithKeyboard
+        let focus = focusNextSelection || !browsingWithKeyboard
+        focusNextSelection = false
+        // What was opened most recently comes first in Open Quickly; arrowing
+        // through the sidebar only browses, so it isn't counted.
+        if let new, new.isTerminal, focus { QuickOpenRanking.saveRecent(QuickOpenRanking.remember(new.quickOpenID, in: QuickOpenRanking.loadRecent())) }
         // SSH sessions own their renderers and stay connected across selection.
         if case .ssh(let id) = new, let session = ssh.session(for: id) {
             session.terminal.surface.terminal.focusWhenShown = focus
@@ -311,15 +388,178 @@ struct MacWorkspaceView: View {
         }
     }
 
+    // MARK: Open Quickly
+
+    /// Everything Open Quickly reaches, from what this window has now. Only
+    /// commands that would work are listed ("Never show actions that can't
+    /// work yet"), each with its menu shortcut so the shortcut can be learned.
+    private var quickOpenItems: [QuickOpenItem] {
+        var items: [QuickOpenItem] = []
+        if service.state == .ready, terminal.tmuxAvailable, let client = service.client {
+            for session in terminal.sessions {
+                let open = terminal.openMode(session) != nil
+                items.append(QuickOpenItem(
+                    id: MacDestination.local(session.id).quickOpenID, kind: .terminal, title: session.name,
+                    detail: terminal.summary(for: session.id),
+                    symbol: open ? "terminal.fill" : "terminal",
+                    keywords: [String(localized: "This Mac", bundle: .main)]) {
+                        // Already selected but left: open it again to type.
+                        // Otherwise selecting it opens it, as a click does.
+                        if selection == .local(session.id), terminal.attachment == nil {
+                            terminal.attach(session, using: client, mode: .control)
+                        } else {
+                            show(.local(session.id))
+                        }
+                    })
+            }
+        }
+        for profile in ssh.orderedProfiles() {
+            let session = ssh.session(for: profile.id)
+            items.append(QuickOpenItem(
+                id: MacDestination.ssh(profile.id).quickOpenID, kind: .host, title: profile.name,
+                detail: session?.activity.summary(home: nil) ?? profile.endpointSummary,
+                symbol: session != nil ? "terminal.fill" : WitermSymbols.sshHost,
+                keywords: ["ssh", profile.host.hostname, profile.host.username, profile.endpointSummary],
+                tint: profile.identityHue) {
+                    show(.ssh(profile.id))
+                    if ssh.session(for: profile.id) == nil, !ssh.connecting { sshUI.open(profile, model: ssh) }
+                })
+        }
+        items += quickOpenCommands
+        for snippet in CommandSnippets.load() where terminalShown {
+            items.append(QuickOpenItem(
+                id: "snippet:\(snippet.id.uuidString)", kind: .snippet, title: snippet.name,
+                detail: snippet.text.split(whereSeparator: \.isNewline).first.map(String.init),
+                symbol: "text.insert", keywords: [String(localized: "Insert Snippet", bundle: .main)]) {
+                    refocus()
+                    // The terminal takes the keyboard back as the sheet ends;
+                    // the snippet is typed where it lands, like the menu's.
+                    DispatchQueue.main.async { TerminalSnippet.insert(snippet) }
+                })
+        }
+        return items
+    }
+
+    private var quickOpenCommands: [QuickOpenItem] {
+        func command(_ id: String, _ title: String, symbol: String, shortcut: String? = nil, keywords: [String] = [],
+                     detail: String? = nil, _ perform: @escaping () -> Void) -> QuickOpenItem {
+            QuickOpenItem(id: "action:" + id, kind: .command, title: title, detail: detail, symbol: symbol,
+                          keywords: keywords, shortcut: shortcut, perform: perform)
+        }
+        var commands: [QuickOpenItem] = []
+        if canCreateSession {
+            commands.append(command("newTerminal", String(localized: "New Terminal", bundle: .main), symbol: "plus",
+                                    shortcut: "⌘N", keywords: ["shell", "tab"], newSession))
+            if selectedLocalSession != nil {
+                commands.append(command("newTerminalBeside", String(localized: "New Terminal in Same Folder", bundle: .main),
+                                        symbol: "folder", shortcut: "⌥⌘N", keywords: ["shell", "tab", "cd", "here"],
+                                        newSessionBeside))
+            }
+        }
+        if !ssh.connecting {
+            commands.append(command("addSSHHost", String(localized: "Add SSH Host…", bundle: .main), symbol: "network",
+                                    shortcut: "⇧⌘N", keywords: ["ssh", "server", "connect"], sshUI.presentNew))
+            commands.append(command("importSSHHosts", String(localized: "Import SSH Hosts…", bundle: .main),
+                                    symbol: "square.and.arrow.down", keywords: ["ssh", "config"], sshUI.presentImport))
+        }
+        if let session = selectedLocalSession, let client = service.client {
+            commands.append(command("openOn", String(localized: "Open “\(session.name)” on Another Device…", bundle: .main),
+                                    symbol: WitermSymbols.openOn, shortcut: "⌥⌘P", keywords: ["iphone", "ipad", "share", "continue"]) {
+                continuing = ContinueRequest(sessionID: session.id)
+            })
+            if let mode = terminal.openMode(session) {
+                let typing = mode == .control
+                commands.append(command("typing", typing ? String(localized: "Stop Typing", bundle: .main)
+                                                         : String(localized: "Start Typing", bundle: .main),
+                                        symbol: typing ? WitermSymbols.watching : WitermSymbols.typing, shortcut: "⇧⌘T") {
+                    terminal.setTyping(!typing, using: client)
+                })
+                commands.append(command("leave", String(localized: "Leave", bundle: .main), symbol: WitermSymbols.leave) {
+                    terminal.detach()
+                })
+            }
+            commands.append(command("rename", String(localized: "Rename Terminal…", bundle: .main), symbol: "pencil",
+                                    shortcut: "⇧⌘R") { renamingSession = session })
+            commands.append(command("endTerminal", String(localized: "End Terminal…", bundle: .main), symbol: "xmark.octagon",
+                                    keywords: ["kill", "close", "quit"]) { endingSession = session })
+        } else {
+            commands.append(command("pair", String(localized: "Pair a Device…", bundle: .main), symbol: WitermSymbols.pair,
+                                    shortcut: "⌥⌘P", keywords: ["iphone", "ipad"]) {
+                continuing = ContinueRequest(sessionID: nil)
+            })
+        }
+        if case .ssh(let id) = selection, let session = ssh.session(for: id) {
+            commands.append(command("sftp", String(localized: "SFTP Files…", bundle: .main), symbol: "folder",
+                                    keywords: ["upload", "download", "files"]) { sshUI.files = session })
+            commands.append(command("forwarding", String(localized: "Port Forwarding…", bundle: .main), symbol: "arrow.left.arrow.right",
+                                    keywords: ["tunnel", "port"]) { sshUI.forwarding = session })
+            commands.append(command("disconnect", String(localized: "Disconnect", bundle: .main), symbol: WitermSymbols.disconnect) {
+                NotificationCenter.default.post(name: .witermDisconnectSSH, object: id)
+            })
+        }
+        commands.append(command("settings", String(localized: "Settings…", bundle: .main), symbol: "gearshape", shortcut: "⌘,",
+                                keywords: ["preferences", "font", "colors", "snippets"]) { openSettings() })
+        commands.append(command("home", LocalTerminalHelp.homePage, symbol: "house",
+                                keywords: ["start", "overview"]) { selection = .home })
+        commands.append(command("devices", String(localized: "Devices", bundle: .main), symbol: WitermSymbols.openOn,
+                                keywords: ["paired", "unpair", "relay server", "remote access", "iphone", "ipad"],
+                                detail: devicesStatus) { selection = .devices })
+        commands.append(command("tour", String(localized: "Welcome Tour", bundle: .main), symbol: "questionmark.circle",
+                                keywords: ["help"]) { showingTour = true })
+        return commands
+    }
+
+    /// An SSH address typed into Open Quickly that no saved host has:
+    /// offer to add it, with the form already filled in.
+    private func quickOpenSuggestions(_ query: String) -> [QuickOpenItem] {
+        guard !ssh.connecting, let text = SSHAddressInput.unsavedSuggestion(query, saved: ssh.profiles) else { return [] }
+        return [QuickOpenItem(id: "suggest:addSSHHost", kind: .command,
+                              title: String(localized: "Add SSH Host “\(text)”…", bundle: .main),
+                              detail: LocalTerminalHelp.addSSHHost, symbol: "network") {
+            sshUI.presentNew(address: text)
+        }]
+    }
+
+    /// Selects a destination and gives it the keyboard, as a click would.
+    private func show(_ destination: MacDestination) {
+        if selection == destination {
+            refocus()
+        } else {
+            focusNextSelection = true
+            selection = destination
+        }
+    }
+
+    /// Whether a terminal is on screen here for a snippet to be typed into.
+    private var terminalShown: Bool {
+        switch selection {
+        case .local?: terminal.attachment != nil
+        case .ssh(let id)?: ssh.session(for: id) != nil
+        case .home?, .devices?, nil: false
+        }
+    }
+
     // MARK: Sidebar
 
     private var sidebar: some View {
         List(selection: $selection) {
-            Section(String(localized: "This Mac", bundle: .main)) {
+            // The two pages first: where everything starts, and who else can
+            // open this Mac's terminals, with its state at a glance.
+            Label(LocalTerminalHelp.homePage, systemImage: "house")
+                .witermRowHover(selected: selection == .home || selection == nil)
+                .tag(MacDestination.home)
+                .accessibilityIdentifier("homeSidebarRow")
+            devicesRow
+            Section {
                 localRows
+            } header: {
+                SidebarSectionHeader(String(localized: "This Mac", bundle: .main),
+                                     add: String(localized: "New Terminal", bundle: .main), help: LocalTerminalHelp.newTerminal,
+                                     identifier: "newLocalSessionSidebar", action: newSession)
+                    .disabled(!canCreateSession)
             }
-            Section(String(localized: "SSH Hosts", bundle: .main)) {
-                ForEach(ssh.orderedProfiles(search: search)) { profile in
+            Section {
+                ForEach(ssh.orderedProfiles()) { profile in
                     let session = ssh.session(for: profile.id)
                     SSHHostRowContent(profile: profile, active: session != nil, favorite: ssh.isFavorite(profile),
                                       activity: session?.activity)
@@ -354,34 +594,29 @@ struct MacWorkspaceView: View {
                                 .accessibilityIdentifier("sshDeleteHostMenu")
                         }
                 }
-                // Importing stays in File; one way in here is enough.
                 if ssh.profiles.isEmpty {
-                    Button(String(localized: "Add SSH Host…", bundle: .main), systemImage: "plus", action: sshUI.presentNew)
-                        .buttonStyle(.borderless)
+                    Text(String(localized: "None saved", bundle: .main))
+                        .font(WitermType.rowDetail)
                         .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .witermRowHover(selected: false)
-                        .help(LocalTerminalHelp.addSSHHost)
-                        .accessibilityIdentifier("addSSHHostSidebar")
+                        .selectionDisabled()
                 }
+            } header: {
+                SidebarSectionHeader(String(localized: "SSH Hosts", bundle: .main),
+                                     add: String(localized: "Add SSH Host…", bundle: .main), help: LocalTerminalHelp.addSSHHost,
+                                     identifier: "addSSHHostSidebar", action: sshUI.presentNew)
+                    .disabled(ssh.connecting)
             }
         }
         .listStyle(.sidebar)
         .onKeyPress(.return) { openSelection() ? .handled : .ignored }
-        .searchable(text: $search, prompt: String(localized: "Search Terminals and Hosts", bundle: .main))
         // Native selection: the row fills with the tint behind white text, so
         // the sidebar keeps the system accent rather than the app's ink.
         .tint(Color.accentColor)
         .navigationTitle("Witerm")
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            // Only while remote access is on: then whether this Mac is
-            // reachable is worth a glance. Setup lives in the Continue sheet.
-            if footerRemoteState != nil { serverFooter }
-        }
         // Connecting… for more than 10 seconds becomes a reason, not a wait.
-        .task(id: footerRemoteState == .connecting) {
+        .task(id: devicesRemoteState == .connecting) {
             connectingTooLong = false
-            guard footerRemoteState == .connecting else { return }
+            guard devicesRemoteState == .connecting else { return }
             try? await Task.sleep(for: .seconds(10))
             if !Task.isCancelled { connectingTooLong = true }
         }
@@ -404,7 +639,7 @@ struct MacWorkspaceView: View {
     @ViewBuilder
     private var localRows: some View {
         if service.state == .ready, terminal.tmuxAvailable {
-            ForEach(terminal.sessions.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) }) { session in
+            ForEach(terminal.sessions) { session in
                 // How this window has it open, if it does.
                 let here = terminal.openMode(session)
                 let attached = here != nil
@@ -413,7 +648,7 @@ struct MacWorkspaceView: View {
                 // Who else has this terminal open right now, at a glance.
                 let elsewhere = session.remoteDeviceNames
                 let elsewhereDetail = terminal.elsewhere(session)
-                let doing = terminal.activity(for: session.id).summary(home: NSHomeDirectory())
+                let doing = terminal.summary(for: session.id)
                 Label {
                     VStack(alignment: .leading, spacing: WitermMetrics.Space.xxs) {
                         HStack(spacing: WitermMetrics.Space.xs) {
@@ -489,6 +724,12 @@ struct MacWorkspaceView: View {
                             Button(String(localized: "Watch", bundle: .main), systemImage: "eye") { terminal.attach(session, using: client, mode: .view) }
                                 .accessibilityIdentifier("watchLocalSession")
                         }
+                        Button(String(localized: "New Terminal in Same Folder", bundle: .main), systemImage: "folder") {
+                            terminal.createBeside(session, using: client)
+                        }
+                        .disabled(!canCreateSession)
+                        .help(LocalTerminalHelp.newTerminalBeside)
+                        .accessibilityIdentifier("newLocalSessionBesideMenu")
                         Divider()
                         Menu(String(localized: "Open On", bundle: .main)) {
                             OpenOnItems(devices: openOnDevices) { continuing = ContinueRequest(sessionID: session.id, target: $0) }
@@ -508,14 +749,10 @@ struct MacWorkspaceView: View {
                 .disabled(terminal.isWorking)
             }
             if terminal.sessions.isEmpty {
-                Button(String(localized: "New Terminal", bundle: .main), systemImage: "plus", action: newSession)
-                    .buttonStyle(.borderless)
+                Text(String(localized: "None running", bundle: .main))
+                    .font(WitermType.rowDetail)
                     .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .witermRowHover(selected: false)
-                    .disabled(!canCreateSession)
-                    .help(LocalTerminalHelp.newTerminal)
-                    .accessibilityIdentifier("newLocalSessionSidebar")
+                    .selectionDisabled()
             }
         } else {
             Text(localStatusSummary)
@@ -535,54 +772,42 @@ struct MacWorkspaceView: View {
         }
     }
 
-    private var serverFooter: some View {
-        // A button rather than SettingsLink plus a tap gesture: the tab is set
-        // before Settings opens however it's pressed (click, Space with Full
-        // Keyboard Access, or VoiceOver).
-        Button {
-            settingsTab = SettingsTab.devices.rawValue
-            openSettings()
-        } label: {
-            HStack(spacing: WitermMetrics.Space.s) {
-                Image(systemName: footerSymbol)
-                    .foregroundStyle(footerTint)
-                    .frame(width: 16)
-                    .accessibilityHidden(true)
-                Text(footerStatus)
+    /// Devices: who else can open this Mac's terminals. Its second line is
+    /// whether this Mac is reachable, from what the background service
+    /// reports rather than the setting alone (Round 27; it was a footer that
+    /// opened Settings → Devices).
+    private var devicesRow: some View {
+        Label {
+            VStack(alignment: .leading, spacing: WitermMetrics.Space.xxs) {
+                Text(String(localized: "Devices", bundle: .main))
+                Text(devicesStatus)
                     .font(WitermType.rowDetail)
-                    .lineLimit(1)
-                    .truncationMode(.head)
-                Spacer(minLength: WitermMetrics.Space.xs)
-                Image(systemName: "gearshape")
                     .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
-            .padding(.horizontal, WitermMetrics.Space.s)
-            .padding(.vertical, WitermMetrics.Space.s)
-            .contentShape(Rectangle())
-            .witermHover(cornerRadius: WitermMetrics.Radius.s)
-            .padding(.horizontal, WitermMetrics.Space.s)
-            .padding(.vertical, WitermMetrics.Space.xs)
+        } icon: {
+            Image(systemName: WitermSymbols.openOn)
+                .foregroundStyle(devicesRemoteState == .ready ? WitermTheme.positive : .secondary)
         }
-        .buttonStyle(.plain)
-        .background(.bar)
-        .overlay(alignment: .top) { Divider() }
-        .help(String(localized: "Relay server: \(footerTitle). Opens Settings → Devices.", bundle: .main))
-        .accessibilityLabel(String(localized: "Relay server: \(footerTitle), \(footerStatus)", bundle: .main))
-        .accessibilityHint(String(localized: "Opens Settings → Devices", bundle: .main))
-        .accessibilityIdentifier("serverStatusFooter")
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .witermRowHover(selected: selection == .devices)
+        .tag(MacDestination.devices)
+        .help(String(localized: "Relay server: \(devicesServerTitle)", bundle: .main))
+        .accessibilityLabel(String(localized: "Devices", bundle: .main))
+        .accessibilityValue(devicesStatus)
+        .accessibilityIdentifier("devicesSidebarRow")
     }
 
-    /// The server new pairings go through, the same one Settings → Devices shows.
-    private var footerTitle: String {
+    /// The server new pairings go through, the same one Devices shows.
+    private var devicesServerTitle: String {
         servers.selected?.displayName ?? String(localized: "No Relay Server", bundle: .main)
     }
 
     /// What the background service reports for the selected server, not only
     /// the setting: a server can answer checks while this Mac isn't online.
-    /// Nil unless remote access is on for the selected server. A server that
-    /// answers checks while this Mac isn't online reads as Connecting….
-    private var footerRemoteState: MacRemoteAccessState? {
+    /// Nil unless remote access is on for the selected server.
+    private var devicesRemoteState: MacRemoteAccessState? {
         guard let server = servers.selected, remoteAccess.isEnabled(for: server.address) else { return nil }
         return MacRemoteAccessState(enabled: true, serviceReady: service.state == .ready, relays: terminal.relays,
                                     address: server.address)
@@ -591,44 +816,48 @@ struct MacWorkspaceView: View {
     /// Why this Mac isn't reachable, when there's a reason worth showing:
     /// no network at all, or the relay server still not accepting this Mac
     /// after 10 seconds.
-    private enum FooterProblem { case offline, unreachable }
+    private enum DevicesProblem { case offline, unreachable }
 
-    private var footerProblem: FooterProblem? {
+    private var devicesProblem: DevicesProblem? {
+        guard devicesRemoteState != nil else { return nil }
         if network?.online == false { return .offline }
-        if footerRemoteState == .connecting, connectingTooLong { return .unreachable }
+        if devicesRemoteState == .connecting, connectingTooLong { return .unreachable }
         return nil
     }
 
-    private var footerStatus: String {
+    private var devicesStatus: String {
+        guard devicesRemoteState != nil else { return String(localized: "Remote access off", bundle: .main) }
         if let server = servers.selected, case .failed = server.phase { return server.statusTitle }
-        switch footerProblem {
+        switch devicesProblem {
         case .offline?: return String(localized: "Remote access on · Offline", bundle: .main)
         case .unreachable?: return String(localized: "Remote access on · Can’t reach the relay server", bundle: .main)
         case nil: break
         }
-        switch footerRemoteState {
+        switch devicesRemoteState {
         case .serviceOff?: return String(localized: "Remote access on · Terminals off", bundle: .main)
         case .ready?: return String(localized: "Remote access on · Online", bundle: .main)
         case .connecting?, .off?, nil: return String(localized: "Remote access on · Connecting…", bundle: .main)
         }
     }
 
-    private var footerSymbol: String {
+    private var devicesSymbol: String {
+        guard devicesRemoteState != nil else { return "antenna.radiowaves.left.and.right.slash" }
         if let server = servers.selected, case .failed = server.phase { return server.statusSymbol }
-        switch footerProblem {
+        switch devicesProblem {
         case .offline?: return WitermSymbols.offline
         case .unreachable?: return WitermSymbols.problem
-        case nil: return footerRemoteState?.systemImage ?? WitermSymbols.sharing
+        case nil: return devicesRemoteState?.systemImage ?? WitermSymbols.sharing
         }
     }
 
-    private var footerTint: Color {
+    private var devicesTint: Color {
+        guard devicesRemoteState != nil else { return WitermTheme.secondary }
         if let server = servers.selected, case .failed = server.phase { return WitermTheme.warning }
-        if footerProblem != nil { return WitermTheme.warning }
-        switch footerRemoteState {
+        if devicesProblem != nil { return WitermTheme.warning }
+        switch devicesRemoteState {
         case .ready?: return WitermTheme.positive
         case .serviceOff?: return WitermTheme.warning
-        default: return .secondary
+        default: return WitermTheme.secondary
         }
     }
 
@@ -649,10 +878,14 @@ struct MacWorkspaceView: View {
                 SSHHostDetail(profile: profile, model: ssh, ui: sshUI)
                     .safeAreaInset(edge: .top, spacing: 0) { offlineBanner }
             } else {
-                overview
+                home
             }
-        case nil:
-            overview
+        case .devices?:
+            MacDevicesView(service: service)
+                .navigationTitle(String(localized: "Devices", bundle: .main))
+                .background(WitermTheme.canvas)
+        case .home?, nil:
+            home
         }
     }
 
@@ -661,9 +894,96 @@ struct MacWorkspaceView: View {
         OfflineBanner(insets: EdgeInsets(top: 12, leading: 20, bottom: 0, trailing: 20))
     }
 
-    private var overview: some View {
-        LocalOverview(service: service, model: terminal, canCreate: canCreateSession,
-                      newSession: newSession, newSSHConnection: sshUI.presentNew)
+    private var home: some View {
+        MacHomeView(service: service, terminalModel: terminal, terminals: homeTerminals, hosts: homeHosts,
+                    devices: homeDevices, canCreate: canCreateSession, items: quickOpenItems,
+                    suggestions: quickOpenSuggestions, newTerminal: newSession, addHost: sshUI.presentNew,
+                    importHosts: sshUI.presentImport,
+                    openTerminal: { id, mode in
+                        guard let client = service.client, let session = terminal.sessions.first(where: { $0.id == id }) else { return }
+                        if mode == .view {
+                            selection = .local(id)
+                            terminal.attach(session, using: client, mode: .view)
+                        } else {
+                            show(.local(id))
+                        }
+                    },
+                    openHost: { id in
+                        show(.ssh(id))
+                        if ssh.session(for: id) == nil, !ssh.connecting, let profile = ssh.profiles.first(where: { $0.id == id }) {
+                            sshUI.open(profile, model: ssh)
+                        }
+                    },
+                    showDevices: { selection = .devices },
+                    pairDevice: { continuing = ContinueRequest(sessionID: nil) })
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if let issue = terminal.issue, service.state == .ready {
+                    IssueBanner(issue.title, message: issue.recovery)
+                        .padding(.horizontal, WitermMetrics.Space.l)
+                        .padding(.top, WitermMetrics.Space.m)
+                }
+            }
+    }
+
+    private var homeTerminals: [HomeTerminal] {
+        guard service.state == .ready, terminal.tmuxAvailable else { return [] }
+        let relative = RelativeDateTimeFormatter()
+        return terminal.sessions.map { session in
+            let started = String(localized: "Started \(relative.localizedString(for: session.createdAt, relativeTo: .now))", bundle: .main)
+            let summary = terminal.summary(for: session.id)
+            let lastLine = terminal.activity(for: session.id).lastLine
+            return HomeTerminal(id: session.id, name: session.name,
+                                detail: summary ?? started, detailIsCode: summary != nil,
+                                lastLine: lastLine == summary ? nil : lastLine,
+                                here: terminal.openMode(session), shared: session.sharing?.shared == true,
+                                keptPrivate: session.sharing?.keepPrivate == true, elsewhere: terminal.elsewhere(session))
+        }
+    }
+
+    private var homeHosts: [HomeHost] {
+        ssh.orderedProfiles().map { profile in
+            let session = ssh.session(for: profile.id)
+            return HomeHost(id: profile.id, name: profile.name,
+                            detail: session?.activity.summary(home: nil) ?? profile.distinctAddress,
+                            connected: session != nil, favorite: ssh.isFavorite(profile), hue: profile.identityHue)
+        }
+    }
+
+    private var homeDevices: HomeDevices {
+        let names = pairedDevices.devices.map(\.name)
+        let detail = names.isEmpty
+            ? String(localized: "Pair your iPhone or iPad to open these terminals there.", bundle: .main)
+            : ListFormatter.localizedString(byJoining: names)
+        return HomeDevices(status: devicesStatus, symbol: devicesSymbol, tint: devicesTint, detail: detail)
+    }
+}
+/// A sidebar section's heading with its one way to add more (+), which
+/// stays visible, unlike a row that disappears once the section has items.
+private struct SidebarSectionHeader: View {
+    let title: String
+    let add: String
+    let help: String
+    let identifier: String
+    let action: () -> Void
+
+    init(_ title: String, add: String, help: String, identifier: String, action: @escaping () -> Void) {
+        self.title = title
+        self.add = add
+        self.help = help
+        self.identifier = identifier
+        self.action = action
+    }
+
+    var body: some View {
+        HStack {
+            Text(title)
+            Spacer(minLength: WitermMetrics.Space.s)
+            Button(add, systemImage: "plus", action: action)
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .help(add + " " + help)
+                .accessibilityIdentifier(identifier)
+        }
     }
 }
 #endif

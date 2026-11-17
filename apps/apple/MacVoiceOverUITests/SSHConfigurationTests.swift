@@ -46,14 +46,19 @@ import XCTest
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         row.rightClick()
         app.menuItems["Favorite"].click()
-        let search = app.searchFields.firstMatch
-        XCTAssertTrue(search.waitForExistence(timeout: 5))
-        search.click(); search.typeText(name)
-        XCTAssertTrue(row.exists)
+        // Round 27: hosts are found by name in Open Quickly (⇧⌘O).
+        app.typeKey("o", modifierFlags: [.command, .shift])
+        let field = app.textFields["quickOpenField"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText(name)
+        let suffix = String(row.identifier.dropFirst("sshProfileRow-".count))
+        XCTAssertTrue(app.descendants(matching: .any)["quickOpen-ssh:\(suffix)"].waitForExistence(timeout: 5),
+                      "Open Quickly didn't find the host by name")
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = "mac-host-search"
         attachment.lifetime = .keepAlways
         add(attachment)
+        app.typeKey(.escape, modifierFlags: [])
     }
 
     /// Cleanup after interrupted runs: deletes hosts this test made, by their

@@ -45,11 +45,11 @@ final class HoverScreenshotTests: XCTestCase {
         addTeardownBlock { [app] in await MainActor.run { app?.terminate() } }
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 15))
 
-        // The sidebar footer opens Settings → Devices.
-        let footer = app.descendants(matching: .any)["serverStatusFooter"].firstMatch
-        if footer.waitForExistence(timeout: 5) {
-            footer.hover()
-            pause("hover-sidebar-footer")
+        // Round 27: the sidebar's Devices row, where the footer was.
+        let devicesRow = app.descendants(matching: .any)["devicesSidebarRow"].firstMatch
+        if devicesRow.waitForExistence(timeout: 5) {
+            devicesRow.hover()
+            pause("hover-sidebar-devices")
         }
 
         // A fresh terminal: the I-beam over its text while typing and while watching.
@@ -118,9 +118,8 @@ final class HoverScreenshotTests: XCTestCase {
             _ = title.waitForNonExistence(timeout: 5)
         }
 
-        // Settings → Devices: Pair a Device… is a link.
-        app.typeKey(",", modifierFlags: .command)
-        let devices = app.toolbars.buttons["Devices"].firstMatch
+        // Devices: Pair a Device… is a link.
+        let devices = app.descendants(matching: .any)["devicesSidebarRow"].firstMatch
         if devices.waitForExistence(timeout: 5) {
             devices.click()
             let pair = app.buttons["createPairingInvitation"].firstMatch

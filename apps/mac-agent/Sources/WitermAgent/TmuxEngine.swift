@@ -207,6 +207,17 @@ final class TmuxEngine {
         return record
     }
 
+    /// The folder the pane's foreground process is in now. The format is
+    /// ours and constant; tmux's answer is checked like a start folder, so a
+    /// folder that has gone since reads as not found.
+    func folder(_ id: String) throws -> String {
+        _ = try session(id)
+        let output = try command(["display-message", "-p", "-t", internalName(id), "#{pane_current_path}"])
+        let path = String(decoding: output, as: UTF8.self).trimmingCharacters(in: .newlines)
+        try Self.validateDirectory(path)
+        return path
+    }
+
     /// Sharing a session ends keeping it private.
     func setShared(_ id: String, _ value: Bool) throws {
         _ = try session(id)

@@ -2188,9 +2188,38 @@ struct RemoteNativeTerminalView: UIViewRepresentable {
         /// a multiline paste; a single line may add Return when the snippet asks.
         func sendSnippet(_ snippet: CommandSnippet) {
             guard acceptsInput else { return }
+            if !snippet.placeholders.isEmpty { fillIn(snippet); return }
             if snippet.isMultiline { reviewOrPaste(snippet.text); return }
             controlModifier = false
             send(snippet.input(bracketedPaste: getTerminal().bracketedPasteMode))
+        }
+
+        /// Asks for a snippet's blanks, then types the filled-in command. It
+        /// holds the paste review's place, so losing input (a disconnect, the
+        /// keyboard going to another device) dismisses it and types nothing.
+        private func fillIn(_ snippet: CommandSnippet) {
+            guard pasteReview == nil else { return }
+            var responder: UIResponder? = self
+            while responder != nil, !(responder is UIViewController) { responder = responder?.next }
+            guard let controller = responder as? UIViewController, controller.presentedViewController == nil else { return }
+            let token = UUID()
+            pasteToken = token
+            let sheet = UIHostingController(rootView: SnippetFillIn(snippet: snippet, destination: inputDestination.isEmpty ? nil : inputDestination,
+                cancel: { [weak self] in
+                    self?.pasteToken = nil
+                    self?.pasteReview?.dismiss(animated: true)
+                }, insert: { [weak self] filled in
+                    guard let self, self.acceptsInput, self.pasteToken == token else { return }
+                    self.pasteToken = nil
+                    self.pasteReview?.dismiss(animated: true)
+                    // The sheet showed the whole command, so it isn't reviewed again.
+                    if filled.isMultiline { self.pasteText(filled.text) } else {
+                        self.controlModifier = false
+                        self.send(filled.input(bracketedPaste: self.getTerminal().bracketedPasteMode))
+                    }
+                }))
+            pasteReview = sheet
+            controller.present(sheet, animated: true)
         }
 
         override func paste(_ sender: Any?) {
