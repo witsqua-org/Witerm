@@ -129,8 +129,8 @@ final class HoverScreenshotTests: XCTestCase {
                 let link = app.descendants(matching: .any)["createPairingInvitation"].firstMatch
                 if link.exists { link.hover(); pause("hover-settings-pair-link") }
             }
-            let commandLine = app.toolbars.buttons["Command Line"].firstMatch
-            commandLine.click()
+            // The command's section is in General since Round 28.
+            app.toolbars.buttons["General"].firstMatch.click()
             let copy = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Copy '")).firstMatch
             if copy.waitForExistence(timeout: 5) { copy.click(); pause("click-settings-copy-feedback") }
             app.typeKey("w", modifierFlags: .command)

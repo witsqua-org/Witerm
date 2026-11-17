@@ -155,23 +155,70 @@ struct LocalTerminalDetail: View {
         return parts.joined(separator: " · ")
     }
 
+    /// A terminal shown here once and left (Round 28): a centered summary of
+    /// it, as the host page has, rather than two buttons in an empty pane.
+    /// What it's doing and where, how long it has run, who else has it open,
+    /// then Open and Watch.
     private func disconnected(_ session: LocalSessionInfo, client: LocalAgentClient) -> some View {
-        ContentUnavailableView {
-            Label(model.ended ? String(localized: "Terminal Ended", bundle: .main) : String(localized: "Still Running", bundle: .main), systemImage: "terminal")
-        } actions: {
-            if !model.ended {
-                HStack(spacing: WitermMetrics.Space.m) {
-                    PrimaryButton(LocalTerminalHelp.open, systemImage: WitermSymbols.typing) { model.attach(session, using: client, mode: .control) }
-                        .accessibilityIdentifier("reconnectLocalTerminal")
-                        .help(String(localized: "Open it here and type", bundle: .main))
-                    Button(String(localized: "Watch", bundle: .main), systemImage: WitermSymbols.watching) { model.attach(session, using: client, mode: .view) }
-                        .buttonStyle(.bordered)
-                        .witermControl()
-                        .accessibilityIdentifier("viewLocalTerminal")
-                        .help(String(localized: "Open it here without typing", bundle: .main))
+        let elsewhere = model.elsewhere(session)
+        let started = RelativeDateTimeFormatter().localizedString(for: session.createdAt, relativeTo: .now)
+        return ScrollView {
+            VStack(spacing: WitermMetrics.Space.l) {
+                VStack(spacing: WitermMetrics.Space.s) {
+                    Image(systemName: "terminal")
+                        .font(.system(size: 28))
+                        .foregroundStyle(model.ended ? WitermTheme.secondary : WitermTheme.accent)
+                        .frame(width: 64, height: 64)
+                        .background(WitermTheme.tint(WitermTheme.accent), in: .rect(cornerRadius: 18, style: .continuous))
+                        .accessibilityHidden(true)
+                    Text(session.name)
+                        .font(WitermType.pageTitle)
+                        .multilineTextAlignment(.center)
+                        .accessibilityAddTraits(.isHeader)
+                    if let summary = model.summary(for: session.id) {
+                        Text(verbatim: summary)
+                            .font(WitermType.codeInline)
+                            .foregroundStyle(WitermTheme.secondary)
+                            .lineLimit(2)
+                            .truncationMode(.middle)
+                            .multilineTextAlignment(.center)
+                            .textSelection(.enabled)
+                    }
                 }
-                .disabled(model.isWorking)
+                VStack(spacing: WitermMetrics.Space.xs) {
+                    Label(model.ended ? String(localized: "Terminal Ended", bundle: .main)
+                                      : String(localized: "Still Running", bundle: .main),
+                          systemImage: model.ended ? WitermSymbols.disconnected : "play.circle")
+                        .font(WitermType.rowTitle)
+                    if !model.ended {
+                        Text(String(localized: "Started \(started)", bundle: .main))
+                            .font(WitermType.rowDetail)
+                            .foregroundStyle(WitermTheme.secondary)
+                    }
+                    if !elsewhere.isEmpty {
+                        Label(ListFormatter.localizedString(byJoining: elsewhere), systemImage: WitermSymbols.openOn)
+                            .font(WitermType.rowDetail)
+                            .foregroundStyle(WitermTheme.positive)
+                    }
+                }
+                if !model.ended {
+                    HStack(spacing: WitermMetrics.Space.m) {
+                        PrimaryButton(LocalTerminalHelp.open, systemImage: WitermSymbols.typing) { model.attach(session, using: client, mode: .control) }
+                            .accessibilityIdentifier("reconnectLocalTerminal")
+                            .help(String(localized: "Open it here and type", bundle: .main))
+                        Button(String(localized: "Watch", bundle: .main), systemImage: WitermSymbols.watching) { model.attach(session, using: client, mode: .view) }
+                            .buttonStyle(.bordered)
+                            .witermControl()
+                            .accessibilityIdentifier("viewLocalTerminal")
+                            .help(String(localized: "Open it here without typing", bundle: .main))
+                    }
+                    .disabled(model.isWorking)
+                }
             }
+            .frame(maxWidth: 520)
+            .padding(WitermMetrics.Space.xxl)
+            .frame(maxWidth: .infinity)
+            .containerRelativeFrame(.vertical, alignment: .center) { length, _ in length }
         }
     }
 }
@@ -189,9 +236,9 @@ struct StartFromTerminalHint: View {
                     .frame(maxWidth: 260)
                     .help(String(localized: "Starts a terminal in the folder you run it in", bundle: .main))
             } else {
-                // Always the Command Line tab, whichever tab Settings showed last.
+                // Always General, where the command is (Round 28), whichever tab Settings showed last.
                 Button(String(localized: "Install the witerm Command…", bundle: .main)) {
-                    settingsTab = SettingsTab.commandLine.rawValue
+                    settingsTab = SettingsTab.general.rawValue
                     openSettings()
                 }
                 .accessibilityIdentifier("installCommandLineHint")

@@ -90,10 +90,21 @@ struct SSHProfileForm: View {
         })
     }
 
+    #if os(macOS)
+    @State private var formHeight: CGFloat = 0
+    #endif
+
     var body: some View {
         NavigationStack {
             Form {
+                #if os(macOS)
+                // The Mac row says Address; a heading saying it again was
+                // noise (Round 28, seen in the Mac audit). On iOS the field
+                // shows only its prompt, so the heading is its label.
+                Section { addressFields($target) }
+                #else
                 Section(String(localized: "Address", bundle: .main)) { addressFields($target) }
+                #endif
                 Section(String(localized: "Sign In", bundle: .main)) { signInFields($target) }
                 Section {
                     Button {
@@ -155,6 +166,11 @@ struct SSHProfileForm: View {
                 #endif
             }
             .formStyle(.grouped)
+            #if os(macOS)
+            // As tall as the form, up to a screenful: the sheet had a fixed
+            // default height with a third of it empty (Round 28).
+            .modifier(MeasuredFormHeight(height: $formHeight))
+            #endif
             #if os(macOS)
             // The Mac sheet shape: the title in the content's inset, as
             // SheetScaffold does, rather than in a toolbar band.
@@ -240,7 +256,9 @@ struct SSHProfileForm: View {
             }
         }
         #if os(macOS)
-        .frame(minWidth: 440, idealWidth: 520, minHeight: 640)
+        // As tall as the form, up to a screenful (Round 28): a fixed 640 pt
+        // minimum left a third of a new host's sheet empty.
+        .frame(width: SheetWidth.form.points, height: formHeight > 0 ? min(formHeight, 680) : 480)
         #endif
     }
 
@@ -386,10 +404,15 @@ struct SSHProfileForm: View {
                 Button(draft.wrappedValue.privateKey.isEmpty ? String(localized: "Paste a Key Instead", bundle: .main)
                        : String(localized: "Enter or Edit Private Key", bundle: .main)) { draft.wrappedValue.showingPrivateKey = true }
             }
-            SecureField(String(localized: "Private Key Passphrase (Optional)", bundle: .main), text: draft.passphrase)
+            SecureField(String(localized: "Private Key Passphrase (Optional)", bundle: .main), text: draft.passphrase,
+                        prompt: Text(String(localized: "Optional", bundle: .main)))
                 .sshSecretInput(password: false)
         } else {
-            SecureField(String(localized: "Password", bundle: .main), text: draft.password).sshSecretInput(password: true)
+            // A visible prompt, so the field reads as one on the Mac's
+            // grouped form, where an empty field showed only its label.
+            SecureField(String(localized: "Password", bundle: .main), text: draft.password,
+                        prompt: Text(String(localized: "Required", bundle: .main)))
+                .sshSecretInput(password: true)
                 .focused($focused, equals: .credential(draft.wrappedValue.id))
                 .accessibilityIdentifier("sshHostPassword")
         }
@@ -667,3 +690,23 @@ private struct KeyChoiceCard: View {
         }
     }
 }
+
+#if os(macOS)
+/// The scrolling form's full height (macOS 15 and later), so its sheet can fit
+/// it; earlier systems keep the sheet's fallback height.
+private struct MeasuredFormHeight: ViewModifier {
+    @Binding var height: CGFloat
+
+    func body(content: Content) -> some View {
+        if #available(macOS 15.0, *) {
+            content.onScrollGeometryChange(for: CGFloat.self) {
+                $0.contentSize.height + $0.contentInsets.top + $0.contentInsets.bottom
+            } action: { _, value in
+                height = value
+            }
+        } else {
+            content
+        }
+    }
+}
+#endif

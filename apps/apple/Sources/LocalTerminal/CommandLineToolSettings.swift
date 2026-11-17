@@ -130,12 +130,14 @@ final class CommandLineToolModel {
 }
 
 /// Settings → Command Line: install the `witerm` command and copy examples.
-struct CommandLineToolSettings: View {
+/// The `witerm` command's sections, in Settings → General under This Mac
+/// (Round 28: they were their own tab, and General had one row).
+struct CommandLineToolSections: View {
     private let model = CommandLineToolModel.shared
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        Form {
+        Group {
             Section {
                 LabeledContent(String(localized: "Status", bundle: .main)) {
                     StatusBadge(statusTitle, systemImage: statusSymbol, tone: model.state == .installed ? .positive : .neutral)
@@ -199,7 +201,6 @@ struct CommandLineToolSettings: View {
                 CopyableCommand("\(model.command) unshare", caption: String(localized: "Stop sharing the terminal you're in", bundle: .main))
             }
         }
-        .formStyle(.grouped)
         .onAppear(perform: model.refresh)
         .onChange(of: scenePhase) { _, phase in if phase == .active { model.refresh() } }
     }

@@ -1135,3 +1135,17 @@ A review of every screen on both platforms (the iOS screenshot audit in five var
 | 5 | Shortcuts, consistency | **Open Quickly on iPhone and iPad** with a hardware keyboard (⇧⌘O, listed while ⌘ is held). It uses the same field, ranking and remembered choices as the Mac, and reaches every paired terminal, every SSH host (connecting it), Add SSH Host…, Import SSH Hosts…, Add Device, Devices, Settings and the Welcome Tour. An unsaved `user@host` offers to add it. The field and results are one cross-platform component now. | [MobileQuickOpen](../../apps/apple/Sources/Mobile/MobileQuickOpen.swift), [QuickOpenViews](../../apps/apple/Sources/Design/QuickOpenViews.swift), [MobileWorkspaceView](../../apps/apple/Sources/Mobile/MobileWorkspaceView.swift) |
 
 **Verification:** see [verification.md](../verification.md), Round 28.
+
+### Round 28b: what the running app showed
+
+The Mac audit (`AuditScreenshotTests`, English light and dark, Chinese, 129 screens) was looked at screen by screen against the installed Round 28 build. Four things looked wrong:
+
+| What was seen | Change | Main code |
+|---|---|---|
+| **Add SSH Host** stood a third taller than its content: a fixed 640 pt minimum left an empty band above the buttons. | The sheet is as tall as the form, up to 680 pt, measured from the form's scroll geometry (macOS 15 and later; 14 keeps a 480 pt sheet). | [SSHProfileForm](../../apps/apple/Sources/SSH/SSHProfileForm.swift) `MeasuredFormHeight` |
+| The same sheet said **Address** twice (a section heading over a row labelled Address), and the empty **Password** field showed only its label, so it didn't read as a field. | No heading on the Mac (iOS keeps it, since there the field shows only its prompt); the password field's prompt says Required, the passphrase's Optional. | [SSHProfileForm](../../apps/apple/Sources/SSH/SSHProfileForm.swift) |
+| **Settings → General** held one row, Terminals: On, in a 640 × 600 window, since Devices moved out in Round 27. | The command line tool's sections (status, path, version, PATH help, examples) moved under This Mac in General; Settings has General, Terminal and Snippets. A saved Command Line tab opens General. | [MacSettingsView](../../apps/apple/Sources/Server/MacSettingsView.swift), [CommandLineToolSettings](../../apps/apple/Sources/LocalTerminal/CommandLineToolSettings.swift) `CommandLineToolSections` |
+| **Still Running** (a terminal left here) was a small symbol, a title and two buttons in an empty pane, the kind of page Rounds 27 and 28 replaced elsewhere. | A centered summary like the host page's: the terminal's tile and name, what runs there and where, Still Running · Started *when*, who else has it open, then Open and Watch. | [LocalTerminalWorkspace](../../apps/apple/Sources/LocalTerminal/LocalTerminalWorkspace.swift) `disconnected` |
+
+The audit itself needed two fixes to run on this Mac: a terminal row's context menu carries the row's identifier and could be matched first (`sidebarRow` skips menus), and macOS can add its own "Ask Siri" item to the top of a context menu a moment after it opens, moving every item a row down, so the Open On step waits for the menu to settle, finds its items by title too, and always presses Escape to close it (XCTest's menu query doesn't always see a context menu). The recording XCTest keeps of each run showed both.
+
