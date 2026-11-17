@@ -367,7 +367,7 @@ final class AuditScreenshotTests: XCTestCase {
             pause(3)
             shot("81-page-devices")
             if variant == "en-light" { tree("page-devices") }
-            hoverShot(any("primaryAction"), "82-hover-devices-check-now")
+            hoverShot(app.buttons["checkRelayServer"].firstMatch, "82-hover-devices-check-now")
             hoverShot(any("createPairingInvitation"), "83-hover-devices-pair-link")
             let edit = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "editDevice-")).firstMatch
             if edit.exists {

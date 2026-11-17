@@ -107,7 +107,11 @@ struct MacDevicesView: View {
             ContinuationServerPicker()
             LabeledContent(String(localized: "Status", bundle: .main)) {
                 HStack(spacing: WitermMetrics.Space.s) {
+                    // The identifier sits on the badge, not the row: on a row
+                    // SwiftUI hands it down to every child and hides the
+                    // buttons' own identifiers.
                     StatusBadge(server.statusTitle, systemImage: server.statusSymbol, tone: server.statusTone)
+                        .accessibilityIdentifier("connectionFeedback")
                     if case .available(let date) = server.phase {
                         Text(date, format: .relative(presentation: .named))
                             .font(WitermType.meta).foregroundStyle(WitermTheme.secondary)
@@ -117,11 +121,10 @@ struct MacDevicesView: View {
                             .accessibilityIdentifier("cancelConnection")
                     } else {
                         Button(String(localized: "Check Now", bundle: .main), action: server.check)
-                            .accessibilityIdentifier("primaryAction")
+                            .accessibilityIdentifier("checkRelayServer")
                     }
                 }
             }
-            .accessibilityIdentifier("connectionFeedback")
             if case .failed(let issue) = server.phase {
                 Text(issue.recovery).font(WitermType.rowDetail).foregroundStyle(WitermTheme.secondary)
             }
@@ -131,6 +134,10 @@ struct MacDevicesView: View {
                 Text(String(localized: "Paired devices can open only the terminals you allow.", bundle: .main))
             }
             .toggleStyle(.switch)
+            // A switch in the system accent, as Settings draws its switches;
+            // the window's ink tint drew it black (white in dark). Only the
+            // switch: the page's bordered buttons keep their neutral labels.
+            .tint(Color.accentColor)
             .disabled(!remoteAccess.loaded || (service.state != .ready && !remoteAccess.isEnabled(for: server.address)))
             .accessibilityIdentifier("allowRemoteConnections")
             let state = MacRemoteAccessState(enabled: remoteAccess.isEnabled(for: server.address),

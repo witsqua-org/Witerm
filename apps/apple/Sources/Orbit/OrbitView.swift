@@ -53,7 +53,13 @@ struct OrbitView: View {
                     }
             }
         }
-        .listStyle(.sidebar)
+        // A list of things to read, not a second sidebar: plain rows on the
+        // surface beside the conversation's canvas, with the system accent
+        // for selection, as the window's sidebar has.
+        .listStyle(.inset)
+        .scrollContentBackground(.hidden)
+        .background(WitermTheme.surface)
+        .tint(Color.accentColor)
         .overlay {
             if orbit.threads.isEmpty {
                 Text(String(localized: "No conversations yet", bundle: .main))
@@ -82,6 +88,8 @@ struct OrbitView: View {
             .buttonStyle(.borderless)
             .padding(.horizontal, WitermMetrics.Space.m)
             .padding(.vertical, WitermMetrics.Space.s)
+            .background(WitermTheme.surface)
+            .overlay(alignment: .bottom) { Divider() }
         }
     }
 
@@ -161,11 +169,16 @@ private struct OrbitThreadRow: View {
                     .accessibilityHidden(true)
                 Text(thread.title).lineLimit(1)
             }
-            if let status = OrbitText.status(thread) {
-                Text(status)
-                    .font(WitermType.meta)
-                    .foregroundStyle(OrbitText.statusColor(thread.status))
+            // When, beside how it ended: tasks often start with the same
+            // words, so the time tells them apart.
+            HStack(spacing: WitermMetrics.Space.xs) {
+                if let status = OrbitText.status(thread) {
+                    Text(status).foregroundStyle(OrbitText.statusColor(thread.status))
+                }
+                Text(thread.updatedAt, format: .relative(presentation: .named))
+                    .foregroundStyle(.secondary)
             }
+            .font(WitermType.meta)
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("orbitThread-\(thread.id)")
