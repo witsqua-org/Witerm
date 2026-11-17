@@ -27,7 +27,7 @@ import XCTest
         surface.appearance = NSAppearance(named: .darkAqua)
         surface.terminal.feed(text: "keep this line")
         surface.updateAppearance(fontSize: 14, highContrast: false, scheme: .dark, palette: .ocean)
-        XCTAssertEqual(surface.terminal.nativeBackgroundColor.usingColorSpace(.sRGB)?.hexValue, 0x0B1A24)
+        XCTAssertEqual(surface.terminal.nativeBackgroundColor.usingColorSpace(.sRGB)?.hexValue, 0x09131B)
         surface.updateAppearance(fontSize: 14, highContrast: true, scheme: .dark, palette: .ocean)
         XCTAssertEqual(surface.terminal.nativeBackgroundColor.usingColorSpace(.sRGB)?.hexValue, 0x000000)
         let line = surface.terminal.getTerminal().getLine(row: 0)?.translateToString(trimRight: true)

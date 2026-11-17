@@ -4,7 +4,7 @@ import SwiftUI
 /// The selected Settings tab. Other views set it before opening Settings to
 /// land on a specific tab.
 enum SettingsTab: String, CaseIterable {
-    case general, terminal, snippets
+    case general, appearance, terminal, snippets
     static let key = "witerm.settingsTab"
 }
 
@@ -22,6 +22,10 @@ struct MacSettingsView: View {
                 .settingsPane()
                 .tabItem { Label(String(localized: "General", bundle: .main), systemImage: "gearshape") }
                 .tag(SettingsTab.general.rawValue)
+            MacAppearanceSettings()
+                .settingsPane()
+                .tabItem { Label(String(localized: "Appearance", bundle: .main), systemImage: "paintpalette") }
+                .tag(SettingsTab.appearance.rawValue)
             Form { TerminalAppearanceSections() }
                 .formStyle(.grouped)
                 .settingsPane()
@@ -44,6 +48,27 @@ private extension View {
     /// One size for every tab, so switching tabs never resizes the window;
     /// longer content scrolls inside.
     func settingsPane() -> some View { frame(width: 640, height: 600) }
+}
+
+/// The theme, as cards that show it.
+private struct MacAppearanceSettings: View {
+    @AppStorage(TerminalColorScheme.key) private var palette = TerminalColorScheme.standard
+
+    var body: some View {
+        Form {
+            Section {
+                ThemePicker()
+                    .padding(.vertical, WitermMetrics.Space.xs)
+            } header: {
+                Text("Theme")
+            } footer: {
+                Text(palette == .theme
+                     ? String(localized: "A theme colors the window, its cards and buttons, and your terminals, in light and dark. Machine colors stay the same in every theme.", bundle: .main)
+                     : String(localized: "A theme colors the window, its cards and buttons, in light and dark. Your terminals use the \(palette.title) scheme chosen in Terminal settings.", bundle: .main))
+            }
+        }
+        .formStyle(.grouped)
+    }
 }
 
 private struct MacGeneralSettings: View {

@@ -728,14 +728,21 @@ struct ContinueOnDeviceSheet: View {
             .padding(WitermMetrics.Space.xs)
             .accessibilityIdentifier("inviteAccess")
         }
+        // As wide as the box above it: the label on the left, the menu on the right.
         GroupBox {
-            Picker(String(localized: "Access Ends After", bundle: .main), selection: $guestDuration) {
-                Text(String(localized: "1 hour", bundle: .main)).tag(TimeInterval(3600))
-                Text(String(localized: "8 hours", bundle: .main)).tag(TimeInterval(8 * 3600))
-                Text(String(localized: "24 hours", bundle: .main)).tag(SessionInvitation.longestAccess)
+            HStack {
+                Text(String(localized: "Access Ends After", bundle: .main))
+                Spacer(minLength: WitermMetrics.Space.m)
+                Picker(String(localized: "Access Ends After", bundle: .main), selection: $guestDuration) {
+                    Text(String(localized: "1 hour", bundle: .main)).tag(TimeInterval(3600))
+                    Text(String(localized: "8 hours", bundle: .main)).tag(TimeInterval(8 * 3600))
+                    Text(String(localized: "24 hours", bundle: .main)).tag(SessionInvitation.longestAccess)
+                }
+                .labelsHidden()
+                .fixedSize()
+                .accessibilityIdentifier("inviteDuration")
             }
             .padding(WitermMetrics.Space.xs)
-            .accessibilityIdentifier("inviteDuration")
         }
     }
 

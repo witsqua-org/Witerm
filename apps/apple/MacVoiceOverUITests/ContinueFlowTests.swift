@@ -257,8 +257,9 @@ final class ContinueFlowTests: XCTestCase {
         let general = app.toolbars.buttons["General"].firstMatch
         XCTAssertTrue(general.waitForExistence(timeout: 10))
         var sizes: [String: CGSize] = [:]
-        // Devices is a page in the window (Round 27); Command Line is in General (Round 28).
-        for tab in ["General", "Terminal", "Snippets"] {
+        // Devices is a page in the window (Round 27); Command Line is in General (Round 28);
+        // themes have their own tab (Round 29).
+        for tab in ["General", "Appearance", "Terminal", "Snippets"] {
             app.toolbars.buttons[tab].firstMatch.click()
             RunLoop.current.run(until: Date().addingTimeInterval(0.8))
             let window = app.windows.matching(NSPredicate(format: "title == %@", tab)).firstMatch

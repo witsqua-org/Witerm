@@ -21,7 +21,7 @@ struct TerminalAppearanceSections: View {
 struct TerminalDisplaySections: View {
     @AppStorage(TerminalFontSize.key) private var fontSize = TerminalFontSize.standard
     @AppStorage("witerm.terminalHighContrast") private var highContrast = false
-    @AppStorage(TerminalColorScheme.key) private var palette = TerminalColorScheme.system
+    @AppStorage(TerminalColorScheme.key) private var palette = TerminalColorScheme.standard
     #if os(iOS)
     @Environment(\.dynamicTypeSize) private var typeSize
     /// What the terminal actually uses: the setting, grown with the text
@@ -53,20 +53,16 @@ struct TerminalDisplaySections: View {
         Section {
             #if os(iOS)
             Picker(String(localized: "Color Scheme", bundle: .main), selection: $palette) {
-                ForEach(TerminalColorScheme.allCases) { scheme in
-                    Text(scheme.title).tag(scheme)
-                }
+                TerminalSchemeChoices()
             }
             .accessibilityIdentifier("terminalColorScheme")
             #else
             Picker("Color scheme", selection: $palette) {
-                ForEach(TerminalColorScheme.allCases) { scheme in
-                    Text(scheme.title).tag(scheme)
-                }
+                TerminalSchemeChoices()
             }
             .accessibilityIdentifier("terminalColorScheme")
             #endif
-            TerminalSchemePreview(scheme: palette, highContrast: highContrast)
+            TerminalSchemePreview(scheme: palette.resolved(), highContrast: highContrast)
             #if os(iOS)
             Toggle(String(localized: "Increase Terminal Contrast", bundle: .main), isOn: $highContrast).witermSwitchTint()
                 .accessibilityIdentifier("terminalHighContrast")
@@ -77,17 +73,17 @@ struct TerminalDisplaySections: View {
             Button {
                 fontSize = TerminalFontSize.standard
                 highContrast = false
-                palette = .system
+                palette = .standard
             } label: {
                 ContentActionLabel(String(localized: "Restore Display Defaults", bundle: .main), systemImage: "arrow.counterclockwise")
             }
-            .disabled(fontSize == TerminalFontSize.standard && !highContrast && palette == .system)
+            .disabled(fontSize == TerminalFontSize.standard && !highContrast && palette == .standard)
             .accessibilityIdentifier("resetTerminalAppearance")
         } header: {
             Text("Appearance")
         } footer: {
             #if os(macOS)
-            Text("Schemes follow the system's light or dark appearance. Increased contrast overrides the scheme.")
+            Text("Match Theme uses the colors of the theme in Settings ▸ Appearance. Schemes follow the system's light or dark appearance; increased contrast overrides the scheme.")
             #endif
         }
     }
@@ -161,7 +157,7 @@ enum TerminalAnnounceOutput {
 struct TerminalTextAndColorsRows: View {
     @AppStorage(TerminalFontSize.key) private var fontSize = TerminalFontSize.standard
     @AppStorage("witerm.terminalHighContrast") private var highContrast = false
-    @AppStorage(TerminalColorScheme.key) private var palette = TerminalColorScheme.system
+    @AppStorage(TerminalColorScheme.key) private var palette = TerminalColorScheme.standard
     @Environment(\.dynamicTypeSize) private var typeSize
     private var effectiveSize: Double { fontSize * Double(TerminalTextScale.factor(typeSize)) }
 
@@ -175,23 +171,35 @@ struct TerminalTextAndColorsRows: View {
             .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
             .accessibilityLabel(String(localized: "Font preview, \(Int(effectiveSize.rounded())) pt"))
         Picker(String(localized: "Color Scheme", bundle: .main), selection: $palette) {
-            ForEach(TerminalColorScheme.allCases) { scheme in
-                Text(scheme.title).tag(scheme)
-            }
+            TerminalSchemeChoices()
         }
         .accessibilityIdentifier("terminalColorScheme")
-        TerminalSchemePreview(scheme: palette, highContrast: highContrast)
+        TerminalSchemePreview(scheme: palette.resolved(), highContrast: highContrast)
         Button {
             fontSize = TerminalFontSize.standard
-            palette = .system
+            palette = .standard
         } label: {
             ContentActionLabel(String(localized: "Restore Display Defaults", bundle: .main), systemImage: "arrow.counterclockwise")
         }
-        .disabled(fontSize == TerminalFontSize.standard && palette == .system)
+        .disabled(fontSize == TerminalFontSize.standard && palette == .standard)
         .accessibilityIdentifier("resetTerminalAppearance")
     }
 }
 #endif
+
+/// The schemes as picker choices: Match Theme and System, then each theme's.
+struct TerminalSchemeChoices: View {
+    var body: some View {
+        Text(TerminalColorScheme.theme.title).tag(TerminalColorScheme.theme)
+        Text(TerminalColorScheme.system.title).tag(TerminalColorScheme.system)
+        Divider()
+        ForEach(AppTheme.allCases) { theme in
+            if let scheme = TerminalColorScheme(rawValue: theme.rawValue) {
+                Text(scheme.title).tag(scheme)
+            }
+        }
+    }
+}
 
 /// A few lines of sample output in the chosen scheme, in the current appearance.
 private struct TerminalSchemePreview: View {

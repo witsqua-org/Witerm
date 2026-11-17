@@ -48,6 +48,47 @@ struct PrimaryButton: View {
     }
 }
 
+/// The action beside a `PrimaryButton`: the same glass and capsule (so it
+/// lights under the pointer as the primary one does) in neutral ink, so the
+/// primary action keeps the only color. Older systems and Reduce
+/// Transparency use the standard bordered style.
+struct SecondaryButton: View {
+    let title: String
+    let systemImage: String?
+    let action: () -> Void
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    init(_ title: String, systemImage: String? = nil, action: @escaping () -> Void) {
+        self.title = title
+        self.systemImage = systemImage
+        self.action = action
+    }
+
+    var body: some View {
+        if #available(iOS 26.0, macOS 26.0, *), !reduceTransparency {
+            button.buttonStyle(.glass)
+        } else {
+            button.buttonStyle(.bordered)
+        }
+    }
+
+    private var button: some View {
+        Button(action: action) {
+            Group {
+                if let systemImage {
+                    Label(title, systemImage: systemImage)
+                } else {
+                    Text(title)
+                }
+            }
+            .foregroundStyle(WitermTheme.ink)
+        }
+        .witermControl()
+        // Clear glass: the window's tint would fill it like the primary one.
+        .tint(nil)
+    }
+}
+
 /// A recoverable problem: what happened, what to do, and optional actions.
 struct IssueBanner<Actions: View>: View {
     let title: String
@@ -439,10 +480,11 @@ struct AddressText: UIViewRepresentable {
     var lines = 1
     var style: UIFont.TextStyle = .caption1
     var monospaced = true
-    var color = UIColor(named: "SecondaryInk") ?? .secondaryLabel
+    var color: UIColor
 
+    /// The theme's secondary ink unless a color is given.
     init(_ text: String, lines: Int = 1, style: UIFont.TextStyle = .caption1, monospaced: Bool = true,
-         color: UIColor = UIColor(named: "SecondaryInk") ?? .secondaryLabel) {
+         color: UIColor = UIColor(WitermTheme.secondary)) {
         self.text = text
         self.lines = lines
         self.style = style

@@ -17,7 +17,7 @@ struct LocalTerminalDetail: View {
     @Environment(\.colorScheme) private var systemColorScheme
     @AppStorage(TerminalFontSize.key) private var terminalFontSize = TerminalFontSize.standard
     @AppStorage("witerm.terminalHighContrast") private var terminalHighContrast = false
-    @AppStorage(TerminalColorScheme.key) private var terminalPalette = TerminalColorScheme.system
+    @AppStorage(TerminalColorScheme.key) private var terminalPalette = TerminalColorScheme.standard
     @AppStorage("witerm.terminalAnnounceOutput") private var terminalAnnounceOutput = false
 
     var body: some View {
@@ -67,7 +67,7 @@ struct LocalTerminalDetail: View {
             fontSize: CGFloat(TerminalFontSize.clamped(terminalFontSize)),
             highContrast: terminalHighContrast || contrast == .increased,
             preferredColorScheme: systemColorScheme,
-            palette: terminalPalette,
+            palette: terminalPalette.resolved(),
             announceOutput: terminalAnnounceOutput,
             activity: model.activity(for: session.id),
             focusOnShow: model.focusOnAttach,
@@ -206,9 +206,7 @@ struct LocalTerminalDetail: View {
                         PrimaryButton(LocalTerminalHelp.open, systemImage: WitermSymbols.typing) { model.attach(session, using: client, mode: .control) }
                             .accessibilityIdentifier("reconnectLocalTerminal")
                             .help(String(localized: "Open it here and type", bundle: .main))
-                        Button(String(localized: "Watch", bundle: .main), systemImage: WitermSymbols.watching) { model.attach(session, using: client, mode: .view) }
-                            .buttonStyle(.bordered)
-                            .witermControl()
+                        SecondaryButton(String(localized: "Watch", bundle: .main), systemImage: WitermSymbols.watching) { model.attach(session, using: client, mode: .view) }
                             .accessibilityIdentifier("viewLocalTerminal")
                             .help(String(localized: "Open it here without typing", bundle: .main))
                     }

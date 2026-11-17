@@ -1149,3 +1149,27 @@ The Mac audit (`AuditScreenshotTests`, English light and dark, Chinese, 129 scre
 
 The audit itself needed two fixes to run on this Mac: a terminal row's context menu carries the row's identifier and could be matched first (`sidebarRow` skips menus), and macOS can add its own "Ask Siri" item to the top of a context menu a moment after it opens, moving every item a row down, so the Open On step waits for the menu to settle, finds its items by title too, and always presses Escape to close it (XCTest's menu query doesn't always see a context menu). The recording XCTest keeps of each run showed both.
 
+
+## Round 29: themes, and what the themed audit showed
+
+**Themes.** Six coordinated palettes: Graphite (the Round 3 neutral, unchanged and the default), Paper, Ocean, Forest, Dusk and Ember. A theme sets the Mac canvas, every card and sheet surface, ink and secondary ink, the accent (primary buttons, selected cards, content links, iOS tint) and the terminal, in a light and a dark variant that follow the system; there is still no in-app light/dark choice, and Increase Contrast replaces any theme with the black-and-white palette. Warning, Positive and the ten machine hues are the same in every theme, and every theme keeps them at 4.5:1 on its canvas and surface, so "color belongs to machines" holds: a theme's color stays in its accent and a light tint of its canvas. Each theme's terminal sits on its canvas in its ink; its ANSI colors are the theme's own hues (Ocean's red leans coral, Forest's green toward pine), set in OKLCH at the lightness that reaches the contrast target on that canvas ([tools/theme-palettes](../../tools/theme-palettes)). The terminal's Color Scheme defaults to **Match Theme**; any theme's scheme, or System, can still be chosen separately. Paper and Ocean's terminal schemes, which shared one generic ANSI set since Round 16, now have their own.
+
+| Where | What |
+|---|---|
+| Mac Settings ▸ **Appearance** (new tab, between General and Terminal) | The themes as cards, three to a row: a miniature of the theme in the current appearance (its canvas, a card with text and the accent, a terminal line with the prompt and six ANSI colors), its name and a few words. The footer says what a theme covers, or which separate terminal scheme is in use. |
+| Mac **View ▸ Theme** | The same choice from the menu bar. |
+| iOS **Settings** | The cards first, two to a row. |
+
+Views read colors through `WitermTheme`, whose tokens come from an `@Observable` `ThemeStore`; reading one in a body subscribes that view, so choosing a theme recolors every open window at once without rebuilding views (terminals stay attached). Each theme's colors are made once, so comparisons such as a Home card's "is this the accent?" hold.
+
+**From the themed audit** (`AuditScreenshotTests`, Graphite light and five themes each in one appearance; a pass's third part names its theme, as `en-dark-ocean`):
+
+| What was seen | Change | Main code |
+|---|---|---|
+| **Watch** (Still Running) and **Edit…** (host page) didn't change under the pointer, while Open and Connect beside them lit up: a system bordered button next to a glass one. | `SecondaryButton`: the same glass and capsule as `PrimaryButton`, clear (its tint reset, or the window's accent would fill it like the primary one, as the first check showed) with ink text, so both answer the pointer and only the primary action has color. | [Components](../../apps/apple/Sources/Design/Components.swift) `SecondaryButton` |
+| An SSH host's Home card left a band under its two lines, because cards share an 84 pt minimum and the content sat at the top. | Content centers in the card's height. | [MacHomeView](../../apps/apple/Sources/LocalTerminal/MacHomeView.swift) `HomeCard` |
+| The SSH Hosts header had **Import…** as bare text beside **+ Add SSH Host…** and **Pair a Device…**, which carry symbols. | Import… has its symbol. | [MacHomeView](../../apps/apple/Sources/LocalTerminal/MacHomeView.swift) |
+| The **Undo** bar after deleting a host was centered on the window, so it sat left of the page and touched the sidebar. | It's centered over the detail column. | [MacWorkspaceView](../../apps/apple/Sources/LocalTerminal/MacWorkspaceView.swift) |
+| Invite Someone's **Access Ends After** box was as wide as its menu, under a full-width box of choices. | A full-width row: the label left, the menu right. | [ContinueOnDeviceSheet](../../apps/apple/Sources/Continuity/ContinueOnDeviceSheet.swift) |
+
+Kept as they are: the Mac sidebar stays in the system accent in every theme (a first try tinted its + buttons and icons with the theme, but macOS draws the selection itself in the system accent whatever the tint, so a Dusk sidebar showed a blue selection beside purple buttons); default buttons, switches, radios and links inside Mac sheets and Settings stay the system accent in every theme (AppKit's own controls, as in other Mac apps); the iOS canvas stays the system grouped background in every theme so lists, forms and system sheets match it.

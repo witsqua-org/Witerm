@@ -51,12 +51,21 @@ struct WitermApp: App {
                     .environment(\.localAgent, service.client)
             #else
                 MobileWorkspaceView()
+                    .modifier(ThemeTint())
             #endif
         }
         .connectionLifecycle()
         .environment(servers)
     }
 }
+
+#if os(iOS)
+/// The theme's accent for system controls on iOS. In a modifier's body, so a
+/// theme change re-tints. The Mac keeps the system accent on its controls.
+private struct ThemeTint: ViewModifier {
+    func body(content: Content) -> some View { content.tint(WitermTheme.accent) }
+}
+#endif
 
 #if os(macOS)
 /// Sends a standard text-finder action up the responder chain, as AppKit's
@@ -309,6 +318,12 @@ struct WitermCommands: Commands {
                 .disabled(fontSize <= TerminalFontSize.range.lowerBound)
             Button(String(localized: "Actual Text Size", bundle: .main)) { fontSize = TerminalFontSize.standard }
                 .keyboardShortcut("0", modifiers: .command)
+            #if os(macOS)
+            Picker(String(localized: "Theme", bundle: .main),
+                   selection: Binding(get: { ThemeStore.shared.theme }, set: { ThemeStore.shared.theme = $0 })) {
+                ForEach(AppTheme.allCases) { theme in Text(theme.title).tag(theme) }
+            }
+            #endif
             Divider()
         }
         #if os(macOS)

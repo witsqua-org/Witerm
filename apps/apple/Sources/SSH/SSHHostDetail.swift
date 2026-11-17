@@ -129,9 +129,7 @@ struct SSHHostDetail: View {
                     .disabled(model.connecting)
                     .help(String(localized: "Sign in to \(profile.endpointSummary)", bundle: .main))
                     .accessibilityIdentifier("sshConnectProfile")
-                    Button(String(localized: "Edit…", bundle: .main)) { ui.open(profile, model: model, editing: true) }
-                        .buttonStyle(.bordered)
-                        .witermControl()
+                    SecondaryButton(String(localized: "Edit…", bundle: .main)) { ui.open(profile, model: model, editing: true) }
                         .disabled(model.connecting)
                         .accessibilityIdentifier("sshEditProfile")
                     actionsMenu

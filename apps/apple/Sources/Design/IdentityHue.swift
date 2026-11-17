@@ -17,7 +17,7 @@ enum IdentityHue {
     /// variants keep it on the dark surface and under the dark action label.
     /// Neighbours sit far apart on the color wheel, because machines added
     /// one after another usually take neighbouring slots.
-    private static let palette: [(light: UInt32, dark: UInt32)] = [
+    static let palette: [(light: UInt32, dark: UInt32)] = [
         (0xC2264F, 0xFF6B8B), // rose
         (0x0B7A57, 0x4FE3B0), // mint
         (0x8F6100, 0xFFC24B), // amber

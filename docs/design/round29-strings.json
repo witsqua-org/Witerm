@@ -1,0 +1,20 @@
+{
+  "add": {
+    "Theme": "主题",
+    "Forest": "森林",
+    "Dusk": "暮色",
+    "Ember": "余烬",
+    "Match Theme": "跟随主题",
+    "Neutral gray, ink accent": "中性灰，墨色强调",
+    "Warm paper, sepia accent": "暖色纸张，棕褐强调",
+    "Cool blue-gray, deep blue accent": "冷调蓝灰，深蓝强调",
+    "Soft green-gray, pine accent": "柔和绿灰，松绿强调",
+    "Twilight violet, iris accent": "暮光紫，鸢尾强调",
+    "Warm clay, rust accent": "暖陶土，铁锈红强调",
+    "A theme colors the window, its cards and buttons, and your terminals, in light and dark. Machine colors stay the same in every theme.": "主题会为窗口、卡片、按钮和终端配色，浅色与深色外观均适用。各台机器的标识颜色在所有主题中保持不变。",
+    "A theme colors the window, its cards and buttons, in light and dark. Your terminals use the %@ scheme chosen in Terminal settings.": "主题会为窗口、卡片和按钮配色，浅色与深色外观均适用。终端使用在“终端”设置中选择的“%@”配色方案。",
+    "Match Theme uses the colors of the theme in Settings ▸ Appearance. Schemes follow the system's light or dark appearance; increased contrast overrides the scheme.": "“跟随主题”使用“设置 ▸ 外观”中所选主题的颜色。配色方案跟随系统的浅色或深色外观；增强对比度会覆盖配色方案。"
+  },
+  "change": {},
+  "remove": ["Schemes follow the system's light or dark appearance. Increased contrast overrides the scheme."]
+}

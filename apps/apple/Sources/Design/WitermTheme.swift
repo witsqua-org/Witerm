@@ -1,18 +1,23 @@
 import SwiftUI
 
-enum WitermTheme {
-    static let accent = Color("AccentColor")
-    static let actionLabel = Color("ActionLabel")
-    static let secondary = Color("SecondaryInk")
-    static let ink = Color("Ink")
+/// The app's colors. Canvas, surface, ink, secondary ink and the accent come
+/// from the chosen theme (`AppTheme`); Warning, Positive and machine hues are
+/// the same in every theme.
+@MainActor enum WitermTheme {
+    private static var colors: ThemeColors { ThemeStore.shared.colors }
+    static var accent: Color { colors.accent }
+    static var actionLabel: Color { colors.actionLabel }
+    static var secondary: Color { colors.secondary }
+    static var ink: Color { colors.ink }
     #if os(macOS)
-    static let canvas = Color("Canvas")
+    static var canvas: Color { colors.canvas }
     #else
-    /// The system grouped background, so custom pages match lists, forms and
-    /// system sheets.
+    /// The system grouped background in every theme, so custom pages match
+    /// lists, forms and system sheets; on iOS a theme colors the accent,
+    /// text, cards and the terminal.
     static let canvas = Color(uiColor: .systemGroupedBackground)
     #endif
-    static let surface = Color("Surface")
+    static var surface: Color { colors.surface }
     #if os(macOS)
     static let divider = Color(nsColor: .separatorColor)
     #else
@@ -29,8 +34,8 @@ enum WitermTheme {
     /// A machine's hue as an edge line (the 2 pt line over its terminal).
     static func edge(_ hue: Color) -> Color { hue.opacity(0.55) }
     /// A selected card or choice: fill and border (`WitermMetrics.selectedBorder`).
-    static let selectedFill = Color("AccentColor").opacity(0.10)
-    static let selectedBorder = Color("AccentColor")
+    static var selectedFill: Color { accent.opacity(0.10) }
+    static var selectedBorder: Color { accent }
     /// The outline of a card, field or choice: none normally (the fill
     /// carries the shape), a visible line with Increase Contrast.
     static func outline(increasedContrast: Bool) -> Color { increasedContrast ? Color.primary.opacity(0.45) : .clear }

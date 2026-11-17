@@ -773,6 +773,40 @@
         }
       }
     },
+    "A theme colors the window, its cards and buttons, and your terminals, in light and dark. Machine colors stay the same in every theme." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A theme colors the window, its cards and buttons, and your terminals, in light and dark. Machine colors stay the same in every theme."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "主题会为窗口、卡片、按钮和终端配色，浅色与深色外观均适用。各台机器的标识颜色在所有主题中保持不变。"
+          }
+        }
+      }
+    },
+    "A theme colors the window, its cards and buttons, in light and dark. Your terminals use the %@ scheme chosen in Terminal settings." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A theme colors the window, its cards and buttons, in light and dark. Your terminals use the %@ scheme chosen in Terminal settings."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "主题会为窗口、卡片和按钮配色，浅色与深色外观均适用。终端使用在“终端”设置中选择的“%@”配色方案。"
+          }
+        }
+      }
+    },
     "Aa 0123456789" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3226,6 +3260,23 @@
         }
       }
     },
+    "Cool blue-gray, deep blue accent" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cool blue-gray, deep blue accent"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "冷调蓝灰，深蓝强调"
+          }
+        }
+      }
+    },
     "Copied" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3956,6 +4007,23 @@
         }
       }
     },
+    "Dusk" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dusk"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暮色"
+          }
+        }
+      }
+    },
     "Edit %@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4122,6 +4190,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "编辑…"
+          }
+        }
+      }
+    },
+    "Ember" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ember"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "余烬"
           }
         }
       }
@@ -4853,6 +4938,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "字号"
+          }
+        }
+      }
+    },
+    "Forest" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forest"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "森林"
           }
         }
       }
@@ -6393,6 +6495,40 @@
         }
       }
     },
+    "Match Theme" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Match Theme"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跟随主题"
+          }
+        }
+      }
+    },
+    "Match Theme uses the colors of the theme in Settings ▸ Appearance. Schemes follow the system's light or dark appearance; increased contrast overrides the scheme." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Match Theme uses the colors of the theme in Settings ▸ Appearance. Schemes follow the system's light or dark appearance; increased contrast overrides the scheme."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“跟随主题”使用“设置 ▸ 外观”中所选主题的颜色。配色方案跟随系统的浅色或深色外观；增强对比度会覆盖配色方案。"
+          }
+        }
+      }
+    },
     "More" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6593,6 +6729,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "网络连接已断开"
+          }
+        }
+      }
+    },
+    "Neutral gray, ink accent" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neutral gray, ink accent"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "中性灰，墨色强调"
           }
         }
       }
@@ -10437,23 +10590,6 @@
         }
       }
     },
-    "Schemes follow the system's light or dark appearance. Increased contrast overrides the scheme." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Schemes follow the system's light or dark appearance. Increased contrast overrides the scheme."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "配色方案会跟随系统的浅色或深色外观。增强对比度优先于配色方案。"
-          }
-        }
-      }
-    },
     "Scroll to browse terminal content." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11158,6 +11294,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "代码片段只保存在此设备上，不会发送到中继服务器。请避免保存密码或其他机密信息。"
+          }
+        }
+      }
+    },
+    "Soft green-gray, pine accent" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Soft green-gray, pine accent"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "柔和绿灰，松绿强调"
           }
         }
       }
@@ -12725,6 +12878,23 @@
         }
       }
     },
+    "Theme" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Theme"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "主题"
+          }
+        }
+      }
+    },
     "They can open “%@” once, on one device, without pairing." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13520,6 +13690,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在开启终端…"
+          }
+        }
+      }
+    },
+    "Twilight violet, iris accent" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Twilight violet, iris accent"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暮光紫，鸢尾强调"
           }
         }
       }
@@ -14908,6 +15095,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在等待对方加入…"
+          }
+        }
+      }
+    },
+    "Warm clay, rust accent" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Warm clay, rust accent"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暖陶土，铁锈红强调"
+          }
+        }
+      }
+    },
+    "Warm paper, sepia accent" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Warm paper, sepia accent"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暖色纸张，棕褐强调"
           }
         }
       }

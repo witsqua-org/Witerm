@@ -6,50 +6,46 @@ import AppKit
 import UIKit
 #endif
 
-/// A terminal color scheme. Each scheme has a light and a dark variant and
-/// follows the system appearance; there is no separate light/dark choice.
-/// Enhanced contrast takes precedence over any scheme.
+/// A terminal color scheme: the theme's own (the default), the platform's
+/// plain colors, or any theme's terminal colors. Each scheme has a light and
+/// a dark variant and follows the system appearance; there is no separate
+/// light/dark choice. Enhanced contrast takes precedence over any scheme.
 enum TerminalColorScheme: String, CaseIterable, Identifiable {
-    case system, graphite, paper, ocean
+    case theme, system, graphite, paper, ocean, forest, dusk, ember
 
     static let key = "witerm.terminalColorScheme"
+    static let standard = TerminalColorScheme.theme
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
+        case .theme: String(localized: "Match Theme", bundle: .main)
         case .system: String(localized: "System", bundle: .main)
-        case .graphite: String(localized: "Graphite", bundle: .main)
-        case .paper: String(localized: "Paper", bundle: .main)
-        case .ocean: String(localized: "Ocean", bundle: .main)
+        default: appTheme?.title ?? rawValue
         }
+    }
+
+    /// The theme whose terminal colors this scheme uses, if it names one.
+    var appTheme: AppTheme? { AppTheme(rawValue: rawValue) }
+
+    /// The scheme a terminal draws with: Match Theme becomes the chosen
+    /// theme's scheme. Read in a view's body, so a theme change redraws.
+    @MainActor func resolved() -> TerminalColorScheme {
+        self == .theme ? TerminalColorScheme(rawValue: ThemeStore.shared.theme.rawValue) ?? .graphite : self
     }
 
     /// Background, foreground, and the 16 ANSI colors, as 0xRRGGBB. Nil for
     /// `system`, which keeps the platform's text colors and SwiftTerm's palette.
     /// Every color a program uses for text (ANSI 1–6 and 9–14, plus 7 and 15 on
     /// dark and 0 on light) keeps 4.5:1 against the background; body text 13:1.
+    /// `theme` reads the stored theme; renderers get `resolved()` schemes.
     func values(dark: Bool) -> (background: UInt32, foreground: UInt32, ansi: [UInt32])? {
-        switch (self, dark) {
-        case (.system, _): nil
-        case (.graphite, false): (0xF4F5F7, 0x111215, [
-            0x111215, 0xC32222, 0x257E34, 0x87690F, 0x2265C3, 0xAC39AC, 0x1C7A82, 0x838995,
-            0x686E7B, 0xAD1F1F, 0x257E34, 0x87690F, 0x1F5AAD, 0x993399, 0x1C7A82, 0x838995])
-        case (.graphite, true): (0x0F1013, 0xECEEF2, [
-            0x5F6570, 0xE25A5A, 0x69D37B, 0xECC551, 0x5A93E2, 0xCF6ECF, 0x5FD3DD, 0xBABEC4,
-            0x777D8B, 0xEA8686, 0x90DF9D, 0xF1D47E, 0x86AFEA, 0xDB94DB, 0x89DEE6, 0xFFFFFF])
-        case (.paper, false): (0xFBF8F1, 0x2B2A27, [
-            0x2B2A27, 0xC32222, 0x258034, 0x8A6B0F, 0x2265C3, 0xAC39AC, 0x1C7C85, 0x848A97,
-            0x6B717D, 0xAD1F1F, 0x258034, 0x8A6B0F, 0x1F5AAD, 0x993399, 0x1C7C85, 0x848A97])
-        case (.paper, true): (0x1E1C19, 0xEAE4D8, [
-            0x666C78, 0xE25A5A, 0x69D37B, 0xECC551, 0x5A93E2, 0xCF6ECF, 0x5FD3DD, 0xBABEC4,
-            0x808793, 0xEA8686, 0x90DF9D, 0xF1D47E, 0x86AFEA, 0xDB94DB, 0x89DEE6, 0xFFFFFF])
-        case (.ocean, false): (0xF2F7FA, 0x0E2A3A, [
-            0x0E2A3A, 0xC32222, 0x258034, 0x8A6B0F, 0x2265C3, 0xAC39AC, 0x1C7A82, 0x848A97,
-            0x6A707C, 0xAD1F1F, 0x258034, 0x8A6B0F, 0x1F5AAD, 0x993399, 0x1C7A82, 0x848A97])
-        case (.ocean, true): (0x0B1A24, 0xD8E8F0, [
-            0x646975, 0xE25A5A, 0x69D37B, 0xECC551, 0x5A93E2, 0xCF6ECF, 0x5FD3DD, 0xBABEC4,
-            0x7C8390, 0xEA8686, 0x90DF9D, 0xF1D47E, 0x86AFEA, 0xDB94DB, 0x89DEE6, 0xFFFFFF])
+        switch self {
+        case .system: nil
+        case .theme:
+            (UserDefaults.standard.string(forKey: AppTheme.key).flatMap(AppTheme.init(rawValue:)) ?? .standard).terminal(dark: dark)
+        default: appTheme?.terminal(dark: dark)
         }
     }
 }

@@ -355,7 +355,7 @@ private struct MobileSettingsView: View {
     /// Reopens the Welcome Tour.
     let showTour: () -> Void
     @AppStorage(TerminalFontSize.key) private var fontSize = TerminalFontSize.standard
-    @AppStorage(TerminalColorScheme.key) private var palette = TerminalColorScheme.system
+    @AppStorage(TerminalColorScheme.key) private var palette = TerminalColorScheme.standard
     @AppStorage(CommandSnippets.key) private var snippets = Data()
     @AppStorage(TerminalAnnounceOutput.key) private var announceOutput = false
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
@@ -364,6 +364,13 @@ private struct MobileSettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    ThemePicker()
+                        .listRowInsets(EdgeInsets(top: WitermMetrics.Space.m, leading: WitermMetrics.Space.m,
+                                                  bottom: WitermMetrics.Space.m, trailing: WitermMetrics.Space.m))
+                } header: {
+                    Text(String(localized: "Theme", bundle: .main))
+                }
                 Section(String(localized: "Terminal", bundle: .main)) {
                     // Text size and colors together, collapsed to their
                     // current values until opened.

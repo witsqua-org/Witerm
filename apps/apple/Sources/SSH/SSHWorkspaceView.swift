@@ -128,7 +128,8 @@ final class SSHWorkspaceUI {
 struct SSHPresentations: ViewModifier {
     @Bindable var model: SSHWorkspaceModel
     @Bindable var ui: SSHWorkspaceUI
-    /// iOS places the undo bar inside each tab, clear of the tab bar.
+    /// iOS places the undo bar inside each tab, clear of the tab bar; the
+    /// Mac, over the detail column.
     var showsUndo = true
 
     func body(content: Content) -> some View {
@@ -442,17 +443,17 @@ struct SSHTerminalSurface: View {
     @AppStorage(TerminalFontSize.key) private var fontSize = TerminalFontSize.standard
     @AppStorage("witerm.terminalHighContrast") private var highContrast = false
     @AppStorage("witerm.terminalAnnounceOutput") private var announceOutput = false
-    @AppStorage(TerminalColorScheme.key) private var palette = TerminalColorScheme.system
+    @AppStorage(TerminalColorScheme.key) private var palette = TerminalColorScheme.standard
 
     var body: some View {
         #if os(macOS)
         SSHNativeTerminalView(host: session.terminal, fontSize: TerminalFontSize.clamped(fontSize),
-            highContrast: highContrast || contrast == .increased, palette: palette,
+            highContrast: highContrast || contrast == .increased, palette: palette.resolved(),
             scheme: systemColorScheme, announceOutput: announceOutput)
             .id(session.token)
         #else
         SSHNativeTerminalView(host: session.terminal, fontSize: TerminalFontSize.clamped(fontSize) * TerminalTextScale.factor(typeSize),
-            highContrast: highContrast || contrast == .increased, palette: palette,
+            highContrast: highContrast || contrast == .increased, palette: palette.resolved(),
             scheme: systemColorScheme, announceOutput: announceOutput,
             keyboardRequest: keyboardRequest, barActions: barActions)
             .id(session.token)
@@ -486,7 +487,7 @@ struct SSHWorkspaceView<Home: View>: View {
     @Environment(\.colorScheme) private var systemColorScheme
     @Environment(\.colorSchemeContrast) private var contrast
     @AppStorage("witerm.terminalHighContrast") private var highContrast = false
-    @AppStorage(TerminalColorScheme.key) private var palette = TerminalColorScheme.system
+    @AppStorage(TerminalColorScheme.key) private var palette = TerminalColorScheme.standard
 
     private var shownID: UUID? { ui.shownID }
     private var shownProfile: SSHProfile? { model.profiles.first { $0.id == shownID } }
@@ -607,7 +608,7 @@ struct SSHWorkspaceView<Home: View>: View {
         // Under a terminal on iPhone, its own color continues past the home indicator.
         .background(shown != nil && sizeClass != .regular
                     ? TerminalBackdrop.color(dark: systemColorScheme == .dark, highContrast: highContrast || contrast == .increased,
-                                             palette: palette)
+                                             palette: palette.resolved())
                     : WitermTheme.canvas)
         // Like the back button, an edge swipe returns to the list and keeps the session connected.
         .edgeSwipeBack(enabled: shownID != nil && sizeClass != .regular) { ui.show(nil) }

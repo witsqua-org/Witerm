@@ -73,6 +73,8 @@ struct MacWorkspaceView: View {
                 .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 320)
         } detail: {
             detail
+                // Centered under the page it belongs to, not the window.
+                .overlay(alignment: .bottom) { SSHUndoRemovalBar(model: ssh) }
         }
         .witermTint()
         .frame(minWidth: 860, minHeight: 560)
@@ -111,7 +113,7 @@ struct MacWorkspaceView: View {
             }
         }
         .focusedSceneValue(\.workspaceActions, workspaceActions)
-        .modifier(SSHPresentations(model: ssh, ui: sshUI))
+        .modifier(SSHPresentations(model: ssh, ui: sshUI, showsUndo: false))
         .sheet(item: $renamingSession, onDismiss: refocus) { session in
             RenameSessionSheet(current: session.name) { name in
                 guard let client = service.client, name != session.name else { return }
@@ -613,8 +615,10 @@ struct MacWorkspaceView: View {
         }
         .listStyle(.sidebar)
         .onKeyPress(.return) { openSelection() ? .handled : .ignored }
-        // Native selection: the row fills with the tint behind white text, so
-        // the sidebar keeps the system accent rather than the app's ink.
+        // Native selection: the row fills with the system accent behind white
+        // text, so the sidebar keeps it rather than the app's ink, in every
+        // theme (macOS draws a sidebar selection in the system accent whatever
+        // the tint, so its + buttons and icons match that, not the theme).
         .tint(Color.accentColor)
         .navigationTitle("Witerm")
         // Connecting… for more than 10 seconds becomes a reason, not a wait.

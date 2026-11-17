@@ -1,0 +1,20 @@
+{
+ "graphite": {"hues": {"red":25,"green":145,"yellow":90,"blue":255,"magenta":330,"cyan":200}, "chroma":0.13, "gray":[260,0.01],
+   "light": {"canvas":"F4F5F7","surface":"FFFFFF","ink":"111215","secondary":"5A5F6A","accent":"17181C","actionLabel":"FFFFFF"},
+   "dark":  {"canvas":"0F1013","surface":"17181C","ink":"ECEEF2","secondary":"8F95A0","accent":"ECEEF2","actionLabel":"0F1013"}},
+ "paper": {"hues": {"red":32,"green":135,"yellow":82,"blue":245,"magenta":350,"cyan":190}, "chroma":0.11, "gray":[70,0.015],
+   "light": {"canvas":"F3EEE4","surface":"FFFCF5","ink":"2A251F","secondary":"675E52","accent":"7E4A22","actionLabel":"FFFCF5"},
+   "dark":  {"canvas":"1A1713","surface":"24201B","ink":"EFE8DC","secondary":"A69C8D","accent":"E2AC74","actionLabel":"1A1713"}},
+ "ocean": {"hues": {"red":18,"green":165,"yellow":85,"blue":245,"magenta":320,"cyan":215}, "chroma":0.13, "gray":[240,0.02],
+   "light": {"canvas":"ECF2F6","surface":"FBFDFE","ink":"0C2130","secondary":"4A6070","accent":"0B65A0","actionLabel":"FFFFFF"},
+   "dark":  {"canvas":"09131B","surface":"101D27","ink":"DBE8F1","secondary":"8AA1B2","accent":"62B6F2","actionLabel":"09131B"}},
+ "forest": {"hues": {"red":35,"green":140,"yellow":95,"blue":235,"magenta":350,"cyan":185}, "chroma":0.115, "gray":[150,0.015],
+   "light": {"canvas":"EDF1EA","surface":"FBFDF9","ink":"16221A","secondary":"516256","accent":"2B643A","actionLabel":"FFFFFF"},
+   "dark":  {"canvas":"0D1310","surface":"151E18","ink":"DBE7DD","secondary":"8BA291","accent":"7FCB93","actionLabel":"0D1310"}},
+ "dusk": {"hues": {"red":12,"green":160,"yellow":80,"blue":268,"magenta":318,"cyan":205}, "chroma":0.14, "gray":[295,0.02],
+   "light": {"canvas":"F1EEF7","surface":"FDFCFF","ink":"1E1A2A","secondary":"5F586E","accent":"5B41B0","actionLabel":"FFFFFF"},
+   "dark":  {"canvas":"110F19","surface":"1A1725","ink":"E5E0F0","secondary":"9B93AE","accent":"B6A3FF","actionLabel":"110F19"}},
+ "ember": {"hues": {"red":28,"green":128,"yellow":78,"blue":250,"magenta":355,"cyan":195}, "chroma":0.13, "gray":[45,0.015],
+   "light": {"canvas":"F5EFEA","surface":"FFFCFA","ink":"2A1A15","secondary":"6B5951","accent":"A13A1A","actionLabel":"FFFFFF"},
+   "dark":  {"canvas":"18110E","surface":"221915","ink":"F0E3DC","secondary":"AD978E","accent":"FF9166","actionLabel":"18110E"}}
+}

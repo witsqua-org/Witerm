@@ -46,7 +46,7 @@ enum TerminalTextScale {
 /// preference with previews.
 struct TerminalTextAndColorsItems: View {
     @AppStorage(TerminalFontSize.key) private var fontSize = TerminalFontSize.standard
-    @AppStorage(TerminalColorScheme.key) private var palette = TerminalColorScheme.system
+    @AppStorage(TerminalColorScheme.key) private var palette = TerminalColorScheme.standard
 
     var body: some View {
         ControlGroup {
@@ -68,9 +68,7 @@ struct TerminalTextAndColorsItems: View {
             .accessibilityIdentifier("terminalLargerText")
         }
         Picker(String(localized: "Color Scheme", bundle: .main), selection: $palette) {
-            ForEach(TerminalColorScheme.allCases) { scheme in
-                Text(scheme.title).tag(scheme)
-            }
+            TerminalSchemeChoices()
         }
         .pickerStyle(.inline)
     }

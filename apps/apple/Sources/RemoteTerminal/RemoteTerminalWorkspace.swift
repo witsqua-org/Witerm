@@ -17,7 +17,7 @@ struct RemoteTerminalWorkspace: View {
     @AppStorage(TerminalFontSize.key) private var terminalFontSize = TerminalFontSize.standard
     @Environment(\.colorScheme) private var systemColorScheme
     @AppStorage("witerm.terminalHighContrast") private var terminalHighContrast = false
-    @AppStorage(TerminalColorScheme.key) private var terminalPalette = TerminalColorScheme.system
+    @AppStorage(TerminalColorScheme.key) private var terminalPalette = TerminalColorScheme.standard
     @AppStorage("witerm.terminalAnnounceOutput") private var terminalAnnounceOutput = false
     @State private var keyboardRequest = 0
     @State private var finder = TerminalFinder()
@@ -202,7 +202,7 @@ struct RemoteTerminalWorkspace: View {
     /// continues the terminal instead of showing a band.
     private var terminalBackground: Color {
         TerminalBackdrop.color(dark: systemColorScheme == .dark, highContrast: terminalHighContrast || contrast == .increased,
-                               palette: terminalPalette)
+                               palette: terminalPalette.resolved())
     }
 
     private func terminal(_ attachment: any PairedTerminalLink, host: PairedTerminalHost) -> some View {
@@ -282,7 +282,7 @@ struct RemoteTerminalWorkspace: View {
                     fontSize: rendererFontSize,
                     highContrast: terminalHighContrast || contrast == .increased,
                     preferredColorScheme: systemColorScheme,
-                    palette: terminalPalette,
+                    palette: terminalPalette.resolved(),
                     announceOutput: terminalAnnounceOutput,
                     finder: finder,
                     inputDestination: model.selectedGrant.map { $0.host.name + " · " + attachment.session.name },

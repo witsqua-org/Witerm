@@ -237,7 +237,7 @@ struct MacHomeView: View {
 
     private var sshHosts: some View {
         HomeSection(String(localized: "SSH Hosts", bundle: .main)) {
-            Button(String(localized: "Import…", bundle: .main), action: importHosts)
+            Button(String(localized: "Import…", bundle: .main), systemImage: "square.and.arrow.down", action: importHosts)
                 .help(String(localized: "Import hosts from an OpenSSH config file", bundle: .main))
             if !hosts.isEmpty {
                 Button(String(localized: "Add SSH Host…", bundle: .main), systemImage: "plus", action: addHost)
@@ -385,7 +385,9 @@ private struct HomeCard<Status: View>: View {
                 Spacer(minLength: 0)
             }
             .padding(WitermMetrics.Space.m)
-            .frame(maxWidth: .infinity, minHeight: 84, alignment: .topLeading)
+            // Centered in the row's height, so a card with fewer lines than
+            // its neighbours doesn't leave a band at its foot.
+            .frame(maxWidth: .infinity, minHeight: 84, alignment: .leading)
             .contentShape(Rectangle())
             .background(alignment: .top) {
                 // The machine's hue along the top edge, as on its terminal.

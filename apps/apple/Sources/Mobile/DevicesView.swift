@@ -258,7 +258,7 @@ struct DevicesView: View {
             // status goes under it.
             VStack(alignment: .leading, spacing: WitermMetrics.Space.xs) {
                 AddressText(server.displayName, lines: 0, style: .body, monospaced: false,
-                            color: UIColor(named: "Ink") ?? .label)
+                            color: UIColor(WitermTheme.ink))
                 badge
             }
         } else {

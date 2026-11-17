@@ -124,7 +124,7 @@ final class AuditScreenshotTests: XCTestCase {
 
     func testCaptureAuditScreens() throws {
         continueAfterFailure = true
-        executionTimeAllowance = 1800
+        executionTimeAllowance = 3600
         let environment = ProcessInfo.processInfo.environment
         guard let path = environment["WITERM_HCI_FIXED_APP"], environment["WITERM_AUDIT_SHOTS"] == "1" else {
             throw XCTSkip("Set WITERM_HCI_FIXED_APP and WITERM_AUDIT_SHOTS=1")
@@ -138,7 +138,10 @@ final class AuditScreenshotTests: XCTestCase {
             .split(separator: ",").map(String.init)
         for name in variants {
             variant = name
-            walk(path: path, fixture: name == variants.first ? fixture : nil, full: name != "en-dark")
+            // Menus once per language; a themed pass ("en-dark-ocean") shows
+            // the screens and Settings, not the menus again.
+            let themed = name.split(separator: "-").count > 2
+            walk(path: path, fixture: name == variants.first ? fixture : nil, full: name != "en-dark" && !themed)
         }
         let summary = XCTAttachment(string: metrics.joined(separator: "\n"))
         summary.name = "metrics"
@@ -150,10 +153,15 @@ final class AuditScreenshotTests: XCTestCase {
         var arguments = ["-witerm.onboarding.completedVersion", "1"]
         arguments += variant.hasPrefix("zh") ? ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
                                              : ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
-        arguments += ["-AppleInterfaceStyle", variant.hasSuffix("dark") ? "Dark" : "Light"]
+        let dark = variant.contains("-dark")
+        arguments += ["-AppleInterfaceStyle", dark ? "Dark" : "Light"]
         // A DEBUG-only test hook (docs/verification.md); a launch argument
         // alone can't override a dark system appearance.
-        arguments += ["-witerm.debug.appearance", variant.hasSuffix("dark") ? "dark" : "light"]
+        arguments += ["-witerm.debug.appearance", dark ? "dark" : "light"]
+        // "en-dark-ocean": a third part names the theme (Round 29); the
+        // argument domain wins over the saved theme only for this launch.
+        let parts = variant.split(separator: "-")
+        arguments += ["-witerm.theme", parts.count > 2 ? String(parts[2]) : "graphite"]
         return arguments
     }
 
@@ -226,7 +234,7 @@ final class AuditScreenshotTests: XCTestCase {
         }
 
         continueSheet(row: rowB)
-        if full || variant == "en-dark" { settings() }
+        if full || variant.contains("-dark") || variant.split(separator: "-").count > 2 { settings() }
         sshForm(fixture: fixture)
         if full { menus() }
         tour()
@@ -344,9 +352,8 @@ final class AuditScreenshotTests: XCTestCase {
     private func settings() {
         app.typeKey(",", modifierFlags: .command)
         pause(1.5)
-        let tabs: [(String, [String])] = [("general", ["General", "通用"]), ("terminal", ["Terminal", "终端"]),
-                                          ("snippets", ["Snippets", "片段"]), ("devices", ["Devices", "设备"]),
-                                          ("command-line", ["Command Line", "命令行"])]
+        let tabs: [(String, [String])] = [("general", ["General", "通用"]), ("appearance", ["Appearance", "外观"]),
+                                          ("terminal", ["Terminal", "终端"]), ("snippets", ["Snippets", "片段"])]
         for (index, (name, labels)) in tabs.enumerated() {
             guard let tab = labeled(settingsWindow.toolbars.buttons, labels) ?? labeled(app.toolbars.buttons, labels) else {
                 metrics.append("\(variant) settings tab \(name) not found"); continue
@@ -355,6 +362,8 @@ final class AuditScreenshotTests: XCTestCase {
             pause(name == "devices" ? 3 : 1)
             shot("3\(index)-settings-\(name)", base: settingsWindow)
             switch name {
+            case "appearance":
+                hoverShot(any("theme-forest"), "34-hover-settings-theme-card", base: settingsWindow)
             case "snippets":
                 let add = any("addSnippet")
                 if add.exists {
