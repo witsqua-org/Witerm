@@ -39,6 +39,27 @@ final class RelayTerminalPolicyTests: XCTestCase {
         XCTAssertThrowsError(try RelayTerminalPolicy.request(Data(repeating: 32, count: 49_153), attached: false, permission: .control))
     }
 
+    /// Orbit (Round 32): only what `OrbitRelay` admits, only from a device
+    /// that may type, never while attached, and nothing beside it.
+    func testOrbitIsNarrow() throws {
+        let encoder = JSONEncoder()
+        let threads = LocalAgentRequest(operation: .orbit, orbit: OrbitRequest(operation: .threads))
+        XCTAssertNoThrow(try RelayTerminalPolicy.request(encoder.encode(threads), attached: false, permission: .control))
+        XCTAssertThrowsError(try RelayTerminalPolicy.request(encoder.encode(threads), attached: false, permission: .view)) {
+            XCTAssertEqual(($0 as? AgentFailure)?.code, .readOnly)
+        }
+        XCTAssertThrowsError(try RelayTerminalPolicy.request(encoder.encode(threads), attached: true, permission: .control))
+        XCTAssertThrowsError(try RelayTerminalPolicy.request(encoder.encode(LocalAgentRequest(operation: .orbit)), attached: false, permission: .control))
+        for orbit in [OrbitRequest(operation: .configure, apiKey: "sk-elsewhere"), OrbitRequest(operation: .clear),
+                      OrbitRequest(operation: .status, model: "other")] {
+            XCTAssertThrowsError(try RelayTerminalPolicy.request(encoder.encode(LocalAgentRequest(operation: .orbit, orbit: orbit)),
+                                                                 attached: false, permission: .control))
+        }
+        XCTAssertThrowsError(try RelayTerminalPolicy.request(encoder.encode(LocalAgentRequest(
+            operation: .orbit, sessionID: UUID().uuidString.lowercased(), orbit: OrbitRequest(operation: .threads))),
+            attached: false, permission: .control))
+    }
+
     /// Flow control: `flow` only on attach, `ack` only while attached and
     /// for watching devices too, and neither carries anything else.
     func testFlowFieldsAreNarrow() throws {

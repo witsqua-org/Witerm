@@ -41,6 +41,35 @@ public actor RemoteTerminalClient {
     }
   }
 
+  /// One exchange with Orbit on the Mac (relay-v1 `orbit`), on its own
+  /// tunnel. Only what `OrbitRelay` admits is sent; the Mac refuses a device
+  /// that can't type in every terminal with `readOnly`. Orbit's own errors
+  /// come back in the reply, not as a thrown error.
+  public func orbit(_ request: OrbitRequest) async throws -> OrbitResponse {
+    let pairing = pairing
+    let grantID = grantID
+    return try await Self.orbit(request, open: { try await RelaySecureChannel.client(pairing: pairing, grantID: grantID) })
+  }
+
+  /// One Orbit exchange over a channel from `open`.
+  static func orbit(
+    _ request: OrbitRequest, open: @Sendable () async throws -> RelaySecureChannel
+  ) async throws -> OrbitResponse {
+    guard let admitted = OrbitRelay.admit(request) else { throw RelayError.invalidMessage }
+    let channel = try await open()
+    let rpc = RemoteRPCConnection(channel: channel)
+    await rpc.start()
+    do {
+      let frame = try await rpc.request(LocalAgentRequest(operation: .orbit, orbit: admitted))
+      await rpc.close()
+      guard let reply = frame.orbit else { throw RelayError.invalidMessage }
+      return reply
+    } catch {
+      await rpc.close()
+      throw RelayContext.map(error)
+    }
+  }
+
   /// `history` asks for earlier output to fill the renderer's scrollback.
   public func attach(
     sessionID: String, columns: Int = 80, rows: Int = 24,
@@ -293,7 +322,7 @@ actor RemoteRPCConnection {
     RelayTrace.event(channel.traceID, "rpc-request-" + request.operation.rawValue)
     guard !closed else { throw terminalError ?? RelayError.transport }
     guard !detaching || request.operation == .detach else { throw RelayError.transport }
-    guard [.status, .list, .attach, .input, .resize, .detach, .redeem].contains(request.operation),
+    guard [.status, .list, .attach, .input, .resize, .detach, .redeem, .orbit].contains(request.operation),
       RemoteWire.validID(request.id), pending[request.id] == nil
     else { throw RelayError.invalidMessage }
     return try await withTaskCancellationHandler {
@@ -303,8 +332,10 @@ actor RemoteRPCConnection {
           continuation.resume(throwing: RelayError.backpressure)
           return
         }
+        // Orbit may first have to start on the Mac (up to 3 seconds).
+        let limit: Duration = request.operation == .orbit ? .seconds(15) : .seconds(5)
         let timer = Task { [weak self] in
-          do { try await Task.sleep(for: .seconds(5)) } catch { return }
+          do { try await Task.sleep(for: limit) } catch { return }
           await self?.timeout(id: request.id)
         }
         pending[request.id] = Pending(request: request, continuation: continuation, timer: timer)
@@ -408,6 +439,8 @@ actor RemoteRPCConnection {
   }
 
   private func validate(_ frame: LocalAgentFrame, for request: LocalAgentRequest) throws {
+    // Orbit's reply belongs only to an `orbit` request.
+    guard request.operation == .orbit || frame.orbit == nil else { throw RelayError.invalidMessage }
     switch request.operation {
     case .status:
       guard frame.status?.version == 1, frame.sessions == nil, frame.session == nil,
@@ -427,6 +460,11 @@ actor RemoteRPCConnection {
         frame.flow == nil || (request.flow != nil && frame.flow == RelayFlowControl.version)
       else { throw RelayError.invalidMessage }
       try RemoteWire.validate(session)
+    case .orbit:
+      guard let reply = frame.orbit, reply.version == 1, reply.id == request.orbit?.id,
+        frame.status == nil, frame.sessions == nil, frame.session == nil, frame.mode == nil, frame.flow == nil,
+        (reply.threads?.count ?? 0) <= OrbitRelay.threadLimit
+      else { throw RelayError.invalidMessage }
     default:
       guard frame.status == nil, frame.sessions == nil, frame.session == nil, frame.mode == nil,
         frame.flow == nil

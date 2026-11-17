@@ -22,7 +22,7 @@ These were made with the owner on 2026-11-17.
 | The API key | Stored in the data protection Keychain (this device only, readable while unlocked) only when the user leaves "Keep in Keychain on This Mac" on. Otherwise it stays in memory until Witerm quits. The app hands it to Orbit over the private socket, and Orbit keeps it in memory only. An Orbit started by `witerm mcp` gets none of the agent's environment but `HOME`, `PATH`, `WITERM_ORBIT_DIRECTORY` and `WITERM_AGENT_SOCKET`. In particular it gets no `WITERM_ORBIT_OPENAI_URL`, so an agent can't point the Orbit that Witerm will key at another endpoint. |
 | Provider | The OpenAI Responses API only. The default model is `gpt-6.1-sol`, changeable in Settings. |
 | Handoff | `witerm mcp` adds `list_orbit_tasks`, `read_orbit_task`, `guide_orbit_task`, `take_over_orbit_task` and `finish_orbit_task`. A take-over stops Orbit's run, so only one agent drives a task. Guidance from that agent, or a message from the user, hands it back to Orbit. |
-| iPhone and iPad | Not yet. The plan is for them to be chat clients through the end-to-end encrypted relay, reaching only Macs that allow them every terminal. |
+| iPhone and iPad | In progress (Round 32): chat clients through the end-to-end encrypted relay, for devices allowed to type in every terminal. The protocol and the Mac side are done; the iOS views are next. See [design/orbit-ios.md](design/orbit-ios.md) and [relay-v1](../protocol/relay-v1.md#orbit). |
 
 ## Context management
 

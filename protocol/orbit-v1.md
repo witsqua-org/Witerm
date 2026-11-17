@@ -4,7 +4,7 @@
 
 ## Process and files
 
-- **Starting.** The app starts it from `Witerm.app/Contents/Helpers/witerm` when Orbit is opened. It runs as the user, in its own session (`setsid`), and exits after 15 minutes with no thread running and no requests. There is no LaunchAgent.
+- **Starting.** It runs from `Witerm.app/Contents/Helpers/witerm`, started by the app at launch (with a key in the Keychain) or when Orbit is opened, by `witerm mcp` for an agent, or by the relay endpoint for a paired device. It runs as the user, in its own session (`setsid`), and exits after 15 minutes with no thread running and no requests. There is no LaunchAgent.
 - **Folder.** `orbit/` in the app group container (beside the terminal service's `local/`), or `WITERM_ORBIT_DIRECTORY` for development and tests. It is mode 0700, owned by the user, and never a symlink.
 - **One instance per folder.** It holds `orbit.lock` (`flock`). A second instance exits with status 0, and a socket left by a dead instance is replaced.
 - **Socket.** `orbit.sock`, mode 0600. Both sides check the peer's user ID (`getpeereid`).
@@ -56,6 +56,6 @@
 
 Example: `fixtures/orbit-v1.json`.
 
-## Never remote
+## From paired devices
 
-Orbit is reachable only on this Mac. The relay forwards none of these operations, and a paired device can't start or read a thread.
+Orbit's socket is reachable only on this Mac. Since Round 32 the Mac's relay endpoint forwards a narrow part of it for paired devices that may type in every terminal: `status`, `threads`, `thread`, `start`, `send` and `stop`, never `configure`, `take_over`, `finish`, `delete` or `clear`, and never an `api_key`, `model`, `agent` or `success` field. See [relay-v1](relay-v1.md#orbit). The endpoint starts Orbit when it isn't running and gives it the user's Keychain key when it has none.

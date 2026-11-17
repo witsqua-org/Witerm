@@ -17,6 +17,10 @@ public enum LocalAgentOperation: String, Codable, Sendable {
   /// acknowledging terminal frames on a flow-controlled attachment. Never
   /// answered.
   case ack
+  /// Relay only, never sent to the local service: a paired device that may
+  /// type in every terminal talking to Orbit on this Mac (`OrbitRelay`).
+  /// The relay endpoint forwards it to Orbit's own socket.
+  case orbit
 }
 
 /// End-to-end flow control on relayed attachments (relay-v1 `flow`). The
@@ -437,6 +441,8 @@ public struct LocalAgentRequest: Codable, Sendable, Equatable {
   /// Relay `ack` only: how many terminal frames (output and geometry) after
   /// the attach response this device has handed to its renderer, in total.
   public let consumed: Int?
+  /// Relay `orbit` only: the Orbit request, limited by `OrbitRelay`.
+  public let orbit: OrbitRequest?
 
   public init(
     version: Int = 1, id: String = UUID().uuidString.lowercased(), operation: LocalAgentOperation,
@@ -445,7 +451,8 @@ public struct LocalAgentRequest: Codable, Sendable, Equatable {
     shared: Bool? = nil, keepPrivate: Bool? = nil, remoteTyping: Bool? = nil,
     access: LocalDeviceAccess? = nil, guest: LocalGuestInvite? = nil, pairingID: String? = nil,
     proof: Data? = nil, automatic: Bool? = nil, history: Bool? = nil, start: Int? = nil,
-    agent: String? = nil, peer: LocalRemotePeer? = nil, flow: Int? = nil, consumed: Int? = nil
+    agent: String? = nil, peer: LocalRemotePeer? = nil, flow: Int? = nil, consumed: Int? = nil,
+    orbit: OrbitRequest? = nil
   ) {
     self.version = version
     self.id = id
@@ -471,11 +478,12 @@ public struct LocalAgentRequest: Codable, Sendable, Equatable {
     self.peer = peer
     self.flow = flow
     self.consumed = consumed
+    self.orbit = orbit
   }
 
   enum CodingKeys: String, CodingKey {
     case version, id, operation, name, columns, rows, mode, data, cwd, shared, access, guest, proof,
-      automatic, history, start, agent, peer, flow, consumed
+      automatic, history, start, agent, peer, flow, consumed, orbit
     case pairingID = "pairing_id"
     case sessionID = "session_id"
     case keepPrivate = "keep_private"
@@ -509,6 +517,8 @@ public struct LocalAgentFrame: Codable, Sendable, Equatable {
   public let command: String?
   /// `capture` replies only.
   public let capture: LocalTerminalCapture?
+  /// Relay `orbit` replies only: Orbit's reply, narrowed and cut to fit.
+  public let orbit: OrbitResponse?
 
   public init(
     version: Int = 1, id: String? = nil, kind: LocalFrameKind, ok: Bool? = nil,
@@ -516,7 +526,7 @@ public struct LocalAgentFrame: Codable, Sendable, Equatable {
     sessions: [LocalSessionInfo]? = nil, session: LocalSessionInfo? = nil,
     mode: LocalAttachmentMode? = nil, data: Data? = nil, accesses: [LocalDeviceAccess]? = nil,
     guests: [LocalGuestInvite]? = nil, flow: Int? = nil, cwd: String? = nil, command: String? = nil,
-    capture: LocalTerminalCapture? = nil
+    capture: LocalTerminalCapture? = nil, orbit: OrbitResponse? = nil
   ) {
     self.version = version
     self.id = id
@@ -534,6 +544,7 @@ public struct LocalAgentFrame: Codable, Sendable, Equatable {
     self.cwd = cwd
     self.command = command
     self.capture = capture
+    self.orbit = orbit
   }
 }
 

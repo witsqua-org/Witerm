@@ -36,6 +36,8 @@ actor RelayHostCoordinator {
 
     private let settings: RelayHostConfigurationStore
     private let socketURL: URL
+    /// Orbit for devices that may type in every terminal (Round 32).
+    private let orbit: OrbitGateway
     private let board: RelayStatusBoard
     private let pairingOverride: PairingClient?
     /// Test-supplied clients keyed by normalized server address.
@@ -54,6 +56,9 @@ actor RelayHostCoordinator {
         pairingOverrides = pairings
         settings = RelayHostConfigurationStore(stateDirectory: stateDirectory)
         socketURL = stateDirectory.appendingPathComponent("agent.sock")
+        let orbitClient = OrbitClient(socketURL: OrbitGateway.directory(stateDirectory: stateDirectory)
+            .appendingPathComponent(OrbitPaths.socketName))
+        orbit = OrbitGateway(client: orbitClient, start: { await OrbitStarter.start(client: orbitClient) })
     }
 
     func start() {
@@ -214,7 +219,8 @@ actor RelayHostCoordinator {
             let channel = try await RelaySecureChannel.host(pairing: pairing, offer: offer)
             guard isCurrent(server, expected), !Task.isCancelled else { await channel.close(); return }
             let bridge = RelayTerminalBridge(channel: channel, pairing: pairing,
-                                              local: LocalAgentClient(socketURL: socketURL), traceID: offer.tunnelID)
+                                              local: LocalAgentClient(socketURL: socketURL), traceID: offer.tunnelID,
+                                              orbit: orbit)
             links[server]?.bridges[offer.tunnelID] = bridge
             await bridge.run()
         } catch { /* Failed authentication never reaches the local broker. */ }
@@ -263,6 +269,14 @@ enum RelayTerminalPolicy {
         case .redeem:
             guard !attached, request.proof?.count == 32 else { throw AgentFailure(.invalidRequest) }
             allowed = ["version", "id", "operation", "proof"]
+        case .orbit:
+            // Orbit types in every terminal: only a device that may type
+            // gets this far, and the bridge checks it may reach them all.
+            guard !attached, let orbit = request.orbit, OrbitRelay.admit(orbit) != nil else {
+                throw AgentFailure(.invalidRequest)
+            }
+            guard permission == .control else { throw AgentFailure(.readOnly) }
+            allowed = ["version", "id", "operation", "orbit"]
         case .create, .close, .share, .rename, .access, .guest, .folder, .capture: throw AgentFailure(.invalidRequest)
         }
         guard Set(object.keys).isSubset(of: allowed) else { throw AgentFailure(.invalidRequest) }
@@ -284,6 +298,7 @@ actor RelayTerminalBridge {
     private let traceID: String
     private let flowLimits: RelayOutputWindow.Limits
     private let flowObserver: (@Sendable (LocalTerminalEvent) -> Void)?
+    private let orbit: OrbitGateway?
     private var attachment: LocalTerminalAttachment?
     private var closed = false
     private var detaching = false
@@ -291,9 +306,10 @@ actor RelayTerminalBridge {
     private(set) var window: RelayOutputWindow?
 
     init(channel: RelaySecureChannel, pairing: PairingClient, local: LocalAgentClient, traceID: String = "",
-         flowLimits: RelayOutputWindow.Limits = .init(), flowObserver: (@Sendable (LocalTerminalEvent) -> Void)? = nil) {
+         flowLimits: RelayOutputWindow.Limits = .init(), flowObserver: (@Sendable (LocalTerminalEvent) -> Void)? = nil,
+         orbit: OrbitGateway? = nil) {
         self.channel = channel; self.pairing = pairing; self.local = local; self.traceID = traceID
-        self.flowLimits = flowLimits; self.flowObserver = flowObserver
+        self.flowLimits = flowLimits; self.flowObserver = flowObserver; self.orbit = orbit
     }
 
     func close() async {
@@ -341,6 +357,11 @@ actor RelayTerminalBridge {
                 case .redeem:
                     try await local.redeem(proof: request.proof!, peer: peer(grant))
                     try await reply(request); await awaitPeerClose(); return
+                case .orbit:
+                    guard let orbit, try await mayUseOrbit(grant) else { throw AgentFailure(.readOnly) }
+                    let answer = await orbit.handle(request.orbit!)
+                    try await reply(request, orbit: OrbitRelay.fit(answer))
+                    await awaitPeerClose(); return
                 case .list:
                     // The Mac's policy can only narrow the signed grant.
                     let sessions = try await local.sessions(peer: peer(grant)).map {
@@ -374,6 +395,15 @@ actor RelayTerminalBridge {
                 return
             }
         }
+    }
+
+    /// Orbit reads and types in every terminal, so only a device this Mac
+    /// lets type in all of them may use it; an invitation's grant never may.
+    private func mayUseOrbit(_ grant: DeviceGrant) async throws -> Bool {
+        guard grant.permission == .control else { return false }
+        let access = try await local.deviceAccess().first { $0.deviceID == grant.client.id } ?? .default(for: grant.client.id)
+        guard access.scope == .all, access.permission == .control else { return false }
+        return try await !local.guests().contains { $0.pairingID == grant.pairingID }
     }
 
     /// The paired device this channel acts for. The broker shows it only
@@ -564,9 +594,9 @@ actor RelayTerminalBridge {
 
     private func reply(_ request: LocalAgentRequest, session: LocalSessionInfo? = nil,
                        sessions: [LocalSessionInfo]? = nil, status: LocalAgentStatus? = nil,
-                       mode: LocalAttachmentMode? = nil, flow: Int? = nil) async throws {
+                       mode: LocalAttachmentMode? = nil, flow: Int? = nil, orbit: OrbitResponse? = nil) async throws {
         try await send(LocalAgentFrame(id: request.id, kind: .response, ok: true, status: status,
-                                       sessions: sessions, session: session, mode: mode, flow: flow))
+                                       sessions: sessions, session: session, mode: mode, flow: flow, orbit: orbit))
     }
 
     /// A record the window already encoded.

@@ -182,7 +182,8 @@ final class AgentBroker: @unchecked Sendable {
         case .input: allowed.formUnion(["data", "automatic"])
         case .resize: allowed.formUnion(["columns", "rows"])
         // Flow control lives in the relay endpoint; it never reaches here.
-        case .ack: return false
+        // Relay only: never sent to this service.
+        case .ack, .orbit: return false
         }
         return Set(raw.keys).isSubset(of: allowed)
     }
@@ -208,7 +209,7 @@ final class AgentBroker: @unchecked Sendable {
             return peer
         }
         switch request.operation {
-        case .ack: throw AgentFailure(.invalidRequest)
+        case .ack, .orbit: throw AgentFailure(.invalidRequest)
         case .status: reply(status: LocalAgentStatus(tmuxAvailable: engine.available, relays: relays?.snapshot() ?? []))
         case .list:
             let sessions = try engine.sessions()

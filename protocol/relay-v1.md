@@ -91,13 +91,13 @@ Each side builds the prologue from its own locally verified grant, never from se
 Encrypted records carry the [local-agent-v1](local-agent-v1.md) JSON requests and frames.
 
 **Operations.**
-- Only `status`, `list`, `attach` (with optional `history` and `flow`), `input` (with optional `automatic`), `resize`, `detach`, `redeem` (with `proof`), and, on a flow-controlled attachment, `ack` (with `consumed`) are accepted remotely.
+- Only `status`, `list`, `attach` (with optional `history` and `flow`), `input` (with optional `automatic`), `resize`, `detach`, `redeem` (with `proof`), `orbit` (with `orbit`; see [Orbit](#orbit)), and, on a flow-controlled attachment, `ack` (with `consumed`) are accepted remotely.
 - The Mac answers `list` and `attach` only for sessions its policy lets that device (or that invitation) reach, and each listed session carries `access`, limited to the grant. Others don't appear and attach as `not_found` (`sessionUnavailable` in the Swift client). Narrowing access closes the device's attachment the same way.
 - A remote `status` reports only whether tmux is available, never the Mac's servers.
 - The Mac rejects input, resize, and control attaches for `view` grants, even if the server is malicious.
 - The Mac's local service decides who controls a session.
 
-**Tunnels.** Each list, attach, or redeem uses its own tunnel, with fresh keys and a fresh local grant check.
+**Tunnels.** Each list, attach, redeem, or Orbit exchange uses its own tunnel, with fresh keys and a fresh local grant check.
 
 **Connected devices** (Round 20). A `list` for a paired device carries `attached`, who is attached to each session, by name only ([local-agent-v1](local-agent-v1.md)); the Mac's relay endpoint forwards it unchanged, also on watch-only grants. Nothing pushes it: while a terminal is open and connected, the iOS client lists its device again every 10 seconds, and every 5 seconds while its Connected Devices sheet is open, never more often however often the keyboard switches. That is 6 (or 12) tunnel opens a minute against the device's 30, and as many joins against its Mac's 120; the list waits for a free tunnel, so kept terminals never push it past `maxClientTunnels`. Clients stop listing in the background, after leaving the terminal, and for grants whose Mac lists neither `attached` nor `writers` (an invitation's guest). With a Mac from before Round 20 the client lists only while watching a terminal it could type in, as before, and shows no count. No new capability is advertised.
 
@@ -112,6 +112,17 @@ Encrypted records carry the [local-agent-v1](local-agent-v1.md) JSON requests an
 **Liveness.** Clients ping every 5 seconds with a 3-second deadline. These are per-leg health checks; they don't guarantee every network failure is noticed within that time.
 
 **Resizes.** `geometry` frames arrive in order inside the encrypted channel, each before the redraw at its size. The server never learns grid sizes.
+
+## Orbit
+
+Round 32. A paired iPhone or iPad talks to Orbit, the Mac's assistant ([orbit-v1](orbit-v1.md)), through the same encrypted channel. Orbit keeps running on the Mac, in the Mac's terminals, with the Mac's OpenAI key; the device is only a client. Design: [docs/design/orbit-ios.md](../docs/design/orbit-ios.md).
+
+- **Request:** `{"version":1,"id","operation":"orbit","orbit":<Orbit request>}`, one per tunnel, never while attached. The Orbit request is `status`, `threads`, `thread`, `start`, `send` or `stop`, with only the fields that operation takes. It never carries `api_key`, `model`, `agent` or `success`, and never `configure`, `take_over`, `finish`, `delete` or `clear` (`OrbitRelay.admit`, applied by both ends).
+- **Who.** Only a device that may type in every terminal: a `control` grant, and this Mac's access for that device set to all terminals with typing. A grant from a session invitation never reaches Orbit. Anyone else gets `read_only`, and nothing is started or read for them. Orbit reads and types in every terminal, so a device limited to some terminals, or to watching, would otherwise gain through Orbit what its pairing withholds.
+- **Reply:** `{"version":1,"id","kind":"response","ok":true,"orbit":<Orbit reply>}`. Orbit's own refusals (`not_found`, `busy`, `unavailable`, …) are inside `orbit`, with `ok: false` there. A list keeps its newest 100 threads. A thread that would pass 46,000 bytes first has each action's excerpt cut to 600 characters, then leaves out its oldest entries and counts them in `earlier_entries`, so a reply fits one record.
+- **Starting Orbit and its key.** When Orbit isn't running, the Mac's relay endpoint starts it from the app's own `Contents/Helpers/witerm`. When Orbit has no key, the endpoint reads the key the user kept in the Keychain (the item Witerm's Settings saves) and gives it to Orbit over its private socket, as the app does. It never keeps, logs or sends the key. With no key in the Keychain (the user chose This Session Only), Orbit answers that it needs one until Witerm gives it.
+- **Time.** The device waits up to 15 seconds for an Orbit reply (5 for other requests), since Orbit may have to start first.
+- **Updates** are the device's own asking, within the per-device tunnel limit: there is no stream. Examples: `fixtures/relay-orbit-v1.json`.
 
 ## Flow control
 

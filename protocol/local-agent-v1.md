@@ -45,7 +45,7 @@ The Mac background service (`witerm-agent`) hosts shells in a private tmux serve
 
 One UTF-8 JSON object per line, `version` 1. Byte fields are standard Base64, dates are RFC 3339 UTC, and IDs are lowercase UUIDs. Unknown versions, unknown operations, missing fields, and oversized lines are rejected.
 
-**Requests** have `version`, `id` (a UUID echoed in the response), `operation`, and optionally `session_id`, `name`, `columns`, `rows`, `mode`, `data`, `cwd`, `shared`, `keep_private`, `remote_typing`, `access`, `guest`, `pairing_id`, `proof`, `history`, `start`, `agent`, and `peer`. Two more fields exist only inside the relay and never reach this service: `flow` on `attach` and `consumed` on `ack` ([relay-v1](relay-v1.md#flow-control)).
+**Requests** have `version`, `id` (a UUID echoed in the response), `operation`, and optionally `session_id`, `name`, `columns`, `rows`, `mode`, `data`, `cwd`, `shared`, `keep_private`, `remote_typing`, `access`, `guest`, `pairing_id`, `proof`, `history`, `start`, `agent`, and `peer`. Three more fields exist only inside the relay and never reach this service: `flow` on `attach`, `consumed` on `ack` ([relay-v1](relay-v1.md#flow-control)), and `orbit` on `orbit` ([relay-v1](relay-v1.md#orbit)); replies to `orbit` carry `orbit` too.
 
 | Operation | Fields | Reply |
 |---|---|---|
@@ -65,6 +65,7 @@ One UTF-8 JSON object per line, `version` 1. Byte fields are standard Base64, da
 | `resize` | `columns`, `rows` (writers only) | ok, once the shell sees the new size; from a writer that doesn't own the grid, ok after recording it, preceded by a `geometry` frame with the grid in use when that differs |
 | `detach` | | ok, after control is released; the connection then closes |
 | `ack` | relay only | always `invalid_request` here; the relay endpoint handles it and never forwards it |
+| `orbit` | relay only | always `invalid_request` here; the relay endpoint passes it to Orbit's own socket, never to this service |
 
 **Detach.** Once the `detach` acknowledgement arrives, another client can take control immediately. Late requests on the old connection can never regain it.
 

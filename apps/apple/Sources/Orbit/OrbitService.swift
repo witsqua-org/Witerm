@@ -1,49 +1,11 @@
 #if os(macOS)
 import Foundation
-import LocalAuthentication
 import Observation
 import OSLog
-import Security
 import WitermCore
 
-/// The OpenAI API key, in the data protection Keychain on this Mac only,
-/// and only after the user chooses to keep it there.
-enum OrbitKeychain {
-    private static let service = "com.witerm.orbit.v1"
-    private static let account = "openai-api-key"
-
-    private static var query: [String: Any] {
-        [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
-         kSecAttrAccount as String: account, kSecAttrSynchronizable as String: false,
-         kSecUseDataProtectionKeychain as String: true]
-    }
-
-    static func read() -> String? {
-        var request = query
-        request[kSecReturnData as String] = true
-        request[kSecMatchLimit as String] = kSecMatchLimitOne
-        let context = LAContext()
-        context.interactionNotAllowed = true
-        request[kSecUseAuthenticationContext as String] = context
-        var result: CFTypeRef?
-        guard SecItemCopyMatching(request as CFDictionary, &result) == errSecSuccess, let data = result as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
-    }
-
-    static func save(_ key: String) -> Bool {
-        delete()
-        var request = query
-        request[kSecValueData as String] = Data(key.utf8)
-        request[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        return SecItemAdd(request as CFDictionary, nil) == errSecSuccess
-    }
-
-    @discardableResult
-    static func delete() -> Bool {
-        let status = SecItemDelete(query as CFDictionary)
-        return status == errSecSuccess || status == errSecItemNotFound
-    }
-}
+// The key's Keychain item is `OrbitKeychain` in WitermCore, shared with the
+// background service.
 
 /// Orbit for this window and Settings: starts `witerm orbit serve` from the
 /// app's helpers when needed, gives it the key and model, and follows its

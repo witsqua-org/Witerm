@@ -11,17 +11,17 @@ Only a paired device that can **watch and type in all terminals** (a control gra
 One new remote operation in the encrypted relay ([relay-v1](../../protocol/relay-v1.md)), carried like `list`: one request and one reply per tunnel, with a fresh handshake and grant check each time.
 
 - **Request:** `{"version":1,"id","operation":"orbit","orbit":<request>}`, where `<request>` is an [Orbit v1](../../protocol/orbit-v1.md) request limited to `status`, `threads`, `thread`, `start`, `send` and `stop`, with only the fields those take. It never carries `api_key`, `model`, `agent` or `success`, and never `configure`, `take_over`, `finish`, `delete` or `clear`.
-- **Reply:** `{"version":1,"id","ok","orbit":<reply>}`. `status` is narrowed to `has_key` and `running`, without the model.
-- **Refusals:** `read_only` for a device that may not use Orbit, `orbit_unavailable` when Orbit isn't running and can't be started. Orbit's own errors pass through inside `orbit`.
+- **Reply:** `{"version":1,"id","ok","orbit":<reply>}`, Orbit's own reply. `status` includes the model's name, which isn't secret.
+- **Refusals:** `read_only` for a device that may not use Orbit. Orbit's own errors, `unavailable` when it can't be started included, pass through inside `orbit`.
 - **Size.** A thread reply is cut to fit the 49,152-byte record: the latest entries first, with `earlier_entries` counting the rest, and each action's excerpt shortened before an entry is dropped.
 
 The server is unchanged and learns nothing new: it still forwards opaque records. No capability is added to `/v1/info`.
 
 ## Mac side
 
-The relay bridge in `witerm-agent` accepts `orbit` only after `RelayTerminalPolicy` admits it (permission and access as above) and forwards it to `orbit.sock` in the app group, as the app does. A message started or sent from a device is the user's own, like one typed on the Mac; the thread notes which device it came from.
+The relay bridge in `witerm-agent` accepts `orbit` only after `RelayTerminalPolicy` admits it and the device's access (all terminals, typing, not an invitation) checks out, and forwards it to `orbit.sock` in the app group (`OrbitGateway`), as the app does. A message started or sent from a device is the user's own, like one typed on the Mac.
 
-If Orbit isn't running, the service starts it from the app's own `Contents/Helpers/witerm`, as `witerm mcp` does. **Open decision:** the key (below).
+If Orbit isn't running, the service starts it from the app's own `Contents/Helpers/witerm`, as `witerm mcp` does. If Orbit has no key, the service gives it the Keychain key (below).
 
 ## iPhone and iPad
 
@@ -30,14 +30,13 @@ If Orbit isn't running, the service starts it from the app's own `Contents/Helpe
 - **Updates:** no stream. While a conversation that is running is on screen, the phone asks for it every 5 seconds; otherwise the list every 15 seconds while shown, and nothing in the background. That is at most 12 tunnel opens a minute against the device's 30, beside the terminal list's 6, and it uses a single tunnel at a time, so the 3 kept terminals still leave one free.
 - **Words:** the phone shows "Orbit on *Mac name*", and that what Orbit reads goes to OpenAI from the Mac.
 
-## Open decision: Orbit's key while Witerm is closed on the Mac
+## Decided: the background service gives Orbit the key (2026-11-18)
 
-Orbit gets its key from the Witerm app (at launch, and whenever Orbit starts while the app is open). A phone usually reaches a Mac whose window is closed.
-
-- **A. The background service gives Orbit the key.** `witerm-agent` already reads the Mac's identity through the app's Keychain group, which also holds Orbit's key. It would read the key only when a device's request finds Orbit without one, hand it over the private socket, and never keep or log it. Orbit then works from the phone at any time.
-- **B. Only while Witerm is open.** Orbit started for a phone has no key unless the app is running; the phone says to open Witerm on the Mac.
+Orbit gets its key from the Witerm app (at launch, and whenever Orbit starts while the app is open), but a phone usually reaches a Mac whose window is closed. The owner chose that `witerm-agent`, which already reads the Mac's identity through the app's Keychain group (`com.witerm.mac`), reads Orbit's key from the same group only when a device's request finds Orbit without one, gives it over Orbit's private socket, and never keeps, logs or sends it. The alternative, Orbit from a phone only while Witerm is open, was declined. A key kept for This Session Only isn't in the Keychain, so then Orbit answers that it needs one.
 
 ## Order of work
+
+Done on 2026-11-18: steps 1 and 2, tested (`OrbitRelayTests`; `RelayOrbitTests` end to end through a modeled relay, the real bridge, an isolated service and the real `witerm orbit serve`; the Go fixture contract). Next: step 3.
 
 1. Protocol: `orbit` in relay-v1 and local-agent-v1, fixtures, Swift models in WitermCore (Go is untouched: the server never sees it).
 2. Mac: the relay policy and forwarding, the size cut, starting Orbit; unit tests against a fake Orbit and the real daemon.
