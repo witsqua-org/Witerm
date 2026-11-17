@@ -41,7 +41,7 @@ Use `witerm mcp --read-only` to offer only the reading tools.
 | `take_over_orbit_task` | Stops Orbit working on a task, so the agent continues it with the terminal tools | destructive |
 | `finish_orbit_task` | Marks a task the agent took over done or failed, with a summary for the user | |
 
-The Orbit tools appear when `witerm mcp` runs from the installed app (or with `WITERM_ORBIT_DIRECTORY`). They answer "Orbit isn't running" until the user opens Orbit.
+The Orbit tools appear when `witerm mcp` runs from the installed app (or with `WITERM_ORBIT_DIRECTORY`). When Orbit isn't running, they start it (`witerm orbit serve` from the same app, detached, with only `HOME`, `PATH` and the two development variables from the agent's environment). Listing, reading, taking over and finishing work without a key. An Orbit started this way has no API key until Witerm gives it one, which Witerm does as soon as Orbit starts while Witerm is open. Until then, `guide_orbit_task` waits 2 seconds for the key, then refuses and says why, so the guidance isn't left in a task Orbit can't continue.
 
 Terminals are named the way the command names them: ID, a unique ID prefix of at least 4 characters, or exact name.
 

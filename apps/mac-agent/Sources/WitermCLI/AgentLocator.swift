@@ -66,7 +66,7 @@ enum AgentLocator {
             }
     }
 
-    private static func executablePath() -> String? {
+    static func executablePath() -> String? {
         var size: UInt32 = 0
         _ = _NSGetExecutablePath(nil, &size)
         var buffer = [CChar](repeating: 0, count: Int(size) + 1)

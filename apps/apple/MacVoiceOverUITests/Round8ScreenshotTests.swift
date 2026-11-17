@@ -93,7 +93,7 @@ final class Round8ScreenshotTests: XCTestCase {
                 guard let app else { return }
                 app.typeKey(.escape, modifierFlags: [])
                 app.typeKey(.escape, modifierFlags: [])
-                if app.windows["General"].exists || app.windows["Devices"].exists || app.windows["Command Line"].exists {
+                if ["General", "Appearance", "Terminal", "Snippets", "Orbit"].contains(where: { app.windows[$0].exists }) {
                     app.typeKey("w", modifierFlags: .command)
                 }
                 for button in ["continueCancel"] where app.buttons[button].exists { app.buttons[button].click() }
@@ -187,11 +187,21 @@ final class Round8ScreenshotTests: XCTestCase {
             app.typeKey(.escape, modifierFlags: [])
         }
 
-        // Settings: General, Devices, Command Line.
+        // Devices is a sidebar page (Round 27), and Command Line is in
+        // General (Round 28).
+        let devices = app.descendants(matching: .any)["devicesSidebarRow"].firstMatch
+        if devices.waitForExistence(timeout: 5) {
+            devices.click()
+            RunLoop.current.run(until: Date().addingTimeInterval(2))
+            shot("13-devices-page")
+            row.click()
+        }
+
+        // Settings, every tab.
         app.typeKey(",", modifierFlags: .command)
-        let settings = app.windows.matching(NSPredicate(format: "identifier CONTAINS 'Settings' OR title CONTAINS 'General' OR title CONTAINS 'Devices'")).firstMatch
+        let settings = app.windows.matching(NSPredicate(format: "identifier CONTAINS 'Settings' OR title CONTAINS 'General'")).firstMatch
         _ = settings.waitForExistence(timeout: 5)
-        for (index, tab) in ["General", "Devices", "Command Line"].enumerated() {
+        for (index, tab) in ["General", "Appearance", "Terminal", "Snippets", "Orbit"].enumerated() {
             let button = app.toolbars.buttons[tab].firstMatch
             guard button.waitForExistence(timeout: 5) else { continue }
             button.click()
@@ -205,7 +215,7 @@ final class Round8ScreenshotTests: XCTestCase {
                 if let cropped = cg.cropping(to: CGRect(x: frame.minX * scale, y: frame.minY * scale,
                                                         width: frame.width * scale, height: frame.height * scale)) {
                     let attachment = XCTAttachment(image: NSImage(cgImage: cropped, size: frame.size))
-                    attachment.name = String(format: "%02d-settings-%@", 13 + index, tab.lowercased().replacingOccurrences(of: " ", with: "-"))
+                    attachment.name = String(format: "%02d-settings-%@", 14 + index, tab.lowercased())
                     attachment.lifetime = .keepAlways
                     add(attachment)
                 }

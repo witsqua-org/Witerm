@@ -440,6 +440,7 @@ private struct OrbitComposer: View {
                     }
                     .fixedSize()
                     .help(String(localized: "The terminal “this terminal” means. Orbit can still use every terminal.", bundle: .main))
+                    .accessibilityIdentifier("orbitAbout")
                     Spacer()
                 }
             }

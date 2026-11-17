@@ -38,8 +38,12 @@ struct CLIRunner {
         case .mcp(let readOnly):
             // The service is looked for on each call, so an agent can start
             // before Witerm does.
-            let orbit = AgentLocator.orbitDirectory(environment: environment).map {
-                OrbitHandoffTools(client: OrbitClient(socketURL: $0.appendingPathComponent(OrbitPaths.socketName)), readOnly: readOnly)
+            let orbit = AgentLocator.orbitDirectory(environment: environment).map { directory in
+                let client = OrbitClient(socketURL: directory.appendingPathComponent(OrbitPaths.socketName))
+                let (environment, socket) = (environment, invocation.socket)
+                return OrbitHandoffTools(client: client, readOnly: readOnly, start: {
+                    await OrbitLauncher.start(client: client, environment: environment, socket: socket)
+                })
             }
             let tools = TerminalTools(client: try client(), readOnly: readOnly, state: TerminalToolState(agent: "Agent"))
             try await MCPServer(tools: tools, orbit: orbit).serve()

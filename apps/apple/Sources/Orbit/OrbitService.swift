@@ -79,6 +79,8 @@ final class OrbitService {
     @ObservationIgnored private var helper: Process?
     @ObservationIgnored private var watchers = 0
     @ObservationIgnored private var polling: Task<Void, Never>?
+    /// Orbit's folder, followed while there is a key to give.
+    @ObservationIgnored private var restartWatch: DispatchSourceFileSystemObject?
     @ObservationIgnored private let logger = Logger(subsystem: "com.witerm.mac", category: "Orbit")
 
     init() {
@@ -96,10 +98,13 @@ final class OrbitService {
     var runningCount: Int { threads.filter { $0.status == .running }.count }
     var waitingCount: Int { threads.filter { $0.status == .waiting }.count }
 
+    private var directory: URL? {
+        guard let group = Bundle.main.object(forInfoDictionaryKey: "WitermAppGroup") as? String else { return nil }
+        return try? OrbitPaths.directory(appGroupID: group)
+    }
+
     private var client: OrbitClient? {
-        guard let group = Bundle.main.object(forInfoDictionaryKey: "WitermAppGroup") as? String,
-              let directory = try? OrbitPaths.directory(appGroupID: group) else { return nil }
-        return OrbitClient(socketURL: directory.appendingPathComponent(OrbitPaths.socketName))
+        directory.map { OrbitClient(socketURL: $0.appendingPathComponent(OrbitPaths.socketName)) }
     }
 
     // MARK: Key
@@ -122,6 +127,7 @@ final class OrbitService {
         problem = nil
         await ensureRunning()
         await configure()
+        followRestarts()
         return true
     }
 
@@ -129,11 +135,50 @@ final class OrbitService {
         OrbitKeychain.delete()
         key = nil
         keyState = .none
+        restartWatch?.cancel()
+        restartWatch = nil
         if let client { _ = try? await client.configure(apiKey: "", model: nil) }
         await refresh()
     }
 
     // MARK: Lifecycle
+
+    /// At launch, with a key kept in the Keychain: Orbit starts and gets it,
+    /// so an outside agent can hand a task back to Orbit before anyone opens
+    /// Orbit (after an install, say). Orbit still exits when idle.
+    func launch() async {
+        guard key != nil else { return }
+        await ensureRunning()
+        followRestarts()
+    }
+
+    /// Orbit can start again without Witerm: `witerm mcp` starts it for an
+    /// agent, or it exited when idle. Whenever its socket appears, it gets
+    /// the key and model. A folder event, not polling, so an idle Orbit still
+    /// exits; its threads live in a subfolder and don't fire it.
+    private func followRestarts() {
+        guard restartWatch == nil, key != nil, let directory else { return }
+        let descriptor = open(directory.path, O_EVTONLY | O_CLOEXEC)
+        guard descriptor >= 0 else { return }
+        let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: descriptor, eventMask: .write, queue: .main)
+        source.setEventHandler { [weak self] in
+            Task { @MainActor in await self?.configureNewOrbit() }
+        }
+        source.setCancelHandler { close(descriptor) }
+        source.resume()
+        restartWatch = source
+    }
+
+    /// The socket appears when Orbit binds it, a moment before it listens.
+    private func configureNewOrbit() async {
+        guard key != nil, let client else { return }
+        for _ in 0..<30 {
+            if (try? await client.status()) != nil { return await configureIfNeeded() }
+            // Gone again: Orbit exited.
+            guard FileManager.default.fileExists(atPath: client.socketURL.path) else { return }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+    }
 
     /// While a view shows Orbit, it is kept running and followed.
     func watch() {

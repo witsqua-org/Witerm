@@ -234,6 +234,7 @@ final class AuditScreenshotTests: XCTestCase {
         }
 
         continueSheet(row: rowB)
+        pages()
         if full || variant.contains("-dark") || variant.split(separator: "-").count > 2 { settings() }
         sshForm(fixture: fixture)
         if full { menus() }
@@ -347,20 +348,91 @@ final class AuditScreenshotTests: XCTestCase {
         closeMenus()
     }
 
+    // MARK: Pages
+
+    /// Home, Devices and Orbit, the sidebar's own pages (Rounds 27 and 30).
+    /// Orbit is only looked at: its composer is never typed in, so nothing
+    /// reaches OpenAI; a thread is selected only to read it.
+    private func pages() {
+        for _ in 0..<3 { app.typeKey(.escape, modifierFlags: []); pause(0.2) }
+        let home = any("homeSidebarRow")
+        guard home.waitForExistence(timeout: 5) else { metrics.append("\(variant) Home row not found"); return }
+        home.click()
+        pause(1)
+        shot("80-page-home")
+
+        let devices = any("devicesSidebarRow")
+        if devices.exists {
+            devices.click()
+            pause(3)
+            shot("81-page-devices")
+            if variant == "en-light" { tree("page-devices") }
+            hoverShot(any("primaryAction"), "82-hover-devices-check-now")
+            hoverShot(any("createPairingInvitation"), "83-hover-devices-pair-link")
+            let edit = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "editDevice-")).firstMatch
+            if edit.exists {
+                edit.click()
+                pause(2)
+                shot("84-devices-device-edit")
+                if let done = labeled(app.sheets.firstMatch.buttons, ["Done", "完成"]) { done.click() }
+                pause(1)
+            }
+            let manage = any("manageServers")
+            if manage.exists {
+                manage.click()
+                pause(1.5)
+                shot("85-devices-manage-servers")
+                if let done = labeled(app.sheets.firstMatch.buttons, ["Done", "完成"]) { done.click() }
+                pause(1)
+            }
+        } else {
+            metrics.append("\(variant) Devices row not found")
+        }
+
+        let orbit = any("orbitSidebarRow")
+        if orbit.exists {
+            orbit.click()
+            pause(2)
+            let newThread = any("orbitNewThread")
+            if newThread.exists { newThread.click(); pause(1) }
+            shot("86-page-orbit")
+            if variant == "en-light" { tree("page-orbit") }
+            let kind = any("orbitKind")
+            if let task = labeled(kind.radioButtons, ["Delegate a Task", "委托任务"]) {
+                task.click()
+                shot("87-page-orbit-task")
+                labeled(kind.radioButtons, ["Ask", "提问"])?.click()
+            }
+            let thread = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "orbitThread-")).firstMatch
+            if thread.exists {
+                thread.click()
+                pause(2)
+                shot("88-page-orbit-thread")
+            }
+            if newThread.exists { newThread.click() }
+        } else {
+            metrics.append("\(variant) Orbit row not found")
+        }
+        home.click()
+        pause(0.5)
+    }
+
     // MARK: Settings
 
     private func settings() {
         app.typeKey(",", modifierFlags: .command)
         pause(1.5)
         let tabs: [(String, [String])] = [("general", ["General", "通用"]), ("appearance", ["Appearance", "外观"]),
-                                          ("terminal", ["Terminal", "终端"]), ("snippets", ["Snippets", "片段"])]
+                                          ("terminal", ["Terminal", "终端"]), ("snippets", ["Snippets", "片段"]),
+                                          ("orbit", ["Orbit"])]
         for (index, (name, labels)) in tabs.enumerated() {
             guard let tab = labeled(settingsWindow.toolbars.buttons, labels) ?? labeled(app.toolbars.buttons, labels) else {
                 metrics.append("\(variant) settings tab \(name) not found"); continue
             }
             tab.click()
-            pause(name == "devices" ? 3 : 1)
-            shot("3\(index)-settings-\(name)", base: settingsWindow)
+            pause(1)
+            // Orbit's tab shows whether there's a key, never the key itself.
+            shot(name == "orbit" ? "36-settings-orbit" : "3\(index)-settings-\(name)", base: settingsWindow)
             switch name {
             case "appearance":
                 hoverShot(any("theme-forest"), "34-hover-settings-theme-card", base: settingsWindow)
@@ -372,26 +444,6 @@ final class AuditScreenshotTests: XCTestCase {
                     shot("35-settings-snippet-editor", base: settingsWindow)
                     app.typeKey(.escape, modifierFlags: [])
                     pause(0.5)
-                }
-            case "devices":
-                if variant == "en-light" { tree("settings-devices") }
-                hoverShot(any("primaryAction"), "36-hover-settings-check-now", base: settingsWindow)
-                hoverShot(any("createPairingInvitation"), "37-hover-settings-pair-link", base: settingsWindow)
-                let edit = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "editDevice-")).firstMatch
-                if edit.exists {
-                    edit.click()
-                    pause(2)
-                    shot("38-settings-device-edit", base: settingsWindow)
-                    if let done = labeled(app.sheets.firstMatch.buttons, ["Done", "完成"]) { done.click() }
-                    pause(1)
-                }
-                let manage = any("manageServers")
-                if manage.exists {
-                    manage.click()
-                    pause(1.5)
-                    shot("39-settings-manage-servers", base: settingsWindow)
-                    if let done = labeled(app.sheets.firstMatch.buttons, ["Done", "完成"]) { done.click() }
-                    pause(1)
                 }
             default: break
             }

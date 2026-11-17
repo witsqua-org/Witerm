@@ -407,4 +407,71 @@ final class OrbitDaemonTests: XCTestCase {
         let stillServing = try? await client.status()
         XCTAssertNotNil(stillServing, "The first instance stopped serving")
     }
+
+    /// An agent's handoff tools start Orbit when it isn't running, and
+    /// guidance waits for Witerm to give it a key rather than failing the task.
+    func testHandoffToolsStartOrbitAndGuideOnlyWithAKey() async throws {
+        guard FileManager.default.isExecutableFile(atPath: binary.path) else { throw XCTSkip("Build the witerm product first") }
+        let folder = URL(fileURLWithPath: "/private/tmp/witerm-orbit-\(UUID().uuidString.prefix(8).lowercased())", isDirectory: true)
+        let started = Locked<[Process]>([])
+        addTeardownBlock {
+            for process in started.get() where process.isRunning { process.terminate(); process.waitUntilExit() }
+            try? FileManager.default.removeItem(at: folder)
+        }
+        let client = OrbitClient(socketURL: folder.appendingPathComponent(OrbitPaths.socketName))
+        let binary = binary
+        var tools = OrbitHandoffTools(client: client, readOnly: false, start: {
+            let process = Process()
+            process.executableURL = binary
+            process.arguments = ["orbit", "serve"]
+            process.environment = ["WITERM_ORBIT_DIRECTORY": folder.path,
+                                   "WITERM_ORBIT_OPENAI_URL": "http://127.0.0.1:9/v1/responses",
+                                   "WITERM_AGENT_SOCKET": folder.appendingPathComponent("none.sock").path, "PATH": "/usr/bin:/bin"]
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            guard (try? process.run()) != nil else { return false }
+            started.set(started.get() + [process])
+            for _ in 0..<60 {
+                if (try? await client.status()) != nil { return true }
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+            return false
+        })
+        tools.keyWait = .milliseconds(300)
+
+        let listed = await tools.run("list_orbit_tasks", arguments: [:], agent: "Codex")
+        XCTAssertFalse(listed.isError, listed.text)
+        XCTAssertEqual(listed.text, "Orbit has no conversations or tasks.")
+        XCTAssertEqual(started.get().count, 1)
+
+        // Running already: nothing more is started.
+        let thread = try await client.start(text: "Check the build", kind: .task, terminalID: nil)
+        let id = thread.summary.id
+        let read = await tools.run("read_orbit_task", arguments: ["task": .string(String(id.prefix(8)))], agent: "Codex")
+        XCTAssertFalse(read.isError, read.text)
+        XCTAssertEqual(started.get().count, 1)
+
+        let unkeyed = await tools.run("guide_orbit_task", arguments: ["task": .string(id), "message": "Try again"], agent: "Codex")
+        XCTAssertTrue(unkeyed.isError)
+        XCTAssertTrue(unkeyed.text.contains("no OpenAI API key"), unkeyed.text)
+        let unchanged = try await client.thread(id)
+        XCTAssertFalse(unchanged.entries.contains { $0.from == "Codex" }, "Guidance was sent without a key")
+
+        try await client.configure(apiKey: "sk-test", model: nil)
+        let guided = await tools.run("guide_orbit_task", arguments: ["task": .string(id), "message": "Try again"], agent: "Codex")
+        XCTAssertFalse(guided.isError, guided.text)
+        let after = try await client.thread(id)
+        XCTAssertTrue(after.entries.contains { $0.kind == .user && $0.from == "Codex" })
+    }
+
+    /// Orbit started by an agent inherits nothing from the agent but the
+    /// development folder and socket: no keys, no other endpoint.
+    func testOrbitStartedByAnAgentGetsAPlainEnvironment() {
+        let environment = OrbitLauncher.environment(from: [
+            "OPENAI_API_KEY": "sk-secret", "WITERM_ORBIT_OPENAI_URL": "http://127.0.0.1:1/v1/responses",
+            "WITERM_ORBIT_DIRECTORY": "/private/tmp/o", "WITERM_AGENT_SOCKET": "/private/tmp/a.sock", "DYLD_INSERT_LIBRARIES": "/x",
+        ])
+        XCTAssertEqual(Set(environment.keys), ["HOME", "PATH", "WITERM_ORBIT_DIRECTORY", "WITERM_AGENT_SOCKET"])
+        XCTAssertEqual(environment["WITERM_ORBIT_DIRECTORY"], "/private/tmp/o")
+    }
 }

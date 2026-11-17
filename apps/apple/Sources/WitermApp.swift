@@ -50,6 +50,7 @@ struct WitermApp: App {
                 MacWorkspaceView(service: service, orbit: orbit)
                     .environment(pairedDevices)
                     .environment(\.localAgent, service.client)
+                    .task { await orbit.launch() }
             #else
                 MobileWorkspaceView()
                     .modifier(ThemeTint())
