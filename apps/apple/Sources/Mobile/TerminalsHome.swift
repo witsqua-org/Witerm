@@ -74,6 +74,9 @@ struct TerminalsHome: View {
 
     private var query: String { search.trimmingCharacters(in: .whitespacesAndNewlines) }
 
+    /// An SSH address in the search field that no saved host has.
+    private var quickAddress: String? { SSHAddressInput.unsavedSuggestion(query, saved: ssh.profiles) }
+
     /// A device's terminals that match the search: all of them when the
     /// device's name matches.
     private func matching(_ section: DeviceSection) -> [LocalSessionInfo] {
@@ -146,6 +149,29 @@ struct TerminalsHome: View {
                         .accessibilityIdentifier("remoteTerminalError")
                 }
             }
+            if let address = quickAddress {
+                // Round 27: an address typed into search is a host to add,
+                // with the form already filled in.
+                Section {
+                    Button {
+                        search = ""
+                        ui.presentNew(address: address)
+                    } label: {
+                        HStack(spacing: WitermMetrics.Space.m) {
+                            IconTile(systemImage: "network")
+                            VStack(alignment: .leading, spacing: WitermMetrics.Space.xxs) {
+                                Text(String(localized: "Add SSH Host “\(address)”…", bundle: .main))
+                                    .font(WitermType.rowTitle.weight(.semibold))
+                                Text(String(localized: "Sign in to another computer with SSH", bundle: .main))
+                                    .font(WitermType.rowDetail)
+                                    .foregroundStyle(WitermTheme.secondary)
+                            }
+                        }
+                    }
+                    .disabled(ssh.connecting)
+                    .accessibilityIdentifier("quickAddSSHHost")
+                }
+            }
             ForEach(pairedSections) { section in deviceSection(section) }
             if !sharedSections.isEmpty {
                 Section {
@@ -171,10 +197,13 @@ struct TerminalsHome: View {
             sshSection
         }
         .listStyle(.insetGrouped)
-        .modifier(HostSearch(enabled: showsFilters, text: $search, prompt: String(localized: "Search Terminals", bundle: .main)))
-        .onChange(of: showsFilters) { _, shown in if !shown { search = ""; favoritesOnly = false } }
+        // Always there (Round 27): it finds terminals and hosts, and takes an
+        // address to add. Favorites Only still waits for enough hosts.
+        .modifier(HostSearch(enabled: true, text: $search, prompt: String(localized: "Search or enter user@host", bundle: .main)))
+        .onChange(of: showsFilters) { _, shown in if !shown { favoritesOnly = false } }
         .overlay {
-            if !query.isEmpty || favoritesOnly, open.isEmpty, hosts.isEmpty, pairedSections.isEmpty, sharedSections.isEmpty {
+            if !query.isEmpty || favoritesOnly, quickAddress == nil, open.isEmpty, hosts.isEmpty, pairedSections.isEmpty,
+               sharedSections.isEmpty {
                 ContentUnavailableView {
                     Label(String(localized: "No Matching Terminals", bundle: .main), systemImage: "magnifyingglass")
                 } actions: {

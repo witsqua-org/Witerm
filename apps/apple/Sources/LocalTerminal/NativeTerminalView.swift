@@ -66,6 +66,9 @@ struct NativeTerminalView: NSViewRepresentable {
         private var initializedReadingViewport = false
         private var pendingReadingAnchor: CGPoint?
 
+        /// Space around the text, in the terminal's background color.
+        static let margin = CGSize(width: 10, height: 6)
+
         init(mode: LocalAttachmentMode, columns: Int, rows: Int) {
             self.mode = mode
             self.columns = columns
@@ -84,6 +87,9 @@ struct NativeTerminalView: NSViewRepresentable {
             scroll.hasHorizontalScroller = mode == .view
             scroll.hasVerticalScroller = mode == .view
             scroll.documentView = terminal
+            // A margin in the terminal's own background, so text never
+            // touches the sidebar or the window's edge (Round 27).
+            wantsLayer = true
             addSubview(scroll)
             terminal.geometryChanged = { [weak self] session in
                 self?.columns = session.columns
@@ -126,6 +132,7 @@ struct NativeTerminalView: NSViewRepresentable {
                     : values.map { NSColor(terminalRGB: $0.foreground) } ?? .textColor
                 terminal.caretColor = dark ? .white : .black
                 scroll.backgroundColor = terminal.nativeBackgroundColor
+                layer?.backgroundColor = terminal.nativeBackgroundColor.cgColor
             }
             if installedContrast != contrast || installedPalette != palette || paletteDark == nil
                 || ((contrast || palette != .system) && paletteDark != dark) {
@@ -139,7 +146,7 @@ struct NativeTerminalView: NSViewRepresentable {
         override func layout() {
             super.layout()
             let readingAnchor: CGPoint? = mode == .view ? (pendingReadingAnchor ?? readingViewportAnchor() ?? .zero) : nil
-            scroll.frame = bounds
+            scroll.frame = bounds.insetBy(dx: Self.margin.width, dy: Self.margin.height)
             scroll.tile()
             let viewport = scroll.contentView.bounds.size
             if mode == .view {

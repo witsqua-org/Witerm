@@ -35,11 +35,13 @@ struct MacDevicesView: View {
                     if network?.online == false {
                         Section { OfflineBanner() }
                     }
-                    serverSection(server)
+                    // The devices first, then how they reach this Mac (Round 27:
+                    // a page in the window now, where the things lead).
                     if server.supportsPairing || PairingFixture.isActive {
                         devicesSection
                         if !guests.isEmpty { invitationsSection(server) }
                     }
+                    serverSection(server)
                 }
                 .formStyle(.grouped)
             } else {

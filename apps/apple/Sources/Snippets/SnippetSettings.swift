@@ -124,6 +124,11 @@ private struct SnippetEditor: View {
                     }
                     .accessibilityLabel(String(localized: "Command", bundle: .main))
                     .accessibilityIdentifier("snippetText")
+                Text(blanksNote)
+                    .font(WitermType.meta)
+                    .foregroundStyle(WitermTheme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("snippetBlanksNote")
                 Toggle(String(localized: "Press Return after inserting", bundle: .main), isOn: $snippet.runsImmediately)
                     .toggleStyle(.checkbox)
                     .disabled(snippet.isMultiline)
@@ -165,9 +170,13 @@ private struct SnippetEditor: View {
                         .disabled(snippet.isMultiline)
                         .witermSwitchTint()
                 } footer: {
-                    Text(snippet.isMultiline
-                         ? String(localized: "Multiline snippets are inserted like a paste and never press Return. On iPhone and iPad they're shown for review first.", bundle: .main)
-                         : String(localized: "Without Return, the command waits on the line for you to check it.", bundle: .main))
+                    VStack(alignment: .leading, spacing: WitermMetrics.Space.xs) {
+                        Text(blanksNote)
+                            .accessibilityIdentifier("snippetBlanksNote")
+                        Text(snippet.isMultiline
+                             ? String(localized: "Multiline snippets are inserted like a paste and never press Return. On iPhone and iPad they're shown for review first.", bundle: .main)
+                             : String(localized: "Without Return, the command waits on the line for you to check it.", bundle: .main))
+                    }
                 }
                 if let issue {
                     Section { Label(issue, systemImage: "exclamationmark.circle").foregroundStyle(WitermTheme.warning) }
@@ -197,6 +206,16 @@ private struct SnippetEditor: View {
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         #endif
+    }
+
+    /// Says the blanks it found as they're typed, so `{{name}}` is learned by
+    /// seeing it work; until there's one, says how to write one.
+    private var blanksNote: String {
+        let names = snippet.placeholders
+        if names.isEmpty {
+            return String(localized: "Write {{name}} where a value goes, and it’s asked for each time.", bundle: .main)
+        }
+        return String(localized: "Asks for \(ListFormatter.localizedString(byJoining: names)) each time.", bundle: .main)
     }
 
     private func commit() {

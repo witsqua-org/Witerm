@@ -165,7 +165,7 @@ final class ContinueFlowTests: XCTestCase {
     }
 
     /// Release QA, with the person's approval: turns Allow Remote Access on
-    /// or off through Settings → Devices, adding the continuation server
+    /// or off on the Devices page (Round 27: in the window), adding the relay server
     /// first when none is set up, and waits for this Mac's live state.
     /// Opt-in: WITERM_HCI_REMOTE_ACCESS=on|off and
     /// WITERM_HCI_REMOTE_ACCESS_SERVER (an https address).
@@ -178,13 +178,13 @@ final class ContinueFlowTests: XCTestCase {
             throw XCTSkip("Set WITERM_HCI_FIXED_APP, WITERM_HCI_REMOTE_ACCESS=on|off and WITERM_HCI_REMOTE_ACCESS_SERVER")
         }
         let app = XCUIApplication(url: URL(fileURLWithPath: path))
-        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-witerm.settingsTab", "devices",
-                               "-witerm.onboarding.completedVersion", "1"]
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-witerm.onboarding.completedVersion", "1"]
         app.launch()
         addTeardownBlock { await MainActor.run { app.terminate() } }
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 15))
-        app.typeKey(",", modifierFlags: .command)
-        XCTAssertTrue(app.windows["Devices"].firstMatch.waitForExistence(timeout: 10))
+        let devicesRow = app.descendants(matching: .any)["devicesSidebarRow"].firstMatch
+        XCTAssertTrue(devicesRow.waitForExistence(timeout: 10))
+        devicesRow.click()
         app.activate()
 
         func enterAddress() {
@@ -195,7 +195,7 @@ final class ContinueFlowTests: XCTestCase {
             app.buttons["saveServerAddress"].click()
             XCTAssertTrue(field.waitForNonExistence(timeout: 10), "The server address wasn't accepted")
         }
-        let devices = app.windows["Devices"].firstMatch
+        let devices = app.windows.firstMatch
         let named = devices.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", host, host)).firstMatch
         let addServer = app.buttons["serverSettings"]
         if addServer.waitForExistence(timeout: 3) {
@@ -235,7 +235,7 @@ final class ContinueFlowTests: XCTestCase {
         } else {
             XCTAssertTrue(state.waitForNonExistence(timeout: 15))
         }
-        let shot = XCTAttachment(screenshot: app.windows["Devices"].firstMatch.screenshot())
+        let shot = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
         shot.name = "settings-devices-remote-access-\(action)"
         shot.lifetime = .keepAlways
         add(shot)
@@ -257,7 +257,8 @@ final class ContinueFlowTests: XCTestCase {
         let general = app.toolbars.buttons["General"].firstMatch
         XCTAssertTrue(general.waitForExistence(timeout: 10))
         var sizes: [String: CGSize] = [:]
-        for tab in ["General", "Terminal", "Snippets", "Devices", "Command Line"] {
+        // Devices is a page in the window since Round 27, not a tab.
+        for tab in ["General", "Terminal", "Snippets", "Command Line"] {
             app.toolbars.buttons[tab].firstMatch.click()
             RunLoop.current.run(until: Date().addingTimeInterval(0.8))
             let window = app.windows.matching(NSPredicate(format: "title == %@", tab)).firstMatch

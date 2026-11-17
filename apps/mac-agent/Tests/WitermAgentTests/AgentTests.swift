@@ -952,6 +952,51 @@ final class AgentTests: XCTestCase {
         }
     }
 
+    /// New Terminal in Same Folder: the folder follows the shell's `cd`, and a
+    /// folder removed since reads as not found rather than somewhere else.
+    func testFolderFollowsTheShellAndStartsASessionBesideIt() async throws {
+        guard FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/tmux") else { throw XCTSkip("tmux is required") }
+        let url = try directory()
+        let configuration = try AgentConfiguration(stateDirectory: url, shellPath: "/bin/sh")
+        let broker = try AgentBroker(configuration: configuration)
+        try broker.start()
+        defer {
+            broker.stop()
+            _ = try? CommandRunner(executable: "/opt/homebrew/bin/tmux", environment: configuration.environment)
+                .run(["-S", url.appendingPathComponent("tmux.sock").path, "kill-server"])
+        }
+        let client = LocalAgentClient(socketURL: url.appendingPathComponent("agent.sock"))
+        let start = url.appendingPathComponent("start", isDirectory: true)
+        let next = url.appendingPathComponent("next #{session_name}", isDirectory: true)
+        for folder in [start, next] { try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false) }
+        func real(_ folder: URL) throws -> String {
+            try XCTUnwrap(realpath(folder.path, nil).map { defer { free($0) }; return String(cString: $0) })
+        }
+        let session = try await client.create(name: "Here", cwd: try real(start))
+        let folder = try await client.folder(sessionID: session.id)
+        XCTAssertEqual(folder, try real(start))
+        let attachment = try await client.attach(sessionID: session.id)
+        try await attachment.send(Data("cd '\(try real(next))'\n".utf8))
+        var moved = ""
+        for _ in 0..<200 {
+            moved = (try? await client.folder(sessionID: session.id)) ?? ""
+            if moved == (try real(next)) { break }
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        XCTAssertEqual(moved, try real(next), "The folder didn't follow the shell's cd")
+        let beside = try await client.create(name: "Beside", cwd: moved)
+        let besideFolder = try await client.folder(sessionID: beside.id)
+        XCTAssertEqual(besideFolder, try real(next))
+        try await client.close(sessionID: beside.id)
+        try FileManager.default.removeItem(at: next)
+        do { _ = try await client.folder(sessionID: session.id); XCTFail("A removed folder was reported") }
+        catch LocalAgentClientError.rejected(let code) { XCTAssertEqual(code, .notFound) }
+        do { _ = try await client.folder(sessionID: UUID().uuidString.lowercased()); XCTFail("Unknown session answered") }
+        catch LocalAgentClientError.rejected(let code) { XCTAssertEqual(code, .notFound) }
+        try await attachment.detach()
+        try await client.close(sessionID: session.id)
+    }
+
     func testDetachAcknowledgementAllowsImmediateControllerHandoff() async throws {
         guard FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/tmux") else { throw XCTSkip("tmux is required") }
         let url = try directory()

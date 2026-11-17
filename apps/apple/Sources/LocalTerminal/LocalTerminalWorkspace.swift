@@ -176,53 +176,8 @@ struct LocalTerminalDetail: View {
     }
 }
 
-/// Shown when nothing is selected: the next useful action for this Mac.
-struct LocalOverview: View {
-    @Bindable var service: LocalAgentService
-    @Bindable var model: LocalTerminalModel
-    let canCreate: Bool
-    let newSession: () -> Void
-    let newSSHConnection: () -> Void
-
-    var body: some View {
-        VStack(spacing: 0) {
-            LocalStatusBanners(service: service, model: model)
-            if service.state == .ready, let client = service.client {
-                if !model.tmuxAvailable {
-                    LocalDependencyView(model: model, client: client)
-                } else if model.isWorking {
-                    LocalProgressView(label: model.busy ?? "", cancel: model.detach)
-                } else {
-                    // Title and actions only; the shortcuts are in the menus.
-                    ContentUnavailableView {
-                        Label(model.sessions.isEmpty ? String(localized: "No Terminals Yet", bundle: .main) : String(localized: "Choose a Terminal", bundle: .main), systemImage: "terminal")
-                    } actions: {
-                        VStack(spacing: WitermMetrics.Space.xl) {
-                            HStack(spacing: WitermMetrics.Space.m) {
-                                PrimaryButton(String(localized: "New Terminal", bundle: .main), action: newSession)
-                                    .disabled(!canCreate)
-                                    .help(LocalTerminalHelp.newTerminal)
-                                Button(String(localized: "Add SSH Host…", bundle: .main), action: newSSHConnection)
-                                    .buttonStyle(.bordered)
-                                    .witermControl()
-                                    .help(LocalTerminalHelp.addSSHHost)
-                            }
-                            if model.sessions.isEmpty { StartFromTerminalHint() }
-                        }
-                    }
-                }
-            } else {
-                LocalServiceSetupView(service: service)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(WitermTheme.canvas)
-        .navigationTitle("Witerm")
-    }
-}
-
 /// A light pointer to the `witerm` command for starting sessions from Terminal.
-private struct StartFromTerminalHint: View {
+struct StartFromTerminalHint: View {
     private let tool = CommandLineToolModel.shared
     @Environment(\.openSettings) private var openSettings
     @AppStorage(SettingsTab.key) private var settingsTab = SettingsTab.general.rawValue
@@ -324,7 +279,7 @@ struct LocalServiceSetupView: View {
     }
 }
 
-private struct LocalDependencyView: View {
+struct LocalDependencyView: View {
     let model: LocalTerminalModel
     let client: LocalAgentClient
 
@@ -427,6 +382,14 @@ enum LocalTerminalHelp {
     }
     static var newTerminal: String {
         String(localized: "A new shell on this Mac. It keeps running after you close it or quit Witerm.", bundle: .main)
+    }
+    /// The page (Round 27). "Home" alone is the iOS key row's Home key,
+    /// which stays "Home" in Chinese.
+    static var homePage: String {
+        String(localized: "page.home", defaultValue: "Home", bundle: .main, comment: "The Mac window's first page")
+    }
+    static var newTerminalBeside: String {
+        String(localized: "A new terminal in the folder this one is in now, named after that folder", bundle: .main)
     }
     static var addSSHHost: String {
         String(localized: "Sign in to another computer with SSH", bundle: .main)

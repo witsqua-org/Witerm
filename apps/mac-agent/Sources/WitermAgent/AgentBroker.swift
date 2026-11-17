@@ -176,6 +176,7 @@ final class AgentBroker: @unchecked Sendable {
         case .guest: allowed.formUnion(["guest", "pairing_id"])
         case .redeem: allowed.formUnion(["proof", "peer"])
         case .rename: allowed.formUnion(["session_id", "name"])
+        case .folder: allowed.insert("session_id")
         case .attach: allowed.formUnion(["session_id", "columns", "rows", "mode", "history", "peer"])
         case .input: allowed.formUnion(["data", "automatic"])
         case .resize: allowed.formUnion(["columns", "rows"])
@@ -305,6 +306,10 @@ final class AgentBroker: @unchecked Sendable {
         case .rename:
             guard connection.child == nil, let name = request.name, validDisplayName(name) else { throw AgentFailure(.invalidRequest) }
             reply(session: withSharing(try engine.rename(try sessionID(), to: name)))
+        case .folder:
+            guard connection.child == nil else { throw AgentFailure(.invalidRequest) }
+            let cwd = try engine.folder(try sessionID())
+            connection.enqueue(LocalAgentFrame(id: request.id, kind: .response, ok: true, cwd: cwd))
         case .close:
             let id = try sessionID()
             try engine.close(id)

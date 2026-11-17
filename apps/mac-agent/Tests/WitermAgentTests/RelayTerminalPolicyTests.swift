@@ -20,7 +20,7 @@ final class RelayTerminalPolicyTests: XCTestCase {
 
     func testRemoteSurfaceExcludesCreateCloseAndUnexpectedFields() throws {
         let encoder = JSONEncoder()
-        for operation in [LocalAgentOperation.create, .close, .share, .rename, .access, .guest] {
+        for operation in [LocalAgentOperation.create, .close, .share, .rename, .access, .guest, .folder] {
             XCTAssertThrowsError(try RelayTerminalPolicy.request(encoder.encode(LocalAgentRequest(operation: operation)), attached: false, permission: .control))
         }
         // A recipient may send only its invitation proof, never a peer or a key.

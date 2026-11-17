@@ -86,3 +86,26 @@ enum SSHAddressInput {
         }
     }
 }
+
+extension SSHAddressInput {
+    /// What a search field's text offers to add as a new SSH host (Round 27):
+    /// the text itself when it reads as an address (`deploy@10.0.0.5`,
+    /// `db.example.com:2222`; a bare host too, whose form then asks for the
+    /// user) and no saved host has that host, port and user. Nil otherwise,
+    /// including for plain words, so searching for a name never offers it.
+    static func unsavedSuggestion(_ query: String, saved: [SSHProfile]) -> String? {
+        let text = query.trimmingCharacters(in: .whitespaces)
+        guard !text.contains(" "), text.contains("@") || text.contains(".") || text.contains(":") else { return nil }
+        let parsed: Parsed
+        switch parse(text) {
+        case .success(let value): parsed = value
+        case .failure(let problem) where problem.problem == .missingUser: parsed = Parsed(username: "", hostname: text, port: 22)
+        case .failure: return nil
+        }
+        let known = saved.contains {
+            $0.host.hostname.caseInsensitiveCompare(parsed.hostname) == .orderedSame && $0.host.port == parsed.port
+                && (parsed.username.isEmpty || $0.host.username == parsed.username)
+        }
+        return known ? nil : text
+    }
+}

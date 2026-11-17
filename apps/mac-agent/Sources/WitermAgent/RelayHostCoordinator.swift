@@ -263,7 +263,7 @@ enum RelayTerminalPolicy {
         case .redeem:
             guard !attached, request.proof?.count == 32 else { throw AgentFailure(.invalidRequest) }
             allowed = ["version", "id", "operation", "proof"]
-        case .create, .close, .share, .rename, .access, .guest: throw AgentFailure(.invalidRequest)
+        case .create, .close, .share, .rename, .access, .guest, .folder: throw AgentFailure(.invalidRequest)
         }
         guard Set(object.keys).isSubset(of: allowed) else { throw AgentFailure(.invalidRequest) }
         return request

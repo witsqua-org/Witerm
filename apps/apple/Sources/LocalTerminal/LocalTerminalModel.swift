@@ -127,6 +127,38 @@ final class LocalTerminalModel {
         activities[sessionID] = created
         return created
     }
+
+    /// The folder each terminal's foreground process is in, as the service
+    /// reports it (`folder`), so every terminal says where it is, including
+    /// ones never shown in this window. In memory only.
+    private(set) var folders: [String: String] = [:]
+
+    /// Asks the service where each terminal is. Cheap (one tmux query each,
+    /// at most 16); a terminal that doesn't answer keeps no folder.
+    func refreshFolders(using client: LocalAgentClient) async {
+        var next: [String: String] = [:]
+        for session in sessions {
+            if Task.isCancelled { return }
+            if let folder = try? await client.folder(sessionID: session.id) { next[session.id] = folder }
+        }
+        if next != folders { folders = next }
+    }
+
+    /// Where a terminal is and what it's doing, in one line: what the shell
+    /// reports (title and folder), else the folder the service sees, else
+    /// its last line as seen here.
+    func summary(for sessionID: String, home: String = NSHomeDirectory()) -> String? {
+        let activity = activity(for: sessionID)
+        let reported = [activity.title, activity.folder(home: home)].compactMap { $0 }
+        if !reported.isEmpty { return reported.joined(separator: " · ") }
+        if let folder = folders[sessionID] { return Self.tilde(folder, home: home) }
+        return activity.lastLine
+    }
+
+    static func tilde(_ path: String, home: String) -> String {
+        guard !home.isEmpty, path == home || path.hasPrefix(home + "/") else { return path }
+        return "~" + path.dropFirst(home.count)
+    }
     var isWorking: Bool { busy != nil }
 
     func refresh(using client: LocalAgentClient) {
@@ -251,18 +283,55 @@ final class LocalTerminalModel {
         return localized(number)
     }
 
+    /// A name for a terminal started in `folder`: the folder's own name, made
+    /// unique the way Finder does ("Witerm 2"), or Terminal N for the home
+    /// folder and the root, where a folder name says nothing.
+    func sessionName(forFolder folder: String, home: String = NSHomeDirectory()) -> String {
+        Self.name(forFolder: folder, home: home, taken: Set(sessions.map(\.name))) ?? nextSessionName
+    }
+
+    static func name(forFolder folder: String, home: String, taken: Set<String>) -> String? {
+        let trimmed = folder.hasSuffix("/") && folder.count > 1 ? String(folder.dropLast()) : folder
+        guard trimmed != home, trimmed != "/" else { return nil }
+        let base = String((trimmed.split(separator: "/").last.map(String.init) ?? "").unicodeScalars
+            .filter { !CharacterSet.controlCharacters.contains($0) }.prefix(56))
+            .trimmingCharacters(in: .whitespaces)
+        guard !base.isEmpty else { return nil }
+        if !taken.contains(base) { return base }
+        return (2...).lazy.map { "\(base) \($0)" }.first { !taken.contains($0) }
+    }
+
+    /// A new terminal in the folder `beside`'s shell is in now. If that
+    /// folder can't be read (it was removed, or the shell is gone), the new
+    /// terminal starts where ⌘N's would, rather than not at all.
+    func createBeside(_ beside: LocalSessionInfo, using client: LocalAgentClient) {
+        guard !isWorking else { return }
+        begin(String(localized: "Starting terminal…", bundle: .main)) { [weak self] expected in
+            let folder = try? await client.folder(sessionID: beside.id)
+            try Task.checkCancellation()
+            guard let self, self.generation == expected else { return }
+            let name = folder.map { self.sessionName(forFolder: $0) } ?? self.nextSessionName
+            let session = try await client.create(name: name, cwd: folder)
+            try await self.finishCreating(session, expected: expected, using: client)
+        }
+    }
+
     func create(name: String, using client: LocalAgentClient) {
         guard !isWorking else { return }
         begin(String(localized: "Starting terminal…", bundle: .main)) { [weak self] expected in
             let session = try await client.create(name: name)
-            let sessions = try await client.sessions()
-            try Task.checkCancellation()
-            guard let self, self.generation == expected else { return }
-            self.sessions = sessions
-            self.selectedID = session.id
-            self.busy = nil
-            self.attach(session, using: client, mode: .control)
+            try await self?.finishCreating(session, expected: expected, using: client)
         }
+    }
+
+    private func finishCreating(_ session: LocalSessionInfo, expected: Int, using client: LocalAgentClient) async throws {
+        let sessions = try await client.sessions()
+        try Task.checkCancellation()
+        guard generation == expected else { return }
+        self.sessions = sessions
+        selectedID = session.id
+        busy = nil
+        attach(session, using: client, mode: .control)
     }
 
     /// Opens a session from the sidebar. `focus` is false while a person

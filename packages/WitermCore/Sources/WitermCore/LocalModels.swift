@@ -4,6 +4,9 @@ public enum LocalAgentOperation: String, Codable, Sendable {
   case status, list, create, close, attach, input, resize, detach, share, rename, access
   /// Local only: this Mac's invitations to single sessions.
   case guest
+  /// Local only: the folder a session's shell is in now, for starting a new
+  /// session beside it. Never answered through the relay.
+  case folder
   /// From the relay endpoint: a recipient proving it holds an invitation's key.
   case redeem
   /// Relay only, never sent to the local service: a paired device
@@ -483,13 +486,15 @@ public struct LocalAgentFrame: Codable, Sendable, Equatable {
   /// on this attachment. Absent when it doesn't (an older Mac, or a device
   /// that didn't ask).
   public let flow: Int?
+  /// `folder` replies only: the absolute folder the session's shell is in.
+  public let cwd: String?
 
   public init(
     version: Int = 1, id: String? = nil, kind: LocalFrameKind, ok: Bool? = nil,
     error: LocalAgentErrorCode? = nil, status: LocalAgentStatus? = nil,
     sessions: [LocalSessionInfo]? = nil, session: LocalSessionInfo? = nil,
     mode: LocalAttachmentMode? = nil, data: Data? = nil, accesses: [LocalDeviceAccess]? = nil,
-    guests: [LocalGuestInvite]? = nil, flow: Int? = nil
+    guests: [LocalGuestInvite]? = nil, flow: Int? = nil, cwd: String? = nil
   ) {
     self.version = version
     self.id = id
@@ -504,6 +509,7 @@ public struct LocalAgentFrame: Codable, Sendable, Equatable {
     self.accesses = accesses
     self.guests = guests
     self.flow = flow
+    self.cwd = cwd
   }
 }
 

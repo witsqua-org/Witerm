@@ -120,19 +120,19 @@
         }
       }
     },
-    "%@ is already paired with this Mac. It can open this terminal from Terminals if you allow it in Settings → Devices." : {
+    "%@ is already paired with this Mac. It can open this terminal from Terminals if you allow it in Devices." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ is already paired with this Mac. It can open this terminal from Terminals if you allow it in Settings → Devices."
+            "value" : "%@ is already paired with this Mac. It can open this terminal from Terminals if you allow it in Devices."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ 已与这台 Mac 配对。只要你在“设置”→“设备”中允许，它就可以从“终端”中打开此终端。"
+            "value" : "%@ 已与这台 Mac 配对。只要你在“设备”中允许，它就可以从“终端”中打开此终端。"
           }
         }
       }
@@ -671,6 +671,23 @@
         }
       }
     },
+    "A new terminal in the folder this one is in now, named after that folder" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A new terminal in the folder this one is in now, named after that folder"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在这个终端当前所在的文件夹中新建终端，并以该文件夹命名"
+          }
+        }
+      }
+    },
     "A one-time invitation to this terminal only" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -956,6 +973,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "添加 SSH 主机"
+          }
+        }
+      }
+    },
+    "Add SSH Host “%@”…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add SSH Host “%@”…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加 SSH 主机“%@”…"
           }
         }
       }
@@ -1623,6 +1657,23 @@
         }
       }
     },
+    "Asks for %@ each time." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Asks for %@ each time."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每次插入时询问 %@。"
+          }
+        }
+      }
+    },
     "Back" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1991,36 +2042,36 @@
         }
       }
     },
-    "Change what it can open at any time in Settings → Devices." : {
+    "Change what it can open at any time in Devices." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Change what it can open at any time in Settings → Devices."
+            "value" : "Change what it can open at any time in Devices."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "可以随时在“设置 → 设备”中更改它能打开的内容。"
+            "value" : "可以随时在“设备”中更改它能打开的内容。"
           }
         }
       }
     },
-    "Change what it can open in Settings → Devices." : {
+    "Change what it can open in Devices." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Change what it can open in Settings → Devices."
+            "value" : "Change what it can open in Devices."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在“设置 → 设备”中更改它能打开的内容。"
+            "value" : "在“设备”中更改它能打开的内容。"
           }
         }
       }
@@ -4143,19 +4194,19 @@
         }
       }
     },
-    "End their access at any time in Settings → Devices." : {
+    "End their access at any time in Devices." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "End their access at any time in Settings → Devices."
+            "value" : "End their access at any time in Devices."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "可以随时在“设置 → 设备”中结束对方的访问。"
+            "value" : "可以随时在“设备”中结束对方的访问。"
           }
         }
       }
@@ -5209,6 +5260,40 @@
         }
       }
     },
+    "Import hosts from an OpenSSH config file" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Import hosts from an OpenSSH config file"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从 OpenSSH 配置文件导入主机"
+          }
+        }
+      }
+    },
+    "Import…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Import…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导入…"
+          }
+        }
+      }
+    },
     "In Use" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5328,6 +5413,23 @@
         }
       }
     },
+    "Insert" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Insert"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "插入"
+          }
+        }
+      }
+    },
     "Insert Snippet" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5341,6 +5443,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "插入片段"
+          }
+        }
+      }
+    },
+    "Insert “%@”" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Insert “%@”"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "插入“%@”"
           }
         }
       }
@@ -5851,6 +5970,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "继续观看；你的按键不会发送"
+          }
+        }
+      }
+    },
+    "Keeps running after you quit, and opens on your other devices" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keeps running after you quit, and opens on your other devices"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "退出后仍会运行，也能在你的其他设备上打开"
           }
         }
       }
@@ -6546,6 +6682,23 @@
         }
       }
     },
+    "New Terminal in Same Folder" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Terminal in Same Folder"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在相同文件夹中新建终端"
+          }
+        }
+      }
+    },
     "New output" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6948,19 +7101,19 @@
         }
       }
     },
-    "No terminals yet. Choose later in Settings → Devices." : {
+    "No terminals yet. Choose later in Devices." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No terminals yet. Choose later in Settings → Devices."
+            "value" : "No terminals yet. Choose later in Devices."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "还没有终端。稍后可在“设置”→“设备”中选择。"
+            "value" : "还没有终端。稍后可在“设备”中选择。"
           }
         }
       }
@@ -6978,6 +7131,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未设置用户"
+          }
+        }
+      }
+    },
+    "None running" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "None running"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有正在运行的终端"
+          }
+        }
+      }
+    },
+    "None saved" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "None saved"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未保存"
           }
         }
       }
@@ -7063,6 +7250,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "尚未检查。"
+          }
+        }
+      }
+    },
+    "Not connected" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not connected"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未连接"
           }
         }
       }
@@ -7530,6 +7734,74 @@
         }
       }
     },
+    "Open Quickly" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Quickly"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快速打开"
+          }
+        }
+      }
+    },
+    "Open Quickly (⇧⌘O): terminals, hosts, snippets and commands" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Quickly (⇧⌘O): terminals, hosts, snippets and commands"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快速打开（⇧⌘O）：终端、主机、片段和命令"
+          }
+        }
+      }
+    },
+    "Open Quickly from anywhere" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Quickly from anywhere"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在任何页面都能快速打开"
+          }
+        }
+      }
+    },
+    "Open Quickly…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Quickly…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快速打开…"
+          }
+        }
+      }
+    },
     "Open Settings" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7577,6 +7849,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在这里打开终端；按下 Return 再输入 ~. 即可离开"
+          }
+        }
+      }
+    },
+    "Open a terminal, connect to a host, or run a command" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open a terminal, connect to a host, or run a command"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开终端、连接主机或执行命令"
           }
         }
       }
@@ -7666,6 +7955,23 @@
         }
       }
     },
+    "Open “%@” on Another Device…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open “%@” on Another Device…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在其他设备上打开“%@”…"
+          }
+        }
+      }
+    },
     "Open “%@” on a paired device or a new one" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7734,23 +8040,6 @@
         }
       }
     },
-    "Opens Settings → Devices" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Opens Settings → Devices"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开“设置”→“设备”"
-          }
-        }
-      }
-    },
     "Operation cancelled." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7781,6 +8070,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "由 Optic ID 保护。"
+          }
+        }
+      }
+    },
+    "Or start one from any terminal app:" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Or start one from any terminal app:"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "也可以在任意终端应用中启动："
           }
         }
       }
@@ -7900,6 +8206,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "配对新设备"
+          }
+        }
+      }
+    },
+    "Pair your iPhone or iPad to open these terminals there." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pair your iPhone or iPad to open these terminals there."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "配对 iPhone 或 iPad，即可在上面打开这些终端。"
           }
         }
       }
@@ -8941,6 +9264,23 @@
         }
       }
     },
+    "Relay server: %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Relay server: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "中继服务器：%@"
+          }
+        }
+      }
+    },
     "Relay server: %@, %@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8954,23 +9294,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "中继服务器：%@，%@"
-          }
-        }
-      }
-    },
-    "Relay server: %@. Opens Settings → Devices." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Relay server: %@. Opens Settings → Devices."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "中继服务器：%@。点按以打开“设置”→“设备”。"
           }
         }
       }
@@ -9090,6 +9413,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已暂停远程输入"
+          }
+        }
+      }
+    },
+    "Remote access off" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remote access off"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "远程访问已关闭"
           }
         }
       }
@@ -9638,6 +9978,23 @@
         }
       }
     },
+    "Run" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Run"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "运行"
+          }
+        }
+      }
+    },
     "Run in the background" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9685,6 +10042,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "SFTP 文件…"
+          }
+        }
+      }
+    },
+    "SSH Host" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSH Host"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSH 主机"
           }
         }
       }
@@ -10012,36 +10386,19 @@
         }
       }
     },
-    "Search Terminals" : {
+    "Search or enter user@host" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Search Terminals"
+            "value" : "Search or enter user@host"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "搜索终端"
-          }
-        }
-      }
-    },
-    "Search Terminals and Hosts" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Search Terminals and Hosts"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "搜索终端和主机"
+            "value" : "搜索或输入 user@host"
           }
         }
       }
@@ -10189,6 +10546,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "设置"
+          }
+        }
+      }
+    },
+    "Settings…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Settings…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置…"
           }
         }
       }
@@ -10567,6 +10941,23 @@
         }
       }
     },
+    "Sign in to another computer. No relay server needed." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in to another computer. No relay server needed."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登录另一台电脑，无需中继服务器。"
+          }
+        }
+      }
+    },
     "Sign in to “%@”" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10631,6 +11022,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "斜杠"
+          }
+        }
+      }
+    },
+    "Snippet" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Snippet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "片段"
           }
         }
       }
@@ -10801,6 +11209,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "从任意文件夹开始"
+          }
+        }
+      }
+    },
+    "Started %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Started %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@启动"
           }
         }
       }
@@ -11639,6 +12064,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "你选择的终端"
+          }
+        }
+      }
+    },
+    "Terminals, hosts, snippets and commands" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terminals, hosts, snippets and commands"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "终端、主机、片段和命令"
           }
         }
       }
@@ -13031,6 +13473,23 @@
         }
       }
     },
+    "Types into %@." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Types into %@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将输入到 %@。"
+          }
+        }
+      }
+    },
     "Typing" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -14147,6 +14606,23 @@
         }
       }
     },
+    "Values can’t contain line breaks or control characters." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Values can’t contain line breaks or control characters."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "值不能包含换行符或控制字符。"
+          }
+        }
+      }
+    },
     "Verify Host Identity" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -14589,6 +15065,23 @@
         }
       }
     },
+    "Write {{name}} where a value goes, and it’s asked for each time." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Write {{name}} where a value goes, and it’s asked for each time."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在需要填值的地方写 {{name}}，每次插入时都会询问。"
+          }
+        }
+      }
+    },
     "You approve their device first." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -14738,6 +15231,24 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "刚刚"
+          }
+        }
+      }
+    },
+    "page.home" : {
+      "comment" : "The Mac window's first page",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Home"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "主页"
           }
         }
       }

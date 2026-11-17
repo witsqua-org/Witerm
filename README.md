@@ -72,7 +72,7 @@ The Mac app needs `tmux` (`brew install tmux`). Keychain access needs a normally
 **Open a terminal on another device:**
 
 1. On the Mac, select a terminal and choose **Open On ▸** and a paired device, or **New Device…** (context menu, File or Terminal; **Choose a Device…** is ⌥⌘P). The sheet goes one step at a time and skips steps already done.
-2. **Server:** pick the relay server and turn on remote access if asked. Settings → Devices uses the same server.
+2. **Server:** pick the relay server and turn on remote access if asked. The Devices page in the sidebar uses the same server.
 3. **Device:** choose a paired device, or **Pair a New Device** to show a code.
 4. On iOS, choose **Add Device** in the Devices tab and scan or paste the code. A new server is added only when you tap Request Access.
 5. On the Mac, compare the code and approve. By default the device can open only this terminal, and can watch and type.

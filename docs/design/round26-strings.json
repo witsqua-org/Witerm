@@ -1,0 +1,23 @@
+{
+  "add": {
+    "A new terminal in the folder this one is in now, named after that folder": "在这个终端当前所在的文件夹中新建终端，并以该文件夹命名",
+    "Add SSH Host “%@”…": "添加 SSH 主机“%@”…",
+    "Asks for %@ each time.": "每次插入时询问 %@。",
+    "Insert": "插入",
+    "Insert “%@”": "插入“%@”",
+    "New Terminal in Same Folder": "在相同文件夹中新建终端",
+    "Open Quickly": "快速打开",
+    "Open Quickly…": "快速打开…",
+    "Open “%@” on Another Device…": "在其他设备上打开“%@”…",
+    "Run": "运行",
+    "SSH Host": "SSH 主机",
+    "Settings…": "设置…",
+    "Snippet": "片段",
+    "Terminals, hosts, snippets and commands": "终端、主机、片段和命令",
+    "Types into %@.": "将输入到 %@。",
+    "Values can’t contain line breaks or control characters.": "值不能包含换行符或控制字符。",
+    "Write {{name}} where a value goes, and it’s asked for each time.": "在需要填值的地方写 {{name}}，每次插入时都会询问。"
+  },
+  "change": {},
+  "remove": []
+}

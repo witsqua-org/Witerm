@@ -3,8 +3,8 @@ import SwiftUI
 
 /// The selected Settings tab. Other views set it before opening Settings to
 /// land on a specific tab.
-enum SettingsTab: String {
-    case general, terminal, snippets, devices, commandLine
+enum SettingsTab: String, CaseIterable {
+    case general, terminal, snippets, commandLine
     static let key = "witerm.settingsTab"
 }
 
@@ -32,16 +32,15 @@ struct MacSettingsView: View {
                 .settingsPane()
                 .tabItem { Label(String(localized: "Snippets", bundle: .main), systemImage: "text.insert") }
                 .tag(SettingsTab.snippets.rawValue)
-            MacDevicesView(service: service)
-                .settingsPane()
-                .tabItem { Label(String(localized: "Devices", bundle: .main), systemImage: WitermSymbols.openOn) }
-                .tag(SettingsTab.devices.rawValue)
             CommandLineToolSettings()
                 .settingsPane()
                 .tabItem { Label(String(localized: "Command Line", bundle: .main), systemImage: "chevron.left.forwardslash.chevron.right") }
                 .tag(SettingsTab.commandLine.rawValue)
         }
         .environment(network)
+        // Devices moved to the main window (Round 27); a tab saved before
+        // that opens General.
+        .onAppear { if SettingsTab(rawValue: tab) == nil { tab = SettingsTab.general.rawValue } }
     }
 }
 

@@ -318,7 +318,7 @@ struct ContinueOnDeviceSheet: View {
         case .open:
             if let continuing, sessionID != nil {
                 String(localized: "“\(sessionName)” opens on \(continuing.name) as soon as it finishes pairing.", bundle: .main)
-            } else if sessionID == nil { String(localized: "Change what it can open at any time in Settings → Devices.", bundle: .main) }
+            } else if sessionID == nil { String(localized: "Change what it can open at any time in Devices.", bundle: .main) }
             else { nil }
         }
     }
@@ -671,13 +671,13 @@ struct ContinueOnDeviceSheet: View {
             if sessionID != nil {
                 note(live == nil && pairing?.pairing?.status != .approved
                      ? String(localized: "On \(continuing.name), open Witerm. “\(sessionName)” is under Terminals → \(pairing?.device?.name ?? String(localized: "this Mac", bundle: .main)).", bundle: .main)
-                     : String(localized: "Change what it can open in Settings → Devices.", bundle: .main))
+                     : String(localized: "Change what it can open in Devices.", bundle: .main))
             }
         } else if case .joined = invite?.phase {
             checkRow(String(localized: "They can open “\(sessionName)” until the invitation ends.", bundle: .main))
                 .background(WitermTheme.statusFill, in: .rect(cornerRadius: WitermMetrics.Radius.m, style: .continuous))
                 .witermOutline(cornerRadius: WitermMetrics.Radius.m)
-            note(String(localized: "End their access at any time in Settings → Devices.", bundle: .main))
+            note(String(localized: "End their access at any time in Devices.", bundle: .main))
         }
     }
 
@@ -1044,7 +1044,7 @@ struct SessionReachPicker: View {
                 .accessibilityIdentifier("pairingScope")
                 if reach == .chosen {
                     if sessions.isEmpty {
-                        Text(String(localized: "No terminals yet. Choose later in Settings → Devices.", bundle: .main))
+                        Text(String(localized: "No terminals yet. Choose later in Devices.", bundle: .main))
                             .font(WitermType.meta).foregroundStyle(WitermTheme.secondary)
                     }
                     ForEach(sessions) { session in
