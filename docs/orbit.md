@@ -66,4 +66,7 @@ The whole record stays in the thread's file. Each request (`store: false`) is bu
   - the requests had `store: false`, encrypted reasoning only within the run, and a stable cache key;
   - `witerm mcp` listed the task, read it, took it over and finished it.
 
-**With a real key: still to do.** A live run with the owner's key hasn't been done yet. Entering it in Settings ▸ Orbit and asking about a terminal is the first check.
+**With the owner's key (2026-11-18).** This was the installed app, with `gpt-6.1-sol`. The task: create "Orbit check" in `/private/tmp`, report the macOS version and the number of entries there, then end the terminal.
+- **Result.** Orbit set a two-step plan, created the terminal, and ran `sw_vers -productVersion; /bin/ls -A1 /private/tmp | /usr/bin/wc -l` once. It reported 27.2.1 and 21 entries, ended its terminal, and finished the task `done`.
+- **Cost.** 34 s, 4 requests, 11,018 input and 362 output tokens.
+- **No caching, then fixed.** That run had 0 cached tokens. Swift dictionaries have no stable key order, so the tools were serialized differently on each request, including the order of their parameters, and the prompt prefix never matched. Requests now encode with sorted keys, and a test checks that the tools are the same bytes on every request. The fix is committed but not yet installed, so caching hasn't been seen live yet.

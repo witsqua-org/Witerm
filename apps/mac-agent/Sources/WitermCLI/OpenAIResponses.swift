@@ -39,9 +39,7 @@ struct OpenAIResponses: Sendable {
         request.httpMethod = "POST"
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.withoutEscapingSlashes]
-        request.httpBody = try encoder.encode(body)
+        request.httpBody = try Self.encode(body)
         let data: Data
         let response: URLResponse
         do {
@@ -61,6 +59,15 @@ struct OpenAIResponses: Sendable {
         }
         guard let json, json["output"]?.array != nil else { throw OpenAIError.invalidResponse }
         return json
+    }
+
+    /// Keys sorted: Swift dictionaries have no stable order, and the same
+    /// instructions and tools must be the same bytes on every request for
+    /// the API's prompt cache to match them.
+    static func encode(_ body: JSONValue) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        return try encoder.encode(body)
     }
 
     /// What a response asked for: its text, tool calls, and the items to

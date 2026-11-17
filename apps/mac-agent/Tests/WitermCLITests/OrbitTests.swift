@@ -17,17 +17,20 @@ private final class FakeOpenAI: @unchecked Sendable {
     private let lock = NSLock()
     private var replies: [Reply]
     private(set) var bodies: [JSONValue] = []
+    private(set) var raw: [Data] = []
     private(set) var keys: [String] = []
 
     init(_ replies: [Reply]) { self.replies = replies }
 
     var requests: [JSONValue] { lock.withLock { bodies } }
+    var rawRequests: [Data] { lock.withLock { raw } }
 
     var api: OpenAIResponses {
         OpenAIResponses(endpoint: URL(string: "https://api.invalid/v1/responses")!) { [self] request in
             let body = try JSONDecoder().decode(JSONValue.self, from: request.httpBody ?? Data())
             let reply: Reply = lock.withLock {
                 bodies.append(body)
+                raw.append(request.httpBody ?? Data())
                 keys.append(request.value(forHTTPHeaderField: "Authorization") ?? "")
                 return replies.isEmpty ? .output([Self.message("(no more replies)")]) : replies.removeFirst()
             }
@@ -140,6 +143,12 @@ final class OrbitEngineTests: XCTestCase {
         XCTAssertEqual(input.map { $0["type"]?.string ?? $0["role"]?.string },
                        ["user", "reasoning", "function_call", "function_call_output"])
         XCTAssertEqual(input[1]["encrypted_content"]?.string, "enc-r1")
+        // The tools, part of the cached prefix, are the same bytes on every request.
+        let tools = fake.rawRequests.map { data -> String in
+            let text = String(decoding: data, as: UTF8.self)
+            return String(text[text.range(of: #""tools":"#)!.lowerBound...])
+        }
+        XCTAssertEqual(tools[0], tools[1], "The tools were encoded differently")
         // The summary is recorded after the call's output, never between them.
         let itemsValue = await engine.record(id)
         let items = try XCTUnwrap(itemsValue).items

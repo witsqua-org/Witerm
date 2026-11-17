@@ -64,7 +64,7 @@ On a development Mac with Xcode 27, existing iPhone 18 Pro and iPad Pro 13-inch 
 
 ## Not yet verified
 
-- Orbit with a real OpenAI API key, and its page in the Mac UI suite and audit screenshots.
+- Orbit's prompt caching with a real key, after the sorted-keys fix is installed; and Orbit's page in the Mac UI suite and audit screenshots. (A live task with the owner's key passed on 2026-11-18; see [orbit.md](orbit.md).)
 
 - Round 5 continuation end to end: pairing and approving through the Mac sheet with a real phone or the paired `PhoneContinuityFlowTests` and `MacContinuityFlowTests`, the Edit Device sheet, a camera scan, and the service's off-and-on step after the rename.
 
